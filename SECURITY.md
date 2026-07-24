@@ -3,8 +3,9 @@
 ## Reporting a vulnerability
 
 Do **not** open a public issue for security problems. Instead, report privately via GitHub's
-[Security Advisories](https://github.com/carlhannes/magiceth/security/advisories/new) or email
-**<security-contact@example.com>**. We'll respond as soon as we can and are happy to credit the reporter.
+[Security Advisories](https://github.com/carlhannes/magiceth/security/advisories/new). This is a
+hobby project maintained on a best-effort basis — we'll respond when we can and are happy to
+credit the reporter.
 
 ## Supported versions
 
