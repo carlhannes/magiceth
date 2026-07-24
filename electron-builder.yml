@@ -1,0 +1,24 @@
+appId: io.github.carlhannes.magiceth
+productName: magiceth
+directories:
+  output: dist
+files:
+  - out/**
+# chipsets.json is bundled into the main bundle (via import), so no extra runtime resources are needed.
+# The app has no production dependencies — everything is bundled by electron-vite/electron-builder.
+
+# Internal tool -> unsigned. No macOS notarization, no Windows certificate.
+mac:
+  identity: null
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+linux:
+  category: Utility
+  target:
+    - target: AppImage
+      arch: [x64, arm64]

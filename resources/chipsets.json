@@ -1,0 +1,106 @@
+{
+  "_note": "Single source of truth for dongle identification. Key = 'vid:pid' (hex, lowercase). The chipset determines capabilities — brands (Deltaco, Plexgear, Saitech, Apple, UGreen …) are resellers that use these chipsets. maxSpeedMbps and vlan are best-effort; actual VLAN capability also depends on the OS driver.",
+  "vendors": {
+    "0b95": "ASIX Electronics",
+    "0bda": "Realtek",
+    "0424": "Microchip/SMSC",
+    "17e9": "DisplayLink",
+    "05ac": "Apple",
+    "13b1": "Linksys",
+    "2001": "D-Link",
+    "0846": "Netgear",
+    "2357": "TP-Link",
+    "0b05": "ASUS",
+    "04e8": "Samsung",
+    "8087": "Intel",
+    "1a86": "QinHeng (CH397)"
+  },
+  "chipsets": {
+    "0b95:1790": {
+      "vendor": "ASIX Electronics",
+      "chipset": "AX88179 / AX88179A",
+      "maxSpeedMbps": 1000,
+      "vlan": true,
+      "brands": ["Deltaco", "Plexgear", "Saitech", "UGreen", "Anker"],
+      "notes": "Very common Gbit USB3 dongle."
+    },
+    "0b95:178a": {
+      "vendor": "ASIX Electronics",
+      "chipset": "AX88178A",
+      "maxSpeedMbps": 1000,
+      "vlan": true
+    },
+    "0b95:1780": {
+      "vendor": "ASIX Electronics",
+      "chipset": "AX88178",
+      "maxSpeedMbps": 1000,
+      "vlan": true
+    },
+    "0b95:772b": {
+      "vendor": "ASIX Electronics",
+      "chipset": "AX88772B",
+      "maxSpeedMbps": 100,
+      "vlan": false
+    },
+    "0b95:7720": {
+      "vendor": "ASIX Electronics",
+      "chipset": "AX88772",
+      "maxSpeedMbps": 100,
+      "vlan": false
+    },
+    "0bda:8153": {
+      "vendor": "Realtek",
+      "chipset": "RTL8153",
+      "maxSpeedMbps": 1000,
+      "vlan": true,
+      "brands": ["Deltaco", "Plexgear", "TP-Link", "UGreen", "Anker"],
+      "notes": "Very common Gbit USB3 dongle; the driver is usually built into the OS."
+    },
+    "0bda:8156": {
+      "vendor": "Realtek",
+      "chipset": "RTL8156",
+      "maxSpeedMbps": 2500,
+      "vlan": true,
+      "notes": "2.5GbE."
+    },
+    "0bda:8152": {
+      "vendor": "Realtek",
+      "chipset": "RTL8152",
+      "maxSpeedMbps": 100,
+      "vlan": false
+    },
+    "0424:7500": {
+      "vendor": "Microchip/SMSC",
+      "chipset": "LAN7500",
+      "maxSpeedMbps": 1000,
+      "vlan": true
+    },
+    "0424:7800": {
+      "vendor": "Microchip/SMSC",
+      "chipset": "LAN7800",
+      "maxSpeedMbps": 1000,
+      "vlan": true
+    },
+    "0424:ec00": {
+      "vendor": "Microchip/SMSC",
+      "chipset": "SMSC9512/9514",
+      "maxSpeedMbps": 100,
+      "vlan": false,
+      "notes": "Common in older Raspberry Pi."
+    },
+    "05ac:1402": {
+      "vendor": "Apple",
+      "chipset": "Apple USB Ethernet Adapter (ASIX AX88772)",
+      "maxSpeedMbps": 100,
+      "vlan": false,
+      "brands": ["Apple"]
+    },
+    "13b1:0041": {
+      "vendor": "Linksys",
+      "chipset": "USB3GIGV1 (ASIX AX88179)",
+      "maxSpeedMbps": 1000,
+      "vlan": true,
+      "brands": ["Linksys"]
+    }
+  }
+}
