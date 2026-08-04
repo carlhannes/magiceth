@@ -37,7 +37,7 @@ src/
       adapters.ts          # dongle list + chipset lookup
       diagnostics.ts       # orchestrates netinfo + probes
       probe.ts             # bound pings + DNS test (+ ping parser)
-      discover.ts          # port survey: VLAN tags off the wire + LLDP/CDP, capture + parsers
+      survey.ts            # port survey: VLAN tags off the wire + LLDP/CDP, capture + parsers
       reconfig.ts          # MAC rolling + profile application + undo
       profiles.ts          # fs/electron glue for profile storage
       profiles-core.ts     # pure profile operations (upsert/remove/…)
@@ -67,7 +67,7 @@ timeout and `windowsHide`.
 | ---------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
 | `adapters`                   | None       | Enumerates USB dongles, looks up the chipset via `chipsets.json`.                                             |
 | `diagnostics` → `probe`      | None       | Reads netinfo and runs gateway/internet ping + DNS test in parallel.                                          |
-| `discover`                   | Root/admin | Port survey: runs `tcpdump` until stopped, tallying 802.1Q VLANs and LLDP/CDP. Optional; degrades gracefully. |
+| `survey`                     | Root/admin | Port survey: runs `tcpdump` until stopped, tallying 802.1Q VLANs and LLDP/CDP. Optional; degrades gracefully. |
 | `reconfig`                   | Root/admin | Rolls MAC, applies DHCP/static profile, undoes.                                                               |
 | `profiles` / `profiles-core` | None       | Reads/writes profile JSON; pure CRUD operations.                                                              |
 
@@ -121,7 +121,7 @@ default route.
 
 ## Privilege model
 
-Least privilege: the app and all read-only diagnostics run unprivileged. Only `discover`
+Least privilege: the app and all read-only diagnostics run unprivileged. Only `survey`
 (capture) and `reconfig` (MAC/IP) are elevated, and then **per action** via `src/main/privilege.ts`:
 
 - **macOS:** `osascript -e 'do shell script "…" with administrator privileges'`

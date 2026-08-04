@@ -176,7 +176,7 @@ them.
 
 ### The mechanism, confirmed
 
-`discover.ts:87` stops the capture with:
+`discover.ts:87` — the file has since been renamed `survey.ts` — stopped the capture with:
 
 ```sh
 tcpdump … & p=$!; sleep 35; kill $p 2>/dev/null; wait $p 2>/dev/null; true

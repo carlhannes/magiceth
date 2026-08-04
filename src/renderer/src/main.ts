@@ -1,5 +1,5 @@
 import './styles.css'
-import type { Diagnostics, DiscoveryResult, Dongle, PingResult, Profile } from '../../shared/types'
+import type { Diagnostics, Dongle, PingResult, Profile, SurveyResult } from '../../shared/types'
 import { isLinkLocalIpv4 } from '../../shared/net'
 import { validateProfileDraft } from '../../shared/profile'
 import type { ProfileDraftInput } from '../../shared/profile'
@@ -12,9 +12,9 @@ let dongles: Dongle[] = []
 let selected = 0
 let diag: Diagnostics | null = null
 let running = false
-let discovery: DiscoveryResult | null = null
-let discoveryDevice: string | null = null
-let discovering = false
+let survey: SurveyResult | null = null
+let surveyDevice: string | null = null
+let surveying = false
 let profiles: Profile[] = []
 let panel = false // profile panel open
 let info = false // chipset info sub-view open (mutually exclusive with the profile panel)
@@ -136,7 +136,7 @@ function renderDiagnostics(d: Dongle): string {
         <span class="dev">${escapeHtml(d.device)}</span>
       </div>
       <div class="diag">${body}</div>
-      <div class="diag">${renderDiscovery(d)}</div>
+      <div class="diag">${renderSurvey(d)}</div>
     </article>`
 }
 
@@ -160,8 +160,8 @@ function clock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-function renderDiscovery(d: Dongle): string {
-  const forThis = discovery && discoveryDevice === d.device ? discovery : null
+function renderSurvey(d: Dongle): string {
+  const forThis = survey && surveyDevice === d.device ? survey : null
   const live = forThis?.running === true
   let inner: string
 
@@ -374,7 +374,7 @@ function render(): void {
     return
   }
   const d = dongles[selected]
-  const spinner = running || discovering || busy ? '<span class="spin">⟳</span>' : ''
+  const spinner = running || surveying || busy ? '<span class="spin">⟳</span>' : ''
   app.innerHTML = `
     <header class="topbar"><h1>magiceth</h1><span class="ver">v${APP_VERSION}</span>${spinner}</header>
     ${notice ? `<div class="notice">${escapeHtml(notice)}</div>` : ''}
@@ -382,7 +382,7 @@ function render(): void {
     ${renderDiagnostics(d)}
     ${renderInfo(d)}
     ${renderPanel()}
-    <footer class="hint"><b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>I</b> chipset · <b>S</b> save · <b>U</b> undo · <b>C</b> ${discovering ? 'stop' : 'survey'}</footer>`
+    <footer class="hint"><b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>I</b> chipset · <b>S</b> save · <b>U</b> undo · <b>C</b> ${surveying ? 'stop' : 'survey'}</footer>`
 }
 
 async function runDiag(device: string): Promise<void> {
@@ -403,12 +403,12 @@ async function runDiag(device: string): Promise<void> {
 
 /** C starts the survey and, while one is running, stops it. Results stay on screen either way. */
 async function toggleSurvey(device: string): Promise<void> {
-  if (discovering) {
-    discovering = false
+  if (surveying) {
+    surveying = false
     render()
     try {
       const final = await window.api.stopSurvey()
-      if (final) discovery = final
+      if (final) survey = final
     } catch (err) {
       console.error('stopping the survey failed', err)
       notice = `Stopping the survey failed: ${String(err)}`
@@ -417,18 +417,18 @@ async function toggleSurvey(device: string): Promise<void> {
     return
   }
 
-  discovering = true
-  discoveryDevice = device
-  discovery = null
+  surveying = true
+  surveyDevice = device
+  survey = null
   render()
   try {
-    discovery = await window.api.startSurvey(device)
+    survey = await window.api.startSurvey(device)
     // A refused start (no tcpdump, Windows) comes back already stopped.
-    discovering = discovery.running
+    surveying = survey.running
   } catch (err) {
     console.error('survey failed', err)
-    discovering = false
-    discovery = {
+    surveying = false
+    survey = {
       status: 'error',
       running: false,
       neighbors: [],
@@ -443,14 +443,14 @@ async function toggleSurvey(device: string): Promise<void> {
 
 /** Stop a running survey when it is no longer the thing on screen. */
 function endSurveyIfRunning(): void {
-  if (!discovering) return
-  discovering = false
+  if (!surveying) return
+  surveying = false
   // Keep the final snapshot rather than the last live one: switching back to that dongle should
   // show what the capture found, not claim it is still running.
   void window.api
     .stopSurvey()
     .then((final) => {
-      if (final) discovery = final
+      if (final) survey = final
       render()
     })
     .catch(() => undefined)
@@ -628,9 +628,9 @@ async function init(): Promise<void> {
   window.api.onSurveyUpdate((result) => {
     // Partial results keep arriving until the capture is stopped. Drop any that belong to a
     // dongle we have since switched away from.
-    if (result.device && result.device !== discoveryDevice) return
-    discovery = result
-    discovering = result.running
+    if (result.device && result.device !== surveyDevice) return
+    survey = result
+    surveying = result.running
     if (!editorOpen) render()
   })
 }

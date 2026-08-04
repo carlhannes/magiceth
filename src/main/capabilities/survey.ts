@@ -5,7 +5,7 @@ import path from 'node:path'
 import { run } from '../util/run-command'
 import { runElevatedShell, shQuote } from '../privilege'
 import { isValidIpv4 } from '../../shared/net'
-import type { DiscoveryResult, Neighbor, VlanSighting } from '../../shared/types'
+import type { SurveyResult, Neighbor, VlanSighting } from '../../shared/types'
 
 // Passive survey of what a port carries. Runs until stopped, pushing results as they accumulate.
 //
@@ -188,7 +188,7 @@ interface ActiveSurvey {
   timer: NodeJS.Timeout
   /** Set for the direct launch; the elevated one is stopped through stopFile instead. */
   child?: ReturnType<typeof spawn>
-  onUpdate: (result: DiscoveryResult) => void
+  onUpdate: (result: SurveyResult) => void
 }
 
 let active: ActiveSurvey | null = null
@@ -220,7 +220,7 @@ function ingest(s: ActiveSurvey, chunk: string): void {
   }
 }
 
-function snapshot(s: ActiveSurvey, running: boolean): DiscoveryResult {
+function snapshot(s: ActiveSurvey, running: boolean): SurveyResult {
   const vlans = toSightings(s.tally)
   const neighbors = parseDiscovery(s.lldpText)
   const found = vlans.length > 0 || neighbors.length > 0
@@ -262,7 +262,7 @@ function drain(s: ActiveSurvey): void {
   }
 }
 
-function fail(device: string, status: DiscoveryResult['status'], message: string): DiscoveryResult {
+function fail(device: string, status: SurveyResult['status'], message: string): SurveyResult {
   return {
     status,
     running: false,
@@ -281,8 +281,8 @@ function fail(device: string, status: DiscoveryResult['status'], message: string
  */
 export async function startSurvey(
   device: string,
-  onUpdate: (result: DiscoveryResult) => void
-): Promise<DiscoveryResult> {
+  onUpdate: (result: SurveyResult) => void
+): Promise<SurveyResult> {
   stopSurvey()
 
   if (process.platform === 'win32') {
@@ -354,7 +354,7 @@ export async function startSurvey(
 }
 
 /** Stop the running survey and return everything it collected. Safe to call when none is running. */
-export function stopSurvey(): DiscoveryResult | null {
+export function stopSurvey(): SurveyResult | null {
   const s = active
   if (!s) return null
   active = null

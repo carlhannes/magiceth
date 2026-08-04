@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import os from 'node:os'
 import { listDongles } from './capabilities/adapters'
 import { runDiagnostics } from './capabilities/diagnostics'
-import { startSurvey, stopSurvey } from './capabilities/discover'
+import { startSurvey, stopSurvey } from './capabilities/survey'
 import { applyProfile, rollMac, undo } from './capabilities/reconfig'
 import {
   deleteProfile,

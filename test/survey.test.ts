@@ -4,7 +4,7 @@ import {
   parseVlanFrames,
   surveyArgs,
   surveyScript
-} from '../src/main/capabilities/discover'
+} from '../src/main/capabilities/survey'
 import { shQuote, appleScriptEscape } from '../src/main/privilege'
 
 // Hand-written from the documented tcpdump -v format. Kept because it is the shape a Cisco-style

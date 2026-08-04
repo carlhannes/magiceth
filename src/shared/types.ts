@@ -102,10 +102,10 @@ export interface VlanSighting {
   addresses: string[]
 }
 
-export type DiscoveryStatus = 'ok' | 'none-seen' | 'no-tool' | 'needs-privilege' | 'error'
+export type SurveyStatus = 'ok' | 'none-seen' | 'no-tool' | 'needs-privilege' | 'error'
 
-export interface DiscoveryResult {
-  status: DiscoveryStatus
+export interface SurveyResult {
+  status: SurveyStatus
   /** True while the capture is still running — results accumulate and are pushed as they arrive. */
   running: boolean
   device?: string
@@ -144,10 +144,10 @@ export interface MagicethApi {
   listDongles(): Promise<Dongle[]>
   onDonglesChanged(cb: (dongles: Dongle[]) => void): () => void
   runDiagnostics(device: string): Promise<Diagnostics>
-  startSurvey(device: string): Promise<DiscoveryResult>
+  startSurvey(device: string): Promise<SurveyResult>
   /** Resolves with everything the survey collected, or null when none was running. */
-  stopSurvey(): Promise<DiscoveryResult | null>
-  onSurveyUpdate(cb: (result: DiscoveryResult) => void): () => void
+  stopSurvey(): Promise<SurveyResult | null>
+  onSurveyUpdate(cb: (result: SurveyResult) => void): () => void
   rollMac(device: string): Promise<ReconfigResult>
   applyProfile(device: string, profileId: string): Promise<ReconfigResult>
   undo(device: string): Promise<ReconfigResult>

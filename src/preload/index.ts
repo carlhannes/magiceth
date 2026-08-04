@@ -1,11 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   Diagnostics,
-  DiscoveryResult,
   Dongle,
   MagicethApi,
   Profile,
-  ReconfigResult
+  ReconfigResult,
+  SurveyResult
 } from '../shared/types'
 
 // Exposes a small, typed API on window.api. contextIsolation is on and the renderer
@@ -19,11 +19,11 @@ const api: MagicethApi = {
   },
   runDiagnostics: (device: string): Promise<Diagnostics> =>
     ipcRenderer.invoke('diagnostics:run', device),
-  startSurvey: (device: string): Promise<DiscoveryResult> =>
+  startSurvey: (device: string): Promise<SurveyResult> =>
     ipcRenderer.invoke('survey:start', device),
-  stopSurvey: (): Promise<DiscoveryResult | null> => ipcRenderer.invoke('survey:stop'),
-  onSurveyUpdate: (cb: (result: DiscoveryResult) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: DiscoveryResult): void => cb(data)
+  stopSurvey: (): Promise<SurveyResult | null> => ipcRenderer.invoke('survey:stop'),
+  onSurveyUpdate: (cb: (result: SurveyResult) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: SurveyResult): void => cb(data)
     ipcRenderer.on('survey:update', listener)
     return () => ipcRenderer.removeListener('survey:update', listener)
   },
