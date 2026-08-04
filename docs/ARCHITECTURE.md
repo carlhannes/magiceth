@@ -152,6 +152,11 @@ open, `render()` becomes a **no-op** so that background events (hotplug/diagnost
 the input fields — field values are read from the DOM only on Save. The version is injected at
 build time (`__APP_VERSION__` via Vite `define`) and shown in the topbar.
 
+Two sub-views hang below the diagnostics — the profile panel (`P`) and the chipset view (`I`,
+which is where `chipsets.json`'s capabilities and the raw USB IDs are shown). Each is a
+`render*()` that returns `''` when closed, they share the `.panel-card` shell, and opening one
+closes the other so the single screen never grows past a glance.
+
 ## Test philosophy
 
 - **Pure functions are unit-tested** (`test/`, vitest) — parsers are fed _real_ captured

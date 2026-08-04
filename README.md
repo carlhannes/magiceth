@@ -22,7 +22,7 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 
 ## Features
 
-- **Identification** — detects the dongle on insertion and shows chipset + capabilities (VID:PID is looked up against a built-in database). Deltaco, Plexgear, Saitech, Apple, UGreen, and others are resellers — the underlying chipset (ASIX, Realtek, …) is what matters.
+- **Identification** — detects the dongle on insertion and shows chipset + capabilities (VID:PID is looked up against a built-in database). Press `I` for the chipset sub-view: max speed, VLAN support, the brands that resell it and the raw USB IDs. Deltaco, Plexgear, Saitech, Apple, UGreen, and others are resellers — the underlying chipset (ASIX, Realtek, …) is what matters.
 - **Diagnostics** — IP/mask, gateway, DNS, full DHCP info (server, lease, domain), link speed/duplex, and MAC. Runs automatically as soon as the dongle gets link.
 - **Connectivity test** — pings the gateway + `1.1.1.1`/`8.8.8.8` _bound to the dongle_ (not via Wi-Fi), plus a DNS test against the DHCP-assigned server.
 - **VLAN / switch port** _(optional)_ — passive LLDP/CDP listening via `tcpdump` shows switch name, port, VLAN, and management IP.
@@ -33,7 +33,8 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 Most USB-ethernet dongles are built on a handful of chipsets. `magiceth` recognizes them via
 `USB VID:PID` (see [`resources/chipsets.json`](resources/chipsets.json)) — including ASIX AX88179/772,
 Realtek RTL8153/8152/8156, Microchip/SMSC LAN7500/7800, and Apple's USB adapter. Unknown dongles
-are still shown with raw USB info and usually work via the OS's own driver.
+usually work anyway via the OS's own driver — press `I` for their raw USB IDs, which is exactly
+what a "please add this chipset" issue or PR needs.
 
 ## Platform status
 
@@ -70,6 +71,7 @@ diagnostics are shown automatically. Everything is controlled from the keyboard:
 | `↑` `↓`           | Switch selected dongle (or navigate the profile panel)                 |
 | `R` / space       | Re-run diagnostics                                                     |
 | `C`               | Listen for VLAN/switch (LLDP/CDP)                                      |
+| `I`               | Open/close the chipset sub-view (capabilities + raw USB IDs)           |
 | `M`               | Roll a new MAC address                                                 |
 | `P`               | Open/close the profile panel                                           |
 | `1`–`9` / `Enter` | Apply a profile to the adapter                                         |

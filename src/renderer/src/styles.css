@@ -113,21 +113,6 @@ body {
   color: var(--warn);
 }
 
-.kv {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 4px 14px;
-  font-size: 14px;
-}
-
-.kv dt {
-  color: var(--muted);
-}
-
-.kv dd {
-  font-variant: tabular-nums;
-}
-
 .notes {
   margin-top: 10px;
   color: var(--muted);
@@ -275,7 +260,8 @@ body {
   font-size: 13px;
 }
 
-.panel-profiles {
+/* Shared shell for the sub-views (profile panel, chipset info). */
+.panel-card {
   background: var(--panel);
   border: 1px solid var(--dim);
   border-radius: 12px;

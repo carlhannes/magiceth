@@ -46,5 +46,5 @@ included — it should then show a clear "not supported" notice, not crash.
 - If you tested the admin things: did the MAC change work? Could you switch DHCP/static?
 - Feel free to send a screenshot + anything that was missing or looked off.
 
-Keys: **↑↓** switch dongle · **R** re-run · **M** roll MAC · **P** profiles (**N** new /
-**E** edit / **Backspace** delete in the panel) · **S** save · **U** undo · **C** VLAN.
+Keys: **↑↓** switch dongle · **R** re-run · **I** chipset info · **M** roll MAC · **P** profiles
+(**N** new / **E** edit / **Backspace** delete in the panel) · **S** save · **U** undo · **C** VLAN.

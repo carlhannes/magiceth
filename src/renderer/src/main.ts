@@ -16,6 +16,7 @@ let discoveryDevice: string | null = null
 let discovering = false
 let profiles: Profile[] = []
 let panel = false // profile panel open
+let info = false // chipset info sub-view open (mutually exclusive with the profile panel)
 let profileSel = 0
 let notice: string | null = null
 let busy = false // privileged action in progress
@@ -150,6 +151,33 @@ function renderDiscovery(d: Dongle): string {
   return `<div class="section-title">Switch / VLAN</div>${inner}`
 }
 
+// Chipset sub-view (I). The capabilities live in resources/chipsets.json; the raw USB IDs are
+// what you need to file a new-chipset PR when a dongle is not in the database yet.
+function renderInfo(d: Dongle): string {
+  if (!info) return ''
+  const chip = d.chipset
+  const usb = d.usb
+  const usbId = usb ? `${usb.vendorId}:${usb.productId}` : ''
+  return `<section class="panel-card">
+    <div class="section-title">Chipset / hardware</div>
+    ${row('Vendor', chip?.vendor ?? usb?.vendorName ?? '—')}
+    ${row('Chipset', chip?.chipset ?? 'unknown', d.known ? 'ok' : 'warn')}
+    ${chip?.maxSpeedMbps ? row('Max speed', speedText(chip.maxSpeedMbps)) : ''}
+    ${chip ? row('VLAN', chip.vlan ? 'yes' : 'no') : ''}
+    ${row('USB ID', usbId || '—', usbId ? '' : 'warn')}
+    ${usb?.productName ? row('USB name', usb.productName) : ''}
+    ${row('Port', d.portName || '—')}
+    ${chip?.brands?.length ? `<p class="notes">Sold as: ${escapeHtml(chip.brands.join(', '))}</p>` : ''}
+    ${chip?.notes ? `<p class="notes">${escapeHtml(chip.notes)}</p>` : ''}
+    ${
+      !d.known && usbId
+        ? `<p class="notes">Not in the chipset database — add "${escapeHtml(usbId)}" to resources/chipsets.json.</p>`
+        : ''
+    }
+    <p class="hint2"><b>I</b> or <b>Esc</b> closes</p>
+  </section>`
+}
+
 function renderPanel(): string {
   if (!panel) return ''
   const items = profiles
@@ -162,7 +190,7 @@ function renderPanel(): string {
       </li>`
     })
     .join('')
-  return `<section class="panel-profiles">
+  return `<section class="panel-card">
     <div class="section-title">Profiles — apply to the adapter</div>
     <ul class="profiles">${items}</ul>
     <p class="hint2"><b>↑↓</b> select · <b>Enter</b>/<b>1-9</b> apply · <b>N</b> new · <b>E</b> edit · <b>Backspace</b> delete · <b>P</b> close</p>
@@ -284,8 +312,9 @@ function render(): void {
     ${notice ? `<div class="notice">${escapeHtml(notice)}</div>` : ''}
     ${renderSelector()}
     ${renderDiagnostics(d)}
+    ${renderInfo(d)}
     ${renderPanel()}
-    <footer class="hint"><b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>S</b> save · <b>U</b> undo · <b>C</b> VLAN</footer>`
+    <footer class="hint"><b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>I</b> chipset · <b>S</b> save · <b>U</b> undo · <b>C</b> VLAN</footer>`
 }
 
 async function runDiag(device: string): Promise<void> {
@@ -428,6 +457,10 @@ document.addEventListener('keydown', (e) => {
       if (profiles[profileSel]) openEditor(profiles[profileSel])
       e.preventDefault()
       return
+    } else if (e.key === 'i' || e.key === 'I') {
+      // Only one sub-view at a time.
+      panel = false
+      info = true
     } else if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
       panel = false
     } else {
@@ -458,7 +491,15 @@ document.addEventListener('keydown', (e) => {
     void saveCurrent(device)
   } else if (e.key === 'p' || e.key === 'P') {
     panel = true
+    info = false
     profileSel = 0
+    render()
+  } else if (e.key === 'i' || e.key === 'I') {
+    info = !info
+    render()
+  } else if (e.key === 'Escape') {
+    if (!info) return
+    info = false
     render()
   } else if (e.key >= '1' && e.key <= '9') {
     applyProfileByIndex(Number(e.key) - 1)
