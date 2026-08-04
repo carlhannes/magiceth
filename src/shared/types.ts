@@ -1,25 +1,5 @@
 // Shared types between main, preload and renderer.
 
-export interface AddressInfo {
-  address: string
-  family: string
-  mac: string
-  internal: boolean
-}
-
-export interface InterfaceInfo {
-  name: string
-  addresses: AddressInfo[]
-}
-
-export interface SystemSnapshot {
-  // The process.platform string (e.g. "darwin", "linux", "win32"). Kept platform-neutral
-  // because the type is shared with the renderer (which lacks Node types).
-  platform: string
-  arch: string
-  interfaces: InterfaceInfo[]
-}
-
 // --- Dongle identification (M1) ---
 
 export interface UsbInfo {
@@ -139,8 +119,6 @@ export interface ReconfigResult {
 
 // The API that preload exposes on window.api (contract between main and renderer).
 export interface MagicethApi {
-  snapshot(): Promise<SystemSnapshot>
-  onAdaptersChanged(cb: (snapshot: SystemSnapshot) => void): () => void
   listDongles(): Promise<Dongle[]>
   onDonglesChanged(cb: (dongles: Dongle[]) => void): () => void
   runDiagnostics(device: string): Promise<Diagnostics>

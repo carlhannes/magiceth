@@ -5,19 +5,12 @@ import type {
   Dongle,
   MagicethApi,
   Profile,
-  ReconfigResult,
-  SystemSnapshot
+  ReconfigResult
 } from '../shared/types'
 
 // Exposes a small, typed API on window.api. contextIsolation is on and the renderer
 // never gets direct access to Node/Electron — only these methods.
 const api: MagicethApi = {
-  snapshot: () => ipcRenderer.invoke('system:snapshot'),
-  onAdaptersChanged: (cb: (snapshot: SystemSnapshot) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: SystemSnapshot): void => cb(data)
-    ipcRenderer.on('adapters:changed', listener)
-    return () => ipcRenderer.removeListener('adapters:changed', listener)
-  },
   listDongles: () => ipcRenderer.invoke('dongles:list'),
   onDonglesChanged: (cb: (dongles: Dongle[]) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: Dongle[]): void => cb(data)

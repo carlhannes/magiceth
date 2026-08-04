@@ -1,7 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
 import os from 'node:os'
-import type { SystemSnapshot } from '../shared/types'
 import { listDongles } from './capabilities/adapters'
 import { runDiagnostics } from './capabilities/diagnostics'
 import { discover } from './capabilities/discover'
@@ -15,30 +14,15 @@ import {
 import { getPlatform } from './platform'
 import type { Profile, ReconfigResult } from '../shared/types'
 
-// Build a snapshot of the system's network interfaces. In M0 we use Node's
-// os.networkInterfaces() (platform-independent, no privileges) to prove the whole
-// chain main -> preload -> renderer. Richer data (chipset, DHCP, etc.) is added in M1/M2.
-function buildSnapshot(): SystemSnapshot {
-  const ifaces = os.networkInterfaces()
-  return {
-    platform: process.platform,
-    arch: process.arch,
-    interfaces: Object.entries(ifaces).map(([name, addrs]) => ({
-      name,
-      addresses: (addrs ?? []).map((a) => ({
-        address: a.address,
-        family: String(a.family),
-        mac: a.mac,
-        internal: a.internal
-      }))
-    }))
-  }
-}
-
-// Signature for detecting hotplug changes (dongle in/out, link up/down).
-function signatureOf(snapshot: SystemSnapshot): string {
-  return snapshot.interfaces
-    .map((i) => `${i.name}|${i.addresses.map((a) => `${a.family}:${a.address}`).join(',')}`)
+// The hotplug probe: a signature over os.networkInterfaces() (platform-independent, no
+// privileges, cheap enough to poll) that changes when a dongle is plugged/unplugged or link
+// comes up/down. Main-process only — it never crosses IPC; the renderer gets Dongle[] instead.
+function interfaceSignature(): string {
+  return Object.entries(os.networkInterfaces())
+    .map(([name, addrs]) => {
+      const addresses = (addrs ?? []).map((a) => `${a.family}:${a.address}`).join(',')
+      return `${name}|${addresses}`
+    })
     .sort()
     .join(';')
 }
@@ -74,13 +58,11 @@ function createWindow(): BrowserWindow {
 function startHotplugPolling(): void {
   let last = ''
   const pollOnce = async (): Promise<void> => {
-    const snapshot = buildSnapshot()
-    const sig = signatureOf(snapshot)
+    const sig = interfaceSignature()
     if (sig === last) return
     last = sig
     const dongles = await listDongles()
     for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send('adapters:changed', snapshot)
       win.webContents.send('dongles:changed', dongles)
     }
   }
@@ -90,7 +72,6 @@ function startHotplugPolling(): void {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle('system:snapshot', () => buildSnapshot())
   ipcMain.handle('dongles:list', () => listDongles())
   ipcMain.handle('diagnostics:run', (_event, device: string) => runDiagnostics(device))
   ipcMain.handle('discover:run', (_event, device: string) => discover(device))

@@ -101,16 +101,19 @@ brittle text parsing.
 
 The preload exposes `window.api` per `MagicethApi` (`src/shared/types.ts`). Channels:
 
-- **Reads:** `system:snapshot`, `dongles:list`, `diagnostics:run`, `discover:run`, `profiles:list`
+- **Reads:** `dongles:list`, `diagnostics:run`, `discover:run`, `profiles:list`
 - **Writes (profiles, unprivileged):** `profiles:save`, `profiles:saveCurrent`, `profiles:delete`
 - **Privileged:** `reconfig:rollMac`, `reconfig:applyProfile`, `reconfig:undo`
-- **Push events (main → renderer):** `adapters:changed`, `dongles:changed`
+- **Push events (main → renderer):** `dongles:changed`
+
+Every channel has a consumer in the renderer — if a capability stops being used, its channel,
+its `MagicethApi` method and its preload wiring go with it.
 
 ## Data flow & hotplug
 
-Main polls cheaply (`os.networkInterfaces()`, every 1.5 s) and computes a signature. When it
-changes (dongle in/out, link up/down) the heavier dongle enumeration runs and `dongles:changed`
-is pushed. The renderer then automatically runs diagnostics for the selected dongle → so "plug
+Main polls cheaply (`os.networkInterfaces()`, every 1.5 s) and computes a signature
+(`interfaceSignature()`, main-only — it never crosses IPC). When it changes (dongle in/out, link
+up/down) the heavier dongle enumeration runs and `dongles:changed` is pushed. The renderer then automatically runs diagnostics for the selected dongle → so "plug
 in the cable → everything shows up" works without user interaction. Pings are bound to the
 dongle's interface/source IP so the internet test goes via the dongle, not via a possible Wi-Fi
 default route.
