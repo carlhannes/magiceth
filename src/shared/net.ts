@@ -22,3 +22,12 @@ export function isValidIpv4(value: string): boolean {
   if (parts.length !== 4) return false
   return parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255)
 }
+
+/**
+ * True for a link-local / APIPA address (169.254.0.0/16, RFC 3927). Every OS self-assigns one of
+ * these when no DHCP server answers, so it means "this port gave me nothing" rather than a
+ * working address — worth saying out loud instead of showing it like any other IP.
+ */
+export function isLinkLocalIpv4(value: string): boolean {
+  return isValidIpv4(value) && value.trim().startsWith('169.254.')
+}

@@ -1,5 +1,6 @@
 import './styles.css'
 import type { Diagnostics, DiscoveryResult, Dongle, PingResult, Profile } from '../../shared/types'
+import { isLinkLocalIpv4 } from '../../shared/net'
 import { validateProfileDraft } from '../../shared/profile'
 import type { ProfileDraftInput } from '../../shared/profile'
 
@@ -83,17 +84,24 @@ function renderDiagnostics(d: Dongle): string {
   } else if (!net.linkUp) {
     body = `${row('Link', 'no link — plug in a network cable', 'bad')}${row('MAC', net.mac || '—')}`
   } else {
-    const ipText = net.ipv4 ? `${net.ipv4}${net.cidr != null ? `/${net.cidr}` : ''}` : 'no IP'
+    // A 169.254 address means nothing answered — the OS assigned it to itself. Saying so is the
+    // whole point of the tool, so it must not look like a working lease.
+    const linkLocal = net.ipv4 != null && isLinkLocalIpv4(net.ipv4)
+    const ipText = net.ipv4
+      ? `${net.ipv4}${net.cidr != null ? `/${net.cidr}` : ''}${linkLocal ? ' · link-local' : ''}`
+      : 'no IP'
     const dhcp = net.dhcp
-    const dhcpText = dhcp.enabled
-      ? `${dhcp.state ?? 'on'}${dhcp.server ? ` · server ${dhcp.server}` : ''}`
-      : 'static / not DHCP'
+    const dhcpText = !dhcp.enabled
+      ? 'static / not DHCP'
+      : linkLocal
+        ? `no server answered${dhcp.state ? ` (${dhcp.state})` : ''}`
+        : `${dhcp.state ?? 'on'}${dhcp.server ? ` · server ${dhcp.server}` : ''}`
     body = `
       ${row('Link', `up · ${speedText(net.linkSpeedMbps)}${net.duplex ? ` · ${net.duplex} duplex` : ''}`, 'ok')}
-      ${row('IPv4', ipText, net.ipv4 ? 'ok' : 'bad')}
+      ${row('IPv4', ipText, net.ipv4 ? (linkLocal ? 'warn' : 'ok') : 'bad')}
       ${net.netmask ? row('Netmask', net.netmask) : ''}
       ${row('Gateway', net.gateway ?? '—', net.gateway ? '' : 'warn')}
-      ${row('DHCP', dhcpText, dhcp.enabled ? 'ok' : 'warn')}
+      ${row('DHCP', dhcpText, dhcp.enabled && !linkLocal ? 'ok' : 'warn')}
       ${dhcp.domain ? row('Domain', dhcp.domain) : ''}
       ${dhcp.leaseExpiration ? row('Lease until', dhcp.leaseExpiration) : ''}
       ${row('DNS', net.dnsServers.join(', ') || '—', net.dnsServers.length ? '' : 'warn')}

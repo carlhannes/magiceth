@@ -13,9 +13,17 @@ All notable changes are documented here. The format follows
   "please add this chipset" issue needs for a dongle that isn't in the database.
 - CI (`.github/workflows/ci.yml`) running prettier, typecheck, lint and tests on every push and PR.
 - Screenshots in the README (`docs/screenshot*.png`).
+- [`docs/BACKLOG.md`](docs/BACKLOG.md) — known gaps with the evidence behind each, linked from
+  CONTRIBUTING.
 
 ### Fixed
 
+- A dongle plugged in **without a network cable** is now detected. The hotplug poll watched
+  `os.networkInterfaces()`, which omits interfaces that have no address — so a cable-less dongle
+  (and its removal) never moved the signature. The real enumeration now also runs every ~4.5 s.
+- A self-assigned `169.254.x.x` address no longer reads as a healthy IP: the address is marked
+  `link-local` and the DHCP row says `no server answered` instead of showing a green "INIT". The
+  link itself stays green, because the cable really is fine.
 - Diagnostics failures are shown in the app instead of only in the console. On Windows a blank
   PowerShell reply used to leave the UI on "Waiting for diagnostics…" with no explanation.
 - Windows: the adapter name is escaped before it goes into the elevated PowerShell scripts, so a

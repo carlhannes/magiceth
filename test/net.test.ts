@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cidrToDotted, dottedToCidr, isValidIpv4 } from '../src/shared/net'
+import { cidrToDotted, dottedToCidr, isLinkLocalIpv4, isValidIpv4 } from '../src/shared/net'
 
 describe('cidrToDotted', () => {
   it('converts prefix to dotted netmask', () => {
@@ -32,5 +32,22 @@ describe('isValidIpv4', () => {
     expect(isValidIpv4('1.2.3.4.5')).toBe(false)
     expect(isValidIpv4('abc')).toBe(false)
     expect(isValidIpv4('')).toBe(false)
+  })
+})
+
+describe('isLinkLocalIpv4', () => {
+  it('accepts 169.254.0.0/16', () => {
+    expect(isLinkLocalIpv4('169.254.58.173')).toBe(true)
+    expect(isLinkLocalIpv4('169.254.0.1')).toBe(true)
+    expect(isLinkLocalIpv4('169.254.255.255')).toBe(true)
+  })
+
+  it('rejects routable addresses and near-misses', () => {
+    expect(isLinkLocalIpv4('192.168.70.196')).toBe(false)
+    expect(isLinkLocalIpv4('169.255.0.1')).toBe(false)
+    expect(isLinkLocalIpv4('169.25.4.1')).toBe(false)
+    // Not a valid address at all, so not a link-local one either.
+    expect(isLinkLocalIpv4('169.254.999.1')).toBe(false)
+    expect(isLinkLocalIpv4('')).toBe(false)
   })
 })

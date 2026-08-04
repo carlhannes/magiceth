@@ -68,6 +68,9 @@ not covered by the automated tests — verify them manually per
 - **Platform logic:** adjust `src/main/platform/<os>.ts`, keep the parsing pure + tested, verify on hardware.
 - **New IPC:** handler in `src/main/index.ts`, method in `MagicethApi` (`src/shared/types.ts`), expose it in `src/preload/index.ts`.
 
+Looking for something to pick up? [`docs/BACKLOG.md`](docs/BACKLOG.md) lists the known gaps, each
+with what is wrong, where, and why it is still open.
+
 ## Pull requests
 
 - Keep PRs small and focused.

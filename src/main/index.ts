@@ -12,7 +12,7 @@ import {
   saveProfile
 } from './capabilities/profiles'
 import { getPlatform } from './platform'
-import type { Profile, ReconfigResult } from '../shared/types'
+import type { Dongle, Profile, ReconfigResult } from '../shared/types'
 
 // The hotplug probe: a signature over os.networkInterfaces() (platform-independent, no
 // privileges, cheap enough to poll) that changes when a dongle is plugged/unplugged or link
@@ -52,23 +52,58 @@ function createWindow(): BrowserWindow {
   return win
 }
 
-// Simple poll (KISS) — no native udev/event hook in V1. The cheap interface signature
-// is polled often; the heavier dongle enumeration (spawns commands) runs only when something
-// has actually changed.
+const POLL_MS = 1500
+// os.networkInterfaces() only reports interfaces that have an address, so a dongle plugged in
+// without a network cable is invisible to interfaceSignature() — and so is its removal. Re-run
+// the real enumeration every few ticks to catch those. It is cheap enough to afford: measured on
+// macOS, ioreg is ~10 ms and networksetup ~20 ms, and they run in parallel.
+const FULL_SCAN_EVERY = 3 // ≈ every 4.5 s
+
+/** Identity of the connected dongles, for spotting appear/disappear between full scans. */
+function dongleSignature(dongles: Dongle[]): string {
+  return dongles
+    .map((d) => `${d.device}:${d.mac}`)
+    .sort()
+    .join(';')
+}
+
+// Simple poll (KISS) — no native udev/event hook in V1. The cheap interface signature is polled
+// often, so link-up and address changes are picked up quickly; the heavier dongle enumeration
+// runs when that signature moves, and otherwise on the slower full-scan cadence above.
 function startHotplugPolling(): void {
-  let last = ''
+  let lastInterfaces = ''
+  let lastDongles = ''
+  let tick = 0
+  let scanning = false
+
   const pollOnce = async (): Promise<void> => {
+    const dueForFullScan = tick++ % FULL_SCAN_EVERY === 0
     const sig = interfaceSignature()
-    if (sig === last) return
-    last = sig
-    const dongles = await listDongles()
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send('dongles:changed', dongles)
+    const interfacesChanged = sig !== lastInterfaces
+    if (!interfacesChanged && !dueForFullScan) return
+    // A slow scan must not overlap the next tick and write lastDongles out of order.
+    if (scanning) return
+
+    scanning = true
+    try {
+      lastInterfaces = sig
+      const dongles = await listDongles()
+      const key = dongleSignature(dongles)
+      // On a full scan with nothing new there is nothing to tell the renderer. When the interface
+      // signature moved we always push, because that is what re-runs diagnostics.
+      if (!interfacesChanged && key === lastDongles) return
+      lastDongles = key
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('dongles:changed', dongles)
+      }
+    } finally {
+      scanning = false
     }
   }
+
   setInterval(() => {
     pollOnce().catch((e) => console.error('hotplug poll failed:', e))
-  }, 1500)
+  }, POLL_MS)
 }
 
 app.whenReady().then(() => {
