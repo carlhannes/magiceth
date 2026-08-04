@@ -25,7 +25,7 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 - **Identification** — detects the dongle on insertion and shows chipset + capabilities (VID:PID is looked up against a built-in database). Press `I` for the chipset sub-view: max speed, VLAN support, the brands that resell it and the raw USB IDs. Deltaco, Plexgear, Saitech, Apple, UGreen, and others are resellers — the underlying chipset (ASIX, Realtek, …) is what matters.
 - **Diagnostics** — IP/mask, gateway, DNS, full DHCP info (server, lease, domain), link speed/duplex, and MAC. Runs automatically as soon as the dongle gets link.
 - **Connectivity test** — pings the gateway + `1.1.1.1`/`8.8.8.8` _bound to the dongle_ (not via Wi-Fi), plus a DNS test against the DHCP-assigned server.
-- **VLAN / switch port** _(optional)_ — passive LLDP/CDP listening via `tcpdump` shows switch name, port, VLAN, and management IP.
+- **VLAN / switch port** _(optional, macOS/Linux)_ — passive LLDP/CDP listening via `tcpdump` shows switch name, port, VLAN, and management IP. Not implemented on Windows (it would need tshark + Npcap); the app says so instead of failing.
 - **Active control** — roll a new (locally-administered) MAC, switch between DHCP and static profiles, create/edit profiles inline, and undo the last change.
 
 ## Hardware support
@@ -38,11 +38,15 @@ what a "please add this chipset" issue or PR needs.
 
 ## Platform status
 
-| Platform                  | Status                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------- |
-| **macOS** (arm64/amd64)   | Read-only diagnostics live-verified; privileged actions manually verified                         |
-| **Linux** (arm64/amd64)   | Implemented against documented command formats; parsers unit-tested — **verify on real hardware** |
-| **Windows** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware** |
+| Platform                | Status                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified                                          |
+| **Windows 11** (x64)    | Identification, diagnostics, ping and DHCP/static profile switching verified on real hardware; MAC rolling not yet |
+| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**                  |
+
+On Linux the DHCP-vs-static readout is inferred from the address lifetime that `ip -j addr`
+reports, which is the one part of the port readout that has not been checked against a live
+machine yet.
 
 ## Installation
 
@@ -91,7 +95,7 @@ capture packets (LLDP/CDP) require admin/root and request it **per action** via 
 ```sh
 npm run build      # compile main/preload/renderer to out/
 npm run package    # build an installable app with electron-builder (per platform)
-npm run typecheck  # tsc --noEmit (main + renderer)
+npm run typecheck  # tsc --noEmit (main + renderer + tests)
 npm run lint       # eslint
 npm test           # vitest (pure parsers/functions)
 ```

@@ -29,7 +29,11 @@ export async function pingTarget(target: string, label: string, net: NetInfo): P
   return parsePing(`${res.stdout}\n${res.stderr}`, target, label)
 }
 
-/** Test DNS resolution against a specific server (the DHCP-assigned one), via the dongle's path. */
+/**
+ * Test DNS resolution against a specific server (the DHCP-assigned one). Unlike the pings this
+ * is not bound to the dongle — Node's Resolver has no interface binding, so the query follows the
+ * OS routing table. It still answers "does the DNS server this port handed me actually work".
+ */
 export async function dnsTest(server: string, host = 'one.one.one.one'): Promise<DnsResult> {
   const resolver = new Resolver({ timeout: 3000, tries: 1 })
   resolver.setServers([server])

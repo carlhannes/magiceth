@@ -42,7 +42,9 @@ renderer is a thin keyboard-driven dashboard.
 - **TypeScript strict.** Prettier + ESLint govern formatting/rules (`npm run format`, `npm run lint`).
 - **Functional style** — functions and modules, not classes (natural for JS/TS).
 - **Never run commands via a shell.** Use `run()`/`runJson()` in `util/run-command.ts`
-  (`execFile` with arguments as an array) — it keeps quoting/injection out.
+  (`execFile` with arguments as an array) — it keeps quoting/injection out. The one exception is
+  elevation (`privilege.ts`), where the OS prompt takes a command _line_: there, every interpolated
+  value must go through `shQuote` (sh) or `psEscapeDouble` (PowerShell).
 - **Prefer structured output** (`ip -j`, `ConvertTo-Json`, `-json`) over text parsing.
 - **Keep parsing in pure, exported functions** that take a string and return typed objects —
   so they can be unit-tested without running real commands.

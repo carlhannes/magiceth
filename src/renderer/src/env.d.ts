@@ -5,6 +5,6 @@ declare global {
   interface Window {
     api: MagicethApi
   }
-  // Injiceras vid build via electron.vite.config.ts (define).
+  // Injected at build time via electron.vite.config.ts (define).
   const __APP_VERSION__: string
 }

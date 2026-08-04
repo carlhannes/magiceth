@@ -79,7 +79,7 @@ networksetup -getinfo "AX88179A"          # verify that a DHCP address comes bac
 - Dongle identification: `en9` → VID:PID `0b95:1790` → "ASIX AX88179 / AX88179A".
 - Diagnostics: IP `192.168.70.196/23`, gateway/DHCP/DNS `192.168.70.1`, lease, 1 Gbit/s full duplex.
 - Bound pings: gateway ~0.4 ms, 1.1.1.1/8.8.8.8 ~11 ms, DNS test ok.
-- All parsers (macOS live + Linux/Windows against documented format): 47 unit tests green.
+- All parsers (macOS live + Linux/Windows against documented format): unit tests green (`npm test`).
 
 ## 5. Remaining per-OS spike (not this machine)
 

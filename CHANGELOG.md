@@ -6,6 +6,34 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Chipset sub-view (`I`): max speed, VLAN support, reselling brands and the raw USB VID:PID — the
+  capabilities that were already in `chipsets.json` but never shown. The USB IDs are what a
+  "please add this chipset" issue needs for a dongle that isn't in the database.
+- CI (`.github/workflows/ci.yml`) running prettier, typecheck, lint and tests on every push and PR.
+
+### Fixed
+
+- Diagnostics failures are shown in the app instead of only in the console. On Windows a blank
+  PowerShell reply used to leave the UI on "Waiting for diagnostics…" with no explanation.
+- Windows: the adapter name is escaped before it goes into the elevated PowerShell scripts, so a
+  name containing `$`, `"` or a backtick no longer breaks (or reshapes) the command.
+- Stored profiles are format-validated when loaded, keeping a hand-edited `profiles.json` out of
+  the elevated command line built for `netsh`.
+- Linux: DHCP is detected from the address lifetime reported by `ip -j addr` instead of always
+  reporting "static". Undo after applying a static profile now returns the interface to DHCP
+  rather than restoring the old address statically. _Not yet verified on real hardware._
+
+### Removed
+
+- Unused `system:snapshot` / `adapters:changed` IPC surface left over from the M0 spike, along
+  with the three shared types that only existed to carry it.
+
+### Changed
+
+- The whole repo is Prettier-formatted, and `test/**` is now type-checked.
+
 ## [0.2.0] – 2026-07-23
 
 ### Added
