@@ -93,7 +93,11 @@ export function parseIoregUsbMacs(output: string): UsbMacEntry[] {
   return entries
 }
 
-/** Join on MAC: pair USB devices with hardware ports. Only matching USB dongles are returned. */
+/**
+ * Join on MAC: pair USB devices with hardware ports. Only matching USB dongles are returned,
+ * at most one per MAC — some drivers (e.g. Realtek RTL8153) publish IOMACAddress on more than one
+ * node of the ioreg tree, so parseIoregUsbMacs legitimately yields the same dongle twice.
+ */
 export function joinDarwinAdapters(ports: HardwarePort[], usb: UsbMacEntry[]): RawAdapter[] {
   const byMac = new Map<string, HardwarePort>()
   for (const port of ports) {
@@ -105,6 +109,7 @@ export function joinDarwinAdapters(ports: HardwarePort[], usb: UsbMacEntry[]): R
     }
   }
   const adapters: RawAdapter[] = []
+  const seen = new Set<string>()
   for (const entry of usb) {
     let key: string
     try {
@@ -112,8 +117,10 @@ export function joinDarwinAdapters(ports: HardwarePort[], usb: UsbMacEntry[]): R
     } catch {
       continue
     }
+    if (seen.has(key)) continue
     const port = byMac.get(key)
     if (!port) continue
+    seen.add(key)
     adapters.push({
       device: port.device,
       portName: port.portName,

@@ -64,7 +64,9 @@ function renderSelector(): string {
   if (dongles.length <= 1) return ''
   return `<div class="selector">${dongles
     .map((d, i) => {
-      const name = d.chipset ? `${d.chipset.vendor} ${d.chipset.chipset}` : d.portName || d.device
+      // Lead with the device: it is the one thing guaranteed unique, so two dongles of the same
+      // model stay tellable apart. The vendor is dropped — the card below spells it out in full.
+      const name = `${d.device} · ${d.chipset ? d.chipset.chipset : d.portName || 'USB Ethernet'}`
       return `<span class="chip${i === selected ? ' active' : ''}">${escapeHtml(name)}</span>`
     })
     .join('')}<span class="selector-hint">↑ ↓ switch</span></div>`

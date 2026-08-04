@@ -15,9 +15,17 @@ All notable changes are documented here. The format follows
 - Screenshots in the README (`docs/screenshot*.png`).
 - [`docs/BACKLOG.md`](docs/BACKLOG.md) — known gaps with the evidence behind each, linked from
   CONTRIBUTING.
+- [`AGENTS.md`](AGENTS.md) — working notes for automated contributors, including how to drive and
+  screenshot the app on macOS without verifying against a stale Electron instance.
 
 ### Fixed
 
+- macOS: two dongles no longer show up as three. Some drivers (Realtek RTL8153) publish
+  `IOMACAddress` on more than one node of the `ioreg` tree, so the same dongle was emitted twice
+  and `joinDarwinAdapters` had no dedup — the ASIX used for development publishes it once, which
+  is why this only surfaced with a second dongle attached.
+- The dongle selector chips lead with the device name (`en9 · AX88179 / AX88179A`), so two dongles
+  of the same model can be told apart. They are also shorter, so the selector stops wrapping.
 - A dongle plugged in **without a network cable** is now detected. The hotplug poll watched
   `os.networkInterfaces()`, which omits interfaces that have no address — so a cable-less dongle
   (and its removal) never moved the signature. The real enumeration now also runs every ~4.5 s.
