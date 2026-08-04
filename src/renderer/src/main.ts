@@ -185,7 +185,8 @@ function renderPanel(): string {
       const detail =
         p.mode === 'dhcp' ? 'DHCP' : `static ${p.ip ?? ''}${p.cidr != null ? `/${p.cidr}` : ''}`
       return `<li class="profile${i === profileSel ? ' sel' : ''}">
-        <span class="pn">${i + 1}. ${escapeHtml(p.name)}</span>
+        <span class="pi">${i + 1}</span>
+        <span class="pn">${escapeHtml(p.name)}</span>
         <span class="pd">${escapeHtml(detail)}</span>
       </li>`
     })

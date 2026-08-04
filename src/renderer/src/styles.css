@@ -270,16 +270,21 @@ body {
 
 .profiles {
   list-style: none;
+  /* The global reset clears margin but not padding, so a <ul> keeps its default
+     padding-inline-start: 40px — that indent pushed the rows out of line with the
+     section title above them. */
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .profile {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1.75em 1fr auto;
+  align-items: baseline;
   gap: 12px;
-  padding: 8px 10px;
+  padding: 11px 12px;
   border-radius: 8px;
   border: 1px solid transparent;
   font-size: 14px;
@@ -288,6 +293,22 @@ body {
 .profile.sel {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* The index doubles as the key you press to apply it, so it is drawn like the keycaps
+   in the hint lines. */
+.profile .pi {
+  color: var(--muted);
+  background: var(--dim);
+  border-radius: 5px;
+  padding: 2px 0;
+  font-size: 12px;
+  text-align: center;
+  font-variant: tabular-nums;
+}
+
+.profile.sel .pi {
+  color: var(--text);
 }
 
 .profile .pd {
