@@ -34,6 +34,38 @@ describe('parseProfiles', () => {
   it('returns defaults on broken JSON', () => {
     expect(parseProfiles('not json')).toEqual(DEFAULT_PROFILES)
   })
+
+  // These values reach an elevated command line (netsh on Windows takes them unquoted), so a
+  // hand-edited profiles.json must not survive the load.
+  it('keeps a fully populated, well-formed profile', () => {
+    const good = {
+      id: 'lab',
+      name: 'Lab',
+      mode: 'static',
+      ip: '10.0.0.50',
+      cidr: 24,
+      gateway: '10.0.0.1',
+      dns: ['1.1.1.1', '8.8.8.8'],
+      macOverride: '02:11:22:33:44:55'
+    }
+    expect(parseProfiles(JSON.stringify([good])).some((p) => p.id === 'lab')).toBe(true)
+  })
+
+  it('drops profiles whose optional fields are malformed', () => {
+    const base = { id: 'x', name: 'X', mode: 'static' }
+    const bad = [
+      { ...base, ip: '10.0.0.50; calc' },
+      { ...base, gateway: '999.1.1.1' },
+      { ...base, cidr: 33 },
+      { ...base, cidr: '24' },
+      { ...base, dns: ['1.1.1.1', 'evil'] },
+      { ...base, dns: '1.1.1.1' },
+      { ...base, macOverride: 'not-a-mac' }
+    ]
+    for (const profile of bad) {
+      expect(parseProfiles(JSON.stringify([profile]))).toEqual(DEFAULT_PROFILES)
+    }
+  })
 })
 
 describe('upsert/remove', () => {

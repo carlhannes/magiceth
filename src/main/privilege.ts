@@ -5,7 +5,7 @@ import type { RunResult } from './util/run-command'
 // and later by reconfig (M4). Read-only diagnostics never need this.
 //
 // NOTE: the actual password prompt cannot be unit-tested — the pure parts
-// (shQuote, command building) are tested, the rest is verified live (spike).
+// (the escaping helpers below, command building) are tested, the rest is verified live (spike).
 
 /** Safely sh-quote an argument (for shell commands that must go through a shell during elevation). */
 export function shQuote(arg: string): string {
@@ -15,6 +15,16 @@ export function shQuote(arg: string): string {
 /** Escape a string to be embedded in an AppleScript string literal. */
 export function appleScriptEscape(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+/**
+ * Escape a value to be embedded in a PowerShell double-quoted string ("…").
+ * PowerShell expands $var and $(…) inside "…" and uses the backtick as its escape
+ * character, so all three must be neutralised. Backtick first — otherwise we would
+ * escape the escapes we just added.
+ */
+export function psEscapeDouble(value: string): string {
+  return value.replace(/`/g, '``').replace(/\$/g, '`$').replace(/"/g, '`"')
 }
 
 /** Run a complete shell command line with elevated privileges (GUI password prompt). */

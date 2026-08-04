@@ -6,6 +6,7 @@ import {
 } from '../src/main/platform/darwin'
 import { linuxSetMacScript, linuxProfileScript } from '../src/main/platform/linux'
 import { winSetMacScript, winProfileScript } from '../src/main/platform/win32'
+import { psEscapeDouble } from '../src/main/privilege'
 import type { Profile } from '../src/shared/types'
 
 const staticProfile: Profile = {
@@ -80,5 +81,25 @@ describe('Windows reconfig scripts', () => {
       'netsh interface ip set address name="Ethernet 3" static 10.0.0.50 255.255.255.0 10.0.0.1'
     )
     expect(s).toContain('netsh interface ip set dns name="Ethernet 3" static 1.1.1.1')
+  })
+
+  // The adapter name is renameable and ends up inside PowerShell "…" strings, which expand
+  // $var/$(…) and treat ` as the escape character. Ordinary names must come out untouched.
+  it('leaves ordinary adapter names byte-identical', () => {
+    expect(psEscapeDouble('Ethernet 3')).toBe('Ethernet 3')
+    expect(psEscapeDouble('Wi-Fi 2 (USB)')).toBe('Wi-Fi 2 (USB)')
+  })
+
+  it('escapes PowerShell metacharacters in the adapter name', () => {
+    // Eth"3`$x -> the literal backtick doubles first, so the escape added for $ makes three.
+    // PowerShell reads `" as ", `` as ` and `$ as $, giving the original name back.
+    expect(psEscapeDouble('Eth"3`$x')).toBe('Eth`"3```$x')
+    expect(psEscapeDouble('$(whoami)')).toBe('`$(whoami)')
+
+    const mac = winSetMacScript('Eth"3`$x', '02:11:22:33:44:55')
+    expect(mac).toContain('Restart-NetAdapter -Name "Eth`"3```$x"')
+
+    const profile = winProfileScript('$(whoami)', dhcpProfile)
+    expect(profile).toContain('netsh interface ip set address name="`$(whoami)" source=dhcp')
   })
 })

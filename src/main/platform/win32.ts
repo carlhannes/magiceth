@@ -1,6 +1,7 @@
 import { run } from '../util/run-command'
 import { normalizeMac } from '../../shared/mac'
 import { cidrToDotted } from '../../shared/net'
+import { psEscapeDouble } from '../privilege'
 import type { ElevatedPlan } from '../privilege'
 import type { PingOptions, PingSpec, PlatformOps, RawAdapter } from './index'
 import type { NetInfo, Profile } from '../../shared/types'
@@ -140,29 +141,34 @@ function pingCommand(target: string, opts: PingOptions): PingSpec {
 
 // --- Active control (M4) — documented (PowerShell/netsh), verify on real hardware. ---
 // The scripts are base64-encoded before execution (runElevatedPlan) so quotes are harmless.
+// The adapter name is user-renameable and lands inside PowerShell "…" strings, so it goes
+// through psEscapeDouble — ordinary names ("Ethernet 3") come out byte-identical.
+// The IP fields come from a profile that parseProfiles has already format-validated.
 
 export function winSetMacScript(device: string, mac: string): string {
   const bare = mac.replace(/[^0-9a-fA-F]/g, '').toUpperCase()
+  const dev = psEscapeDouble(device)
   // Requires the driver to expose the NetworkAddress property (most USB NICs do).
   return (
-    `Set-NetAdapterAdvancedProperty -Name "${device}" -RegistryKeyword "NetworkAddress" ` +
-    `-RegistryValue "${bare}" -NoRestart; Restart-NetAdapter -Name "${device}"`
+    `Set-NetAdapterAdvancedProperty -Name "${dev}" -RegistryKeyword "NetworkAddress" ` +
+    `-RegistryValue "${bare}" -NoRestart; Restart-NetAdapter -Name "${dev}"`
   )
 }
 
 export function winProfileScript(device: string, profile: Profile): string {
+  const dev = psEscapeDouble(device)
   const cmds: string[] = []
   if (profile.macOverride) cmds.push(winSetMacScript(device, profile.macOverride))
   if (profile.mode === 'dhcp') {
-    cmds.push(`netsh interface ip set address name="${device}" source=dhcp`)
-    cmds.push(`netsh interface ip set dns name="${device}" source=dhcp`)
+    cmds.push(`netsh interface ip set address name="${dev}" source=dhcp`)
+    cmds.push(`netsh interface ip set dns name="${dev}" source=dhcp`)
   } else {
     const mask = cidrToDotted(profile.cidr ?? 24)
     cmds.push(
-      `netsh interface ip set address name="${device}" static ${profile.ip ?? ''} ${mask} ${profile.gateway ?? ''}`
+      `netsh interface ip set address name="${dev}" static ${profile.ip ?? ''} ${mask} ${profile.gateway ?? ''}`
     )
     if (profile.dns && profile.dns.length > 0) {
-      cmds.push(`netsh interface ip set dns name="${device}" static ${profile.dns[0]}`)
+      cmds.push(`netsh interface ip set dns name="${dev}" static ${profile.dns[0]}`)
     }
   }
   return cmds.join('; ')
