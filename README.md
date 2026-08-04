@@ -16,7 +16,14 @@ up by the rack.
 Works on **Windows, macOS, and Linux** (arm64 + amd64). The tool is a thin Electron GUI that
 orchestrates the OS's own network commands — no custom drivers, no background service.
 
-<!-- TODO: add a screenshot here, e.g. docs/screenshot.png -->
+<p align="center">
+  <img src="docs/screenshot.png" alt="magiceth diagnosing a network port" width="420">
+</p>
+
+<p align="center">
+  <em>A port with no DHCP server: link is up at 1 Gbit/s full duplex, but the address is a
+  self-assigned 169.254 one and nothing answers — diagnosed without typing a command.</em>
+</p>
 
 ---
 
@@ -35,6 +42,10 @@ Most USB-ethernet dongles are built on a handful of chipsets. `magiceth` recogni
 Realtek RTL8153/8152/8156, Microchip/SMSC LAN7500/7800, and Apple's USB adapter. Unknown dongles
 usually work anyway via the OS's own driver — press `I` for their raw USB IDs, which is exactly
 what a "please add this chipset" issue or PR needs.
+
+<p align="center">
+  <img src="docs/screenshot-chipset.png" alt="The chipset sub-view, opened with I" width="420">
+</p>
 
 ## Platform status
 
@@ -83,6 +94,10 @@ diagnostics are shown automatically. Everything is controlled from the keyboard:
 | `Backspace`       | Delete the selected profile                                            |
 | `S`               | Save the current config as a profile                                   |
 | `U`               | Undo the last change                                                   |
+
+<p align="center">
+  <img src="docs/screenshot-profiles.png" alt="The profile panel, opened with P" width="420">
+</p>
 
 ### Privileged actions
 
