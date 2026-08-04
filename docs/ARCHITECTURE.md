@@ -9,12 +9,12 @@ risk, and code that can still be understood long afterwards.
 
 Electron provides three contexts; we keep a strict separation of responsibilities between them:
 
-| Context | Source | Responsibility |
-|---|---|---|
-| **Main** (Node) | `src/main/` | Runs OS commands, parses output, all business logic. Registers IPC. |
-| **Preload** | `src/preload/index.ts` | Exposes a small, typed API on `window.api` via `contextBridge`. |
-| **Renderer** | `src/renderer/` | One-handed single-screen dashboard (vanilla TS). No Node access. |
-| **Shared** | `src/shared/` | Pure types and helpers used by multiple contexts. |
+| Context         | Source                 | Responsibility                                                      |
+| --------------- | ---------------------- | ------------------------------------------------------------------- |
+| **Main** (Node) | `src/main/`            | Runs OS commands, parses output, all business logic. Registers IPC. |
+| **Preload**     | `src/preload/index.ts` | Exposes a small, typed API on `window.api` via `contextBridge`.     |
+| **Renderer**    | `src/renderer/`        | One-handed single-screen dashboard (vanilla TS). No Node access.    |
+| **Shared**      | `src/shared/`          | Pure types and helpers used by multiple contexts.                   |
 
 Security settings (in `src/main/index.ts`): `contextIsolation: true`, `nodeIntegration: false`,
 `sandbox: false` (required for the preload's `contextBridge`), plus a CSP in `index.html`. The
@@ -63,13 +63,13 @@ Each capability is a platform-independent interface in `capabilities/` that dele
 (arguments as an array, **no shell**) — which makes quoting/injection a non-issue — with a
 timeout and `windowsHide`.
 
-| Module | Privileges | What it does |
-|---|---|---|
-| `adapters` | None | Enumerates USB dongles, looks up the chipset via `chipsets.json`. |
-| `diagnostics` → `probe` | None | Reads netinfo and runs gateway/internet ping + DNS test in parallel. |
-| `discover` | Root/admin | Passive LLDP/CDP capture via `tcpdump`. Optional; degrades gracefully. |
-| `reconfig` | Root/admin | Rolls MAC, applies DHCP/static profile, undoes. |
-| `profiles` / `profiles-core` | None | Reads/writes profile JSON; pure CRUD operations. |
+| Module                       | Privileges | What it does                                                           |
+| ---------------------------- | ---------- | ---------------------------------------------------------------------- |
+| `adapters`                   | None       | Enumerates USB dongles, looks up the chipset via `chipsets.json`.      |
+| `diagnostics` → `probe`      | None       | Reads netinfo and runs gateway/internet ping + DNS test in parallel.   |
+| `discover`                   | Root/admin | Passive LLDP/CDP capture via `tcpdump`. Optional; degrades gracefully. |
+| `reconfig`                   | Root/admin | Rolls MAC, applies DHCP/static profile, undoes.                        |
+| `profiles` / `profiles-core` | None       | Reads/writes profile JSON; pure CRUD operations.                       |
 
 ## Platform layer (`PlatformOps`)
 
@@ -80,7 +80,7 @@ picks the right one based on `process.platform`:
 interface PlatformOps {
   enumerateAdapters(): Promise<RawAdapter[]>
   readNetInfo(device: string): Promise<NetInfo>
-  pingCommand(target, opts): PingSpec          // flags differ per OS (-b/-I/-S)
+  pingCommand(target, opts): PingSpec // flags differ per OS (-b/-I/-S)
   buildSetMacPlan(device, mac): Promise<ElevatedPlan>
   buildProfilePlan(device, profile): Promise<ElevatedPlan>
 }
@@ -151,7 +151,7 @@ build time (`__APP_VERSION__` via Vite `define`) and shown in the topbar.
 
 ## Test philosophy
 
-- **Pure functions are unit-tested** (`test/`, vitest) — parsers are fed *real* captured
+- **Pure functions are unit-tested** (`test/`, vitest) — parsers are fed _real_ captured
   command output (macOS) or documented format (Linux/Windows) and asserted against typed
   results. This is the deterministic, platform-independent test surface.
 - **Platform implementations are verified on real hardware** ("spikes") — especially the

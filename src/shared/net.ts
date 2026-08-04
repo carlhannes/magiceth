@@ -10,7 +10,10 @@ export function cidrToDotted(prefix: number): string {
 export function dottedToCidr(mask: string): number {
   return mask
     .split('.')
-    .reduce((bits, octet) => bits + ((parseInt(octet, 10) & 0xff).toString(2).match(/1/g)?.length ?? 0), 0)
+    .reduce(
+      (bits, octet) => bits + ((parseInt(octet, 10) & 0xff).toString(2).match(/1/g)?.length ?? 0),
+      0
+    )
 }
 
 /** True if the string is a valid IPv4 address (four octets 0–255). */

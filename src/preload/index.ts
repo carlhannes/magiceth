@@ -26,8 +26,10 @@ const api: MagicethApi = {
   },
   runDiagnostics: (device: string): Promise<Diagnostics> =>
     ipcRenderer.invoke('diagnostics:run', device),
-  discover: (device: string): Promise<DiscoveryResult> => ipcRenderer.invoke('discover:run', device),
-  rollMac: (device: string): Promise<ReconfigResult> => ipcRenderer.invoke('reconfig:rollMac', device),
+  discover: (device: string): Promise<DiscoveryResult> =>
+    ipcRenderer.invoke('discover:run', device),
+  rollMac: (device: string): Promise<ReconfigResult> =>
+    ipcRenderer.invoke('reconfig:rollMac', device),
   applyProfile: (device: string, profileId: string): Promise<ReconfigResult> =>
     ipcRenderer.invoke('reconfig:applyProfile', device, profileId),
   undo: (device: string): Promise<ReconfigResult> => ipcRenderer.invoke('reconfig:undo', device),
@@ -35,7 +37,8 @@ const api: MagicethApi = {
   saveCurrentAsProfile: (device: string, name: string): Promise<Profile[]> =>
     ipcRenderer.invoke('profiles:saveCurrent', device, name),
   deleteProfile: (id: string): Promise<Profile[]> => ipcRenderer.invoke('profiles:delete', id),
-  saveProfile: (profile: Profile): Promise<Profile[]> => ipcRenderer.invoke('profiles:save', profile)
+  saveProfile: (profile: Profile): Promise<Profile[]> =>
+    ipcRenderer.invoke('profiles:save', profile)
 }
 
 contextBridge.exposeInMainWorld('api', api)

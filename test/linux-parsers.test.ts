@@ -49,7 +49,9 @@ describe('udevToRawAdapter', () => {
   })
 
   it('returns null for non-USB interfaces', () => {
-    expect(udevToRawAdapter('eth0', '00:11:22:33:44:66', parseUdevProperties(UDEV_BUILTIN))).toBeNull()
+    expect(
+      udevToRawAdapter('eth0', '00:11:22:33:44:66', parseUdevProperties(UDEV_BUILTIN))
+    ).toBeNull()
   })
 })
 

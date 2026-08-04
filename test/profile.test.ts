@@ -38,7 +38,12 @@ describe('validateProfileDraft', () => {
   })
 
   it('accepts a netmask instead of a prefix', () => {
-    const r = validateProfileDraft({ name: 'X', mode: 'static', ip: '10.0.0.5', cidr: '255.255.255.0' })
+    const r = validateProfileDraft({
+      name: 'X',
+      mode: 'static',
+      ip: '10.0.0.5',
+      cidr: '255.255.255.0'
+    })
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.profile.cidr).toBe(24)
   })

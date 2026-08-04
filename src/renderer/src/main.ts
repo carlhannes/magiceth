@@ -155,9 +155,7 @@ function renderPanel(): string {
   const items = profiles
     .map((p, i) => {
       const detail =
-        p.mode === 'dhcp'
-          ? 'DHCP'
-          : `static ${p.ip ?? ''}${p.cidr != null ? `/${p.cidr}` : ''}`
+        p.mode === 'dhcp' ? 'DHCP' : `static ${p.ip ?? ''}${p.cidr != null ? `/${p.cidr}` : ''}`
       return `<li class="profile${i === profileSel ? ' sel' : ''}">
         <span class="pn">${i + 1}. ${escapeHtml(p.name)}</span>
         <span class="pd">${escapeHtml(detail)}</span>
@@ -223,8 +221,13 @@ function renderEditor(): void {
   modeSel.addEventListener('change', () => {
     staticFields.classList.toggle('hidden', modeSel.value !== 'static')
   })
-  ;(document.getElementById('f-save') as HTMLElement).addEventListener('click', () => void submitEditor())
-  ;(document.getElementById('f-cancel') as HTMLElement).addEventListener('click', () => closeEditor())
+  ;(document.getElementById('f-save') as HTMLElement).addEventListener(
+    'click',
+    () => void submitEditor()
+  )
+  ;(document.getElementById('f-cancel') as HTMLElement).addEventListener('click', () =>
+    closeEditor()
+  )
   ;(document.getElementById('f-name') as HTMLInputElement).focus()
 }
 
@@ -325,7 +328,11 @@ async function runReconfig(
   render()
   try {
     const res = await action()
-    notice = res.ok ? (res.newMac ? `${okMsg}: ${res.newMac}` : okMsg) : (res.message ?? 'The action failed')
+    notice = res.ok
+      ? res.newMac
+        ? `${okMsg}: ${res.newMac}`
+        : okMsg
+      : (res.message ?? 'The action failed')
   } catch (err) {
     notice = `Error: ${String(err)}`
   } finally {

@@ -70,10 +70,7 @@ describe('parseIoregUsbMacs', () => {
 
 describe('joinDarwinAdapters', () => {
   it('pairs USB device and hardware port via MAC', () => {
-    const adapters = joinDarwinAdapters(
-      parseHardwarePorts(NETWORKSETUP),
-      parseIoregUsbMacs(IOREG)
-    )
+    const adapters = joinDarwinAdapters(parseHardwarePorts(NETWORKSETUP), parseIoregUsbMacs(IOREG))
     expect(adapters).toEqual([
       {
         device: 'en9',

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { macSetMacScript, macProfileScript, parseNetworkServiceName } from '../src/main/platform/darwin'
+import {
+  macSetMacScript,
+  macProfileScript,
+  parseNetworkServiceName
+} from '../src/main/platform/darwin'
 import { linuxSetMacScript, linuxProfileScript } from '../src/main/platform/linux'
 import { winSetMacScript, winProfileScript } from '../src/main/platform/win32'
 import type { Profile } from '../src/shared/types'
@@ -30,7 +34,9 @@ describe('macOS reconfig scripts', () => {
   })
 
   it('builds MAC script', () => {
-    expect(macSetMacScript('en9', '02:11:22:33:44:55')).toBe("ifconfig 'en9' ether '02:11:22:33:44:55'")
+    expect(macSetMacScript('en9', '02:11:22:33:44:55')).toBe(
+      "ifconfig 'en9' ether '02:11:22:33:44:55'"
+    )
   })
 
   it('builds static profile script with netmask and DNS', () => {
@@ -40,7 +46,9 @@ describe('macOS reconfig scripts', () => {
   })
 
   it('builds DHCP profile script', () => {
-    expect(macProfileScript('en9', 'AX88179A', dhcpProfile)).toBe("networksetup -setdhcp 'AX88179A'")
+    expect(macProfileScript('en9', 'AX88179A', dhcpProfile)).toBe(
+      "networksetup -setdhcp 'AX88179A'"
+    )
   })
 })
 
@@ -68,7 +76,9 @@ describe('Windows reconfig scripts', () => {
 
   it('builds static profile script (netsh)', () => {
     const s = winProfileScript('Ethernet 3', staticProfile)
-    expect(s).toContain('netsh interface ip set address name="Ethernet 3" static 10.0.0.50 255.255.255.0 10.0.0.1')
+    expect(s).toContain(
+      'netsh interface ip set address name="Ethernet 3" static 10.0.0.50 255.255.255.0 10.0.0.1'
+    )
     expect(s).toContain('netsh interface ip set dns name="Ethernet 3" static 1.1.1.1')
   })
 })

@@ -9,12 +9,14 @@ All notable changes are documented here. The format follows
 ## [0.2.0] – 2026-07-23
 
 ### Added
+
 - Inline profile management: create (`N`), edit (`E`), and delete (`Backspace`) profiles directly in
   the profile panel, with a form filled in using the mouse. Field validation (IPv4, prefix/netmask,
   DNS, MAC) via a shared, tested validator.
 - The version number is shown in the app's topbar (injected at build time from `package.json`).
 
 ### Fixed
+
 - Windows: dongle identification read the wrong casing on the `Get-NetAdapter` property
   (`PnpDeviceID` → `PNPDeviceID`), which meant USB dongles weren't detected. All
   PowerShell JSON keys are now set deterministically via calculated properties.
@@ -22,6 +24,7 @@ All notable changes are documented here. The format follows
 ## [0.1.0] – 2026-07-23
 
 ### Added
+
 - **Dongle identification** via USB `VID:PID` against a built-in chipset database (`chipsets.json`).
 - **Diagnostics**: IP/mask, gateway, DNS, full DHCP info, link speed/duplex, and MAC — run
   automatically on link.

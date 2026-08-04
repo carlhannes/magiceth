@@ -117,7 +117,8 @@ export function parseWinNetInfo(json: string, device: string): NetInfo {
 
 async function readNetInfo(device: string): Promise<NetInfo> {
   const dev = device.replace(/'/g, "''")
-  const script = `$ErrorActionPreference='SilentlyContinue';$dev='${dev}';` +
+  const script =
+    `$ErrorActionPreference='SilentlyContinue';$dev='${dev}';` +
     `$a=Get-NetAdapter -Name $dev;` +
     `$ip=Get-NetIPAddress -InterfaceAlias $dev -AddressFamily IPv4 | Select-Object -First 1;` +
     `$gw=(Get-NetRoute -InterfaceAlias $dev -DestinationPrefix '0.0.0.0/0' | Select-Object -First 1).NextHop;` +

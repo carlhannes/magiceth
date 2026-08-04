@@ -23,7 +23,9 @@ const net: NetInfo = {
 
 describe('parseProfiles', () => {
   it('always adds the DHCP default and filters out invalid ones', () => {
-    const list = parseProfiles(JSON.stringify([{ id: 'x', name: 'X', mode: 'static' }, { junk: true }]))
+    const list = parseProfiles(
+      JSON.stringify([{ id: 'x', name: 'X', mode: 'static' }, { junk: true }])
+    )
     expect(list.some((p) => p.id === 'dhcp')).toBe(true)
     expect(list.some((p) => p.id === 'x')).toBe(true)
     expect(list).toHaveLength(2)
@@ -45,7 +47,10 @@ describe('upsert/remove', () => {
   })
 
   it('deletes user profiles but not the default DHCP', () => {
-    const list: Profile[] = [{ id: 'dhcp', name: 'DHCP', mode: 'dhcp' }, { id: 'a', name: 'A', mode: 'dhcp' }]
+    const list: Profile[] = [
+      { id: 'dhcp', name: 'DHCP', mode: 'dhcp' },
+      { id: 'a', name: 'A', mode: 'dhcp' }
+    ]
     expect(removeProfile(list, 'a')).toHaveLength(1)
     expect(removeProfile(list, 'dhcp')).toHaveLength(2)
   })

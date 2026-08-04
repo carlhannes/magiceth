@@ -15,7 +15,7 @@ it's running on Windows**, so we want to know what works and what doesn't.
 
 - All **reads/diagnostics** (detecting the dongle, showing IP/DHCP/gateway/DNS, ping, DNS test)
   run **without admin** — no UAC dialog.
-- The app **asks for admin itself, per action**, only when you *change* the adapter: `M` (roll MAC),
+- The app **asks for admin itself, per action**, only when you _change_ the adapter: `M` (roll MAC),
   apply a profile, `U` (undo). A **UAC dialog then pops up → click Yes**. One prompt per action.
 - So you don't need to launch as administrator. (If you want to avoid repeated prompts you can
   right-click → "Run as administrator", but for the test it's enough to run it normally.)
@@ -23,12 +23,14 @@ it's running on Windows**, so we want to know what works and what doesn't.
 ## What you're testing
 
 **Without admin (should just work):**
+
 - Plug in a USB-ethernet dongle → it should show up and be identified (chipset/vendor).
 - Connect the dongle to a network port → IP, netmask, gateway, DNS, DHCP, and link speed
   should show automatically, plus ping to the gateway and the internet (1.1.1.1 / 8.8.8.8) and a DNS test.
 - Press **R** to re-run.
 
 **Changes the adapter (UAC dialog per action — optional to test):**
+
 - **M** = randomize a new MAC address. **U** = undo.
 - **P** = profiles → **1–9**/**Enter** applies DHCP or a static IP. **S** = save the current one as a profile.
 - In the profile panel: **N** = new profile, **E** = edit the selected one (the form is filled in with the mouse,

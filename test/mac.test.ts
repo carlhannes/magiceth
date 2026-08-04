@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeMac, randomLocallyAdministeredMac, isLocallyAdministered } from '../src/shared/mac'
+import {
+  normalizeMac,
+  randomLocallyAdministeredMac,
+  isLocallyAdministered
+} from '../src/shared/mac'
 
 describe('normalizeMac', () => {
   it('normalizes common formats', () => {

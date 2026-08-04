@@ -8,7 +8,11 @@ export const DEFAULT_PROFILES: Profile[] = [{ id: 'dhcp', name: 'DHCP', mode: 'd
 function isValid(p: unknown): p is Profile {
   if (typeof p !== 'object' || p === null) return false
   const o = p as Record<string, unknown>
-  return typeof o.id === 'string' && typeof o.name === 'string' && (o.mode === 'dhcp' || o.mode === 'static')
+  return (
+    typeof o.id === 'string' &&
+    typeof o.name === 'string' &&
+    (o.mode === 'dhcp' || o.mode === 'static')
+  )
 }
 
 /** Parse and validate profiles from stored JSON. Ensure the DHCP default always exists. */

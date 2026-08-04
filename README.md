@@ -24,8 +24,8 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 
 - **Identification** — detects the dongle on insertion and shows chipset + capabilities (VID:PID is looked up against a built-in database). Deltaco, Plexgear, Saitech, Apple, UGreen, and others are resellers — the underlying chipset (ASIX, Realtek, …) is what matters.
 - **Diagnostics** — IP/mask, gateway, DNS, full DHCP info (server, lease, domain), link speed/duplex, and MAC. Runs automatically as soon as the dongle gets link.
-- **Connectivity test** — pings the gateway + `1.1.1.1`/`8.8.8.8` *bound to the dongle* (not via Wi-Fi), plus a DNS test against the DHCP-assigned server.
-- **VLAN / switch port** *(optional)* — passive LLDP/CDP listening via `tcpdump` shows switch name, port, VLAN, and management IP.
+- **Connectivity test** — pings the gateway + `1.1.1.1`/`8.8.8.8` _bound to the dongle_ (not via Wi-Fi), plus a DNS test against the DHCP-assigned server.
+- **VLAN / switch port** _(optional)_ — passive LLDP/CDP listening via `tcpdump` shows switch name, port, VLAN, and management IP.
 - **Active control** — roll a new (locally-administered) MAC, switch between DHCP and static profiles, create/edit profiles inline, and undo the last change.
 
 ## Hardware support
@@ -37,20 +37,22 @@ are still shown with raw USB info and usually work via the OS's own driver.
 
 ## Platform status
 
-| Platform | Status |
-|---|---|
-| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified |
-| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware** |
+| Platform                  | Status                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
+| **macOS** (arm64/amd64)   | Read-only diagnostics live-verified; privileged actions manually verified                         |
+| **Linux** (arm64/amd64)   | Implemented against documented command formats; parsers unit-tested — **verify on real hardware** |
 | **Windows** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware** |
 
 ## Installation
 
 ### Prebuilt binary
+
 Download the latest build for your platform from [Releases](https://github.com/carlhannes/magiceth/releases).
 The builds are **unsigned** (internal tool) — see [SECURITY.md](SECURITY.md) regarding warnings from
 Gatekeeper/SmartScreen.
 
 ### From source
+
 ```sh
 git clone https://github.com/carlhannes/magiceth.git
 cd magiceth
@@ -63,21 +65,22 @@ npm run dev        # starts the app in development mode
 Launch the app (does **not** require admin). With a dongle plugged in, identification and
 diagnostics are shown automatically. Everything is controlled from the keyboard:
 
-| Key | Action |
-|---|---|
-| `↑` `↓` | Switch selected dongle (or navigate the profile panel) |
-| `R` / space | Re-run diagnostics |
-| `C` | Listen for VLAN/switch (LLDP/CDP) |
-| `M` | Roll a new MAC address |
-| `P` | Open/close the profile panel |
-| `1`–`9` / `Enter` | Apply a profile to the adapter |
-| `N` / `E` | New / edit the selected profile (the form is filled in with the mouse) |
-| `Backspace` | Delete the selected profile |
-| `S` | Save the current config as a profile |
-| `U` | Undo the last change |
+| Key               | Action                                                                 |
+| ----------------- | ---------------------------------------------------------------------- |
+| `↑` `↓`           | Switch selected dongle (or navigate the profile panel)                 |
+| `R` / space       | Re-run diagnostics                                                     |
+| `C`               | Listen for VLAN/switch (LLDP/CDP)                                      |
+| `M`               | Roll a new MAC address                                                 |
+| `P`               | Open/close the profile panel                                           |
+| `1`–`9` / `Enter` | Apply a profile to the adapter                                         |
+| `N` / `E`         | New / edit the selected profile (the form is filled in with the mouse) |
+| `Backspace`       | Delete the selected profile                                            |
+| `S`               | Save the current config as a profile                                   |
+| `U`               | Undo the last change                                                   |
 
 ### Privileged actions
-Reads/diagnostics run unprivileged. Actions that *change* the adapter (MAC, IP config) or
+
+Reads/diagnostics run unprivileged. Actions that _change_ the adapter (MAC, IP config) or
 capture packets (LLDP/CDP) require admin/root and request it **per action** via an OS prompt
 (macOS password dialog, Linux `pkexec`, Windows UAC). See [SECURITY.md](SECURITY.md).
 
@@ -92,6 +95,7 @@ npm test           # vitest (pure parsers/functions)
 ```
 
 Unsigned, unpacked Windows build from any platform (no Wine):
+
 ```sh
 npx electron-builder --win --x64 --dir
 ```

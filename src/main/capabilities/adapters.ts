@@ -11,7 +11,10 @@ interface ChipsetDb {
 const db = chipsetsRaw as unknown as ChipsetDb
 
 /** Look up a chipset in the database; falls back to a known vendor if the exact chipset is missing. */
-export function resolveChipset(vendorId?: string, productId?: string): {
+export function resolveChipset(
+  vendorId?: string,
+  productId?: string
+): {
   chipset?: ChipsetInfo
   known: boolean
 } {

@@ -18,9 +18,11 @@ dialog then pops up (osascript) — or **(B)** manually in the terminal to isola
 **In the app:** start `npm run dev`, press **C**, approve the password prompt. Wait up to 35 s.
 
 **Manually (to see raw output + validate the parser):**
+
 ```sh
 sudo sh -c 'tcpdump -l -i en9 -nn -v -s0 "ether proto 0x88cc or ether dst 01:00:0c:cc:cc:cc" & p=$!; sleep 40; kill $p 2>/dev/null'
 ```
+
 **Expected:** lines with `LLDP` and/or `CDPv2` containing switch name, port, and VLAN.
 **If empty:** many access ports don't send LLDP/CDP — in that case the app correctly shows "none heard".
 Feel free to paste the raw output to me and I'll fine-tune the parser against your switch.
@@ -29,15 +31,17 @@ Feel free to paste the raw output to me and I'll fine-tune the parser against yo
 
 ## 2. MAC rolling (M4)
 
-**In the app:** press **M**. The app randomizes a *locally-administered* MAC, sets it, and reads
+**In the app:** press **M**. The app randomizes a _locally-administered_ MAC, sets it, and reads
 it back to verify. **U** undoes (restores the previous MAC).
 
 **Manually:**
+
 ```sh
 ifconfig en9 | grep ether                 # note the current MAC
 sudo ifconfig en9 ether 02:11:22:33:44:55  # set a test address
 ifconfig en9 | grep ether                 # verify it changed
 ```
+
 **Expected:** the second `grep ether` shows `02:11:22:33:44:55`.
 **If unchanged:** the ASIX chipset/OS may not allow a MAC change while the link is up —
 try unplugging/re-plugging, or it's a known limitation (the app then shows a clear warning).
@@ -51,6 +55,7 @@ try unplugging/re-plugging, or it's a known limitation (the app then shows a cle
 applies. **S** saves the current config as a static bookmark. **U** undoes the last change.
 
 **Manually (macOS uses the service name, not `en9` — for your dongle it's `AX88179A`):**
+
 ```sh
 # Save the current state first:
 networksetup -getinfo "AX88179A"
@@ -64,6 +69,7 @@ networksetup -getinfo "AX88179A"          # verify
 sudo networksetup -setdhcp "AX88179A"
 networksetup -getinfo "AX88179A"          # verify that a DHCP address comes back
 ```
+
 **Expected:** IP/gateway/DNS change according to the commands; DHCP mode fetches a new address.
 
 ---

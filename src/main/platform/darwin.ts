@@ -283,7 +283,9 @@ export function macProfileScript(device: string, service: string, profile: Profi
       `networksetup -setmanual ${shQuote(service)} ${shQuote(profile.ip ?? '')} ${shQuote(mask)} ${shQuote(profile.gateway ?? '')}`
     )
     if (profile.dns && profile.dns.length > 0) {
-      cmds.push(`networksetup -setdnsservers ${shQuote(service)} ${profile.dns.map(shQuote).join(' ')}`)
+      cmds.push(
+        `networksetup -setdnsservers ${shQuote(service)} ${profile.dns.map(shQuote).join(' ')}`
+      )
     }
   }
   return cmds.join(' && ')

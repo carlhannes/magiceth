@@ -6,7 +6,12 @@ import { listDongles } from './capabilities/adapters'
 import { runDiagnostics } from './capabilities/diagnostics'
 import { discover } from './capabilities/discover'
 import { applyProfile, rollMac, undo } from './capabilities/reconfig'
-import { deleteProfile, loadProfiles, saveCurrentAsProfile, saveProfile } from './capabilities/profiles'
+import {
+  deleteProfile,
+  loadProfiles,
+  saveCurrentAsProfile,
+  saveProfile
+} from './capabilities/profiles'
 import { getPlatform } from './platform'
 import type { Profile, ReconfigResult } from '../shared/types'
 
