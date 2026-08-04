@@ -12,15 +12,21 @@ export interface RunResult {
 
 export interface RunOptions {
   timeoutMs?: number
+  /**
+   * Signal used when timeoutMs is hit. Defaults to Node's SIGTERM, which most commands honour —
+   * but tcpdump does not while its BPF read is blocked, so anything that can sit idle on a capture
+   * must ask for SIGKILL or it survives the timeout as an orphan.
+   */
+  killSignal?: NodeJS.Signals
 }
 
 export function run(file: string, args: string[] = [], opts: RunOptions = {}): Promise<RunResult> {
-  const { timeoutMs = 8000 } = opts
+  const { timeoutMs = 8000, killSignal } = opts
   return new Promise((resolve) => {
     execFile(
       file,
       args,
-      { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
+      { timeout: timeoutMs, killSignal, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
       (err, stdout, stderr) => {
         const code =
           err && typeof (err as NodeJS.ErrnoException & { code?: number }).code === 'number'

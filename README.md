@@ -32,8 +32,12 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 - **Identification** — detects the dongle on insertion and shows chipset + capabilities (VID:PID is looked up against a built-in database). Press `I` for the chipset sub-view: max speed, VLAN support, the brands that resell it and the raw USB IDs. Deltaco, Plexgear, Saitech, Apple, UGreen, and others are resellers — the underlying chipset (ASIX, Realtek, …) is what matters.
 - **Diagnostics** — IP/mask, gateway, DNS, full DHCP info (server, lease, domain), link speed/duplex, and MAC. Runs automatically as soon as the dongle gets link.
 - **Connectivity test** — pings the gateway + `1.1.1.1`/`8.8.8.8` _bound to the dongle_ (not via Wi-Fi), plus a DNS test against the DHCP-assigned server.
-- **VLAN / switch port** _(optional, macOS/Linux)_ — passive LLDP/CDP listening via `tcpdump` shows switch name, port, VLAN, and management IP. Not implemented on Windows (it would need tshark + Npcap); the app says so instead of failing.
+- **Port survey / VLAN discovery** _(optional, macOS/Linux)_ — press `C` on an uplink and every 802.1Q VLAN carried on it is listed as it is discovered, with a frame count and the addressing seen inside each one. It reads the tags straight off the wire, so it works on **any** switch, managed or not — no LLDP required. When the switch does advertise, LLDP/CDP adds its name, port and management IP on top. Runs until you stop it. Not implemented on Windows (it would need tshark + Npcap); the app says so instead of failing. Measured behaviour and the evidence behind it: [docs/VLAN-FINDINGS.md](docs/VLAN-FINDINGS.md).
 - **Active control** — roll a new (locally-administered) MAC, switch between DHCP and static profiles, create/edit profiles inline, and undo the last change.
+
+<p align="center">
+  <img src="docs/screenshot-vlan.png" alt="The port survey listing every VLAN on a trunk, opened with C" width="420">
+</p>
 
 ## Hardware support
 
@@ -85,7 +89,7 @@ diagnostics are shown automatically. Everything is controlled from the keyboard:
 | ----------------- | ---------------------------------------------------------------------- |
 | `↑` `↓`           | Switch selected dongle (or navigate the profile panel)                 |
 | `R` / space       | Re-run diagnostics                                                     |
-| `C`               | Listen for VLAN/switch (LLDP/CDP)                                      |
+| `C`               | Start / stop the port survey (VLANs on the wire, LLDP/CDP)             |
 | `I`               | Open/close the chipset sub-view (capabilities + raw USB IDs)           |
 | `M`               | Roll a new MAC address                                                 |
 | `P`               | Open/close the profile panel                                           |

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import os from 'node:os'
 import { listDongles } from './capabilities/adapters'
 import { runDiagnostics } from './capabilities/diagnostics'
-import { discover } from './capabilities/discover'
+import { startSurvey, stopSurvey } from './capabilities/discover'
 import { applyProfile, rollMac, undo } from './capabilities/reconfig'
 import {
   deleteProfile,
@@ -109,7 +109,15 @@ function startHotplugPolling(): void {
 app.whenReady().then(() => {
   ipcMain.handle('dongles:list', () => listDongles())
   ipcMain.handle('diagnostics:run', (_event, device: string) => runDiagnostics(device))
-  ipcMain.handle('discover:run', (_event, device: string) => discover(device))
+  // The survey runs until stopped, pushing partial results as they accumulate.
+  ipcMain.handle('survey:start', (_event, device: string) =>
+    startSurvey(device, (result) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('survey:update', result)
+      }
+    })
+  )
+  ipcMain.handle('survey:stop', () => stopSurvey())
 
   // Profiles
   ipcMain.handle('profiles:list', () => loadProfiles())
@@ -138,6 +146,12 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+// Quitting mid-capture must not orphan a root tcpdump. The script has a hard cap as a backstop,
+// but stopping it here means the process is gone the moment the window is.
+app.on('before-quit', () => {
+  stopSurvey()
 })
 
 app.on('window-all-closed', () => {

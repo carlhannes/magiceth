@@ -19,8 +19,14 @@ const api: MagicethApi = {
   },
   runDiagnostics: (device: string): Promise<Diagnostics> =>
     ipcRenderer.invoke('diagnostics:run', device),
-  discover: (device: string): Promise<DiscoveryResult> =>
-    ipcRenderer.invoke('discover:run', device),
+  startSurvey: (device: string): Promise<DiscoveryResult> =>
+    ipcRenderer.invoke('survey:start', device),
+  stopSurvey: (): Promise<DiscoveryResult | null> => ipcRenderer.invoke('survey:stop'),
+  onSurveyUpdate: (cb: (result: DiscoveryResult) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: DiscoveryResult): void => cb(data)
+    ipcRenderer.on('survey:update', listener)
+    return () => ipcRenderer.removeListener('survey:update', listener)
+  },
   rollMac: (device: string): Promise<ReconfigResult> =>
     ipcRenderer.invoke('reconfig:rollMac', device),
   applyProfile: (device: string, profileId: string): Promise<ReconfigResult> =>

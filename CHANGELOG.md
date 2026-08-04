@@ -17,9 +17,28 @@ All notable changes are documented here. The format follows
   CONTRIBUTING.
 - [`AGENTS.md`](AGENTS.md) — working notes for automated contributors, including how to drive and
   screenshot the app on macOS without verifying against a stale Electron instance.
+- [`docs/VLAN-FINDINGS.md`](docs/VLAN-FINDINGS.md) — what the VLAN claims are actually worth,
+  measured on two dongles across an unmanaged switch. 802.1Q tagging is **confirmed** on both the
+  ASIX AX88179A and the Realtek RTL8153, so the `vlan: true` flags in `chipsets.json` are correct.
+  The LLDP parser now has a fixture captured off real hardware — `tcpdump` prints "TLV" in every
+  header and nests the port VLAN under an org-specific TLV, neither of which the hand-written
+  fixture showed.
+
+- **Port survey** (`C`) replaces the old LLDP/CDP listener. It captures until you stop it and lists
+  every 802.1Q VLAN on the port as it is discovered, with a frame count and the addresses seen
+  inside each — read straight off the wire, so it works on any switch rather than only on ones that
+  advertise. LLDP/CDP still contributes the switch name, port and management IP when offered. The
+  panel shows how long the capture has run, and says up front that a quiet VLAN can take ~30 s to
+  appear.
 
 ### Fixed
 
+- VLAN/switch discovery worked in no case at all, and leaked a root `tcpdump` on every attempt. The
+  capture was stopped with `kill`, but SIGTERM does not stop `tcpdump` while its BPF read is
+  blocked — so `wait` hung, `do shell script` never returned the output it had collected, the
+  `execFile` timeout handed back an empty string, and that became "none heard". Proven by running
+  the wrapper both ways with frames on the wire: with `kill` it never returned and left the process
+  alive; with `kill -9` it returned on time with the output intact. Every capture now uses SIGKILL.
 - macOS: two dongles no longer show up as three. Some drivers (Realtek RTL8153) publish
   `IOMACAddress` on more than one node of the `ioreg` tree, so the same dongle was emitted twice
   and `joinDarwinAdapters` had no dedup — the ASIX used for development publishes it once, which

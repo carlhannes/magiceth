@@ -5,6 +5,22 @@ and why it is still open — so picking one up does not mean starting the invest
 
 Small enough to fix in one PR unless noted. See [CONTRIBUTING.md](../CONTRIBUTING.md) first.
 
+## Port survey: gaps left after the rebuild
+
+The survey works and is verified against a synthetic trunk
+([VLAN-FINDINGS.md](VLAN-FINDINGS.md) §5). What is still open:
+
+- **Quitting mid-survey is untested.** `before-quit` writes the sentinel and the capture script caps
+  itself at 10 minutes, so a leak is bounded either way, but the path has never been exercised.
+- **No real managed switch has been seen.** In particular Cisco PVST+ sends a BPDU per VLAN every
+  2 s, which would enumerate an entire trunk — the parser has never met one.
+- **STP as a switch-identity fallback.** When LLDP is off, the root-bridge MAC in a BPDU still
+  identifies the switch. The frames are already being captured; only a parser is missing.
+- **Windows.** `discover()` returns `no-tool` there; it needs tshark + Npcap.
+- **Active VLAN probing** — tag an interface and try DHCP on it, to prove a VLAN is usable from this
+  port rather than merely present. Feasible: both dongles are confirmed to pass 802.1Q. It changes
+  real network config, so it wants its own design pass.
+
 ## Linux: static profiles silently drop DNS
 
 `linuxProfileScript` (`src/main/platform/linux.ts`) applies the address and default route for a

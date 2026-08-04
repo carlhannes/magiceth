@@ -140,26 +140,80 @@ function renderDiagnostics(d: Dongle): string {
     </article>`
 }
 
+/**
+ * Addresses observed inside a VLAN, condensed. Deliberately renders "10.20.0.x" and never a
+ * prefix length — a capture shows addresses, never netmasks, and "/24" would be a guess printed
+ * as a fact.
+ */
+function addressSummary(addresses: string[]): string {
+  if (addresses.length === 0) return ''
+  const prefixes = new Set(addresses.map((a) => a.split('.').slice(0, 3).join('.')))
+  if (prefixes.size === 1) return `${[...prefixes][0]}.x`
+  return addresses.slice(0, 2).join(', ')
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`
+}
+
+function clock(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
 function renderDiscovery(d: Dongle): string {
   const forThis = discovery && discoveryDevice === d.device ? discovery : null
+  const live = forThis?.running === true
   let inner: string
-  if (discovering && discoveryDevice === d.device) {
-    inner = `<p class="status-msg">Listening for LLDP/CDP… (up to 35 s)</p>`
-  } else if (!forThis) {
-    inner = `<p class="status-msg">Press <b>C</b> to listen for switch/VLAN.</p>`
-  } else if (forThis.status !== 'ok') {
+
+  if (!forThis) {
+    inner =
+      `<p class="status-msg">Press <b>C</b> to survey the port.</p>` +
+      `<p class="notes">Runs until you stop it. A busy trunk shows up in seconds, but a quiet VLAN only beacons every ~30 s — so give it half a minute before believing a port is untagged.</p>`
+  } else if (forThis.status !== 'ok' && !live) {
     inner = `<p class="status-msg">${escapeHtml(forThis.message ?? 'No info')}</p>`
   } else {
-    inner = forThis.neighbors
+    // The VLAN list is the part that works on any switch; LLDP/CDP below it is a bonus.
+    const verdict = forThis.vlans.length
+      ? row('Trunk', `${plural(forThis.vlans.length, 'VLAN')} seen`, 'ok')
+      : row(
+          'Tagging',
+          live ? 'nothing tagged yet' : 'no tagged frames — access port',
+          live ? '' : 'warn'
+        )
+
+    const vlans = forThis.vlans
+      .map((v) =>
+        row(
+          `VLAN ${v.id}`,
+          [plural(v.frames, 'frame'), addressSummary(v.addresses)].filter(Boolean).join(' · '),
+          'ok'
+        )
+      )
+      .join('')
+
+    const neighbors = forThis.neighbors
       .map(
         (n) => `
           ${row('Protocol', n.protocol, 'ok')}
           ${n.systemName ? row('Switch', n.systemName) : ''}
           ${n.portId ? row('Port', n.portId) : ''}
-          ${n.vlan != null ? row('VLAN', String(n.vlan)) : ''}
+          ${n.vlan != null ? row('Port VLAN', String(n.vlan)) : ''}
           ${n.mgmtAddress ? row('Mgmt-IP', n.mgmtAddress) : ''}`
       )
       .join('')
+
+    // Nothing found yet is the state that needs explaining — otherwise a quiet first half-minute
+    // reads like a broken feature rather than a port that has not spoken yet.
+    const quiet =
+      live && forThis.vlans.length === 0 && forThis.neighbors.length === 0
+        ? `<p class="notes">Nothing identified yet. A quiet VLAN can take ~30 s to beacon; LLDP is typically every 30 s too.</p>`
+        : ''
+
+    const footer = live
+      ? `<p class="hint2">Surveying ${clock(forThis.elapsedSec)} · ${plural(forThis.frames, 'frame')} · <b>C</b> stops</p>`
+      : `<p class="hint2">Ran ${clock(forThis.elapsedSec)} · ${plural(forThis.frames, 'frame')} · <b>C</b> surveys again</p>`
+
+    inner = verdict + vlans + neighbors + quiet + footer
   }
   return `<div class="section-title">Switch / VLAN</div>${inner}`
 }
@@ -328,7 +382,7 @@ function render(): void {
     ${renderDiagnostics(d)}
     ${renderInfo(d)}
     ${renderPanel()}
-    <footer class="hint"><b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>I</b> chipset · <b>S</b> save · <b>U</b> undo · <b>C</b> VLAN</footer>`
+    <footer class="hint"><b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>I</b> chipset · <b>S</b> save · <b>U</b> undo · <b>C</b> ${discovering ? 'stop' : 'survey'}</footer>`
 }
 
 async function runDiag(device: string): Promise<void> {
@@ -347,20 +401,59 @@ async function runDiag(device: string): Promise<void> {
   }
 }
 
-async function runDiscover(device: string): Promise<void> {
+/** C starts the survey and, while one is running, stops it. Results stay on screen either way. */
+async function toggleSurvey(device: string): Promise<void> {
+  if (discovering) {
+    discovering = false
+    render()
+    try {
+      const final = await window.api.stopSurvey()
+      if (final) discovery = final
+    } catch (err) {
+      console.error('stopping the survey failed', err)
+      notice = `Stopping the survey failed: ${String(err)}`
+    }
+    render()
+    return
+  }
+
   discovering = true
   discoveryDevice = device
   discovery = null
   render()
   try {
-    discovery = await window.api.discover(device)
+    discovery = await window.api.startSurvey(device)
+    // A refused start (no tcpdump, Windows) comes back already stopped.
+    discovering = discovery.running
   } catch (err) {
-    console.error('discover failed', err)
-    discovery = { status: 'error', neighbors: [], message: String(err) }
-  } finally {
+    console.error('survey failed', err)
     discovering = false
-    render()
+    discovery = {
+      status: 'error',
+      running: false,
+      neighbors: [],
+      vlans: [],
+      frames: 0,
+      elapsedSec: 0,
+      message: String(err)
+    }
   }
+  render()
+}
+
+/** Stop a running survey when it is no longer the thing on screen. */
+function endSurveyIfRunning(): void {
+  if (!discovering) return
+  discovering = false
+  // Keep the final snapshot rather than the last live one: switching back to that dongle should
+  // show what the capture found, not claim it is still running.
+  void window.api
+    .stopSurvey()
+    .then((final) => {
+      if (final) discovery = final
+      render()
+    })
+    .catch(() => undefined)
 }
 
 // Run a privileged action, show a notice and re-read the diagnostics.
@@ -486,17 +579,21 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (e.key === 'ArrowDown') {
+    // The capture belongs to the dongle it was started on, so switching away ends it rather than
+    // leaving a privileged tcpdump running for a port that is no longer on screen.
+    endSurveyIfRunning()
     selected = (selected + 1) % dongles.length
     render()
     void runDiag(dongles[selected].device)
   } else if (e.key === 'ArrowUp') {
+    endSurveyIfRunning()
     selected = (selected - 1 + dongles.length) % dongles.length
     render()
     void runDiag(dongles[selected].device)
   } else if (e.key === 'r' || e.key === 'R' || e.key === ' ') {
     if (!running) void runDiag(device)
   } else if (e.key === 'c' || e.key === 'C') {
-    if (!discovering) void runDiscover(device)
+    void toggleSurvey(device)
   } else if (e.key === 'm' || e.key === 'M') {
     void runReconfig(device, () => window.api.rollMac(device), 'MAC rolled')
   } else if (e.key === 'u' || e.key === 'U') {
@@ -528,6 +625,14 @@ async function init(): Promise<void> {
   render()
   if (dongles[selected]) void runDiag(dongles[selected].device)
   window.api.onDonglesChanged(onDongles)
+  window.api.onSurveyUpdate((result) => {
+    // Partial results keep arriving until the capture is stopped. Drop any that belong to a
+    // dongle we have since switched away from.
+    if (result.device && result.device !== discoveryDevice) return
+    discovery = result
+    discovering = result.running
+    if (!editorOpen) render()
+  })
 }
 
 init().catch((err) => {

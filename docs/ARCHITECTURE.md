@@ -37,7 +37,7 @@ src/
       adapters.ts          # dongle list + chipset lookup
       diagnostics.ts       # orchestrates netinfo + probes
       probe.ts             # bound pings + DNS test (+ ping parser)
-      discover.ts          # LLDP/CDP capture + parser
+      discover.ts          # port survey: VLAN tags off the wire + LLDP/CDP, capture + parsers
       reconfig.ts          # MAC rolling + profile application + undo
       profiles.ts          # fs/electron glue for profile storage
       profiles-core.ts     # pure profile operations (upsert/remove/…)
@@ -63,13 +63,13 @@ Each capability is a platform-independent interface in `capabilities/` that dele
 (arguments as an array, **no shell**) — which makes quoting/injection a non-issue — with a
 timeout and `windowsHide`.
 
-| Module                       | Privileges | What it does                                                           |
-| ---------------------------- | ---------- | ---------------------------------------------------------------------- |
-| `adapters`                   | None       | Enumerates USB dongles, looks up the chipset via `chipsets.json`.      |
-| `diagnostics` → `probe`      | None       | Reads netinfo and runs gateway/internet ping + DNS test in parallel.   |
-| `discover`                   | Root/admin | Passive LLDP/CDP capture via `tcpdump`. Optional; degrades gracefully. |
-| `reconfig`                   | Root/admin | Rolls MAC, applies DHCP/static profile, undoes.                        |
-| `profiles` / `profiles-core` | None       | Reads/writes profile JSON; pure CRUD operations.                       |
+| Module                       | Privileges | What it does                                                                                                  |
+| ---------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
+| `adapters`                   | None       | Enumerates USB dongles, looks up the chipset via `chipsets.json`.                                             |
+| `diagnostics` → `probe`      | None       | Reads netinfo and runs gateway/internet ping + DNS test in parallel.                                          |
+| `discover`                   | Root/admin | Port survey: runs `tcpdump` until stopped, tallying 802.1Q VLANs and LLDP/CDP. Optional; degrades gracefully. |
+| `reconfig`                   | Root/admin | Rolls MAC, applies DHCP/static profile, undoes.                                                               |
+| `profiles` / `profiles-core` | None       | Reads/writes profile JSON; pure CRUD operations.                                                              |
 
 ## Platform layer (`PlatformOps`)
 
@@ -101,10 +101,11 @@ brittle text parsing.
 
 The preload exposes `window.api` per `MagicethApi` (`src/shared/types.ts`). Channels:
 
-- **Reads:** `dongles:list`, `diagnostics:run`, `discover:run`, `profiles:list`
+- **Reads:** `dongles:list`, `diagnostics:run`, `profiles:list`
 - **Writes (profiles, unprivileged):** `profiles:save`, `profiles:saveCurrent`, `profiles:delete`
 - **Privileged:** `reconfig:rollMac`, `reconfig:applyProfile`, `reconfig:undo`
-- **Push events (main → renderer):** `dongles:changed`
+- **Long-running (privileged):** `survey:start`, `survey:stop`
+- **Push events (main → renderer):** `dongles:changed`, `survey:update`
 
 Every channel has a consumer in the renderer — if a capability stops being used, its channel,
 its `MagicethApi` method and its preload wiring go with it.

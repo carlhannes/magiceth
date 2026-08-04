@@ -2,7 +2,8 @@
 
 Everything in `magiceth` that is **read-only** (dongle identification, IP/DHCP/gateway/DNS, ping, DNS test)
 is already automatically tested and live-verified on macOS. This document lists what requires
-**admin/root** and therefore must be tested manually. Preferably run it with your plugged-in AX88179A (`en9`).
+**admin/root** and therefore must be tested manually. The reference rig is two dongles on one
+switch: an ASIX AX88179A on `en9` and a Realtek RTL8153 on `en7`.
 
 > ⚠️ These actions **change your real network configuration**. The simplest reset:
 > unplug and re-plug the dongle, or apply the DHCP profile. Avoid running on an
@@ -13,19 +14,19 @@ dialog then pops up (osascript) — or **(B)** manually in the terminal to isola
 
 ---
 
-## 1. VLAN / switch port via LLDP/CDP (M3)
+## 1. Port survey — VLANs on the wire, plus LLDP/CDP (M3)
 
-**In the app:** start `npm run dev`, press **C**, approve the password prompt. Wait up to 35 s.
+**In the app:** press **C**, approve the password prompt. It runs until you press **C** again,
+listing every 802.1Q VLAN it sees with a frame count and the addressing inside each.
 
-**Manually (to see raw output + validate the parser):**
+Tested in full on 2026-08-04 against two dongles on an unmanaged switch, with both synthetic LLDP
+and a synthetic trunk injected onto the wire. Procedure, raw output and verdicts:
+**[docs/VLAN-FINDINGS.md](docs/VLAN-FINDINGS.md)**, which owns this topic so the results live in one
+place.
 
-```sh
-sudo sh -c 'tcpdump -l -i en9 -nn -v -s0 "ether proto 0x88cc or ether dst 01:00:0c:cc:cc:cc" & p=$!; sleep 40; kill $p 2>/dev/null'
-```
-
-**Expected:** lines with `LLDP` and/or `CDPv2` containing switch name, port, and VLAN.
-**If empty:** many access ports don't send LLDP/CDP — in that case the app correctly shows "none heard".
-Feel free to paste the raw output to me and I'll fine-tune the parser against your switch.
+If you are stopping a capture by hand, use `kill -9` — SIGTERM does not stop `tcpdump` when nothing
+matches the filter, and a `wait` on it will hang your shell. That was a real bug in this app, not a
+hypothetical.
 
 ---
 
@@ -76,10 +77,16 @@ networksetup -getinfo "AX88179A"          # verify that a DHCP address comes bac
 
 ## 4. What I've already verified (no sudo needed)
 
-- Dongle identification: `en9` → VID:PID `0b95:1790` → "ASIX AX88179 / AX88179A".
+- Dongle identification: `en9` → VID:PID `0b95:1790` → "ASIX AX88179 / AX88179A"; `en7` →
+  `0bda:8153` → "Realtek RTL8153". Two dongles are listed as two, and switching between them scopes
+  the diagnostics correctly.
 - Diagnostics: IP `192.168.70.196/23`, gateway/DHCP/DNS `192.168.70.1`, lease, 1 Gbit/s full duplex.
 - Bound pings: gateway ~0.4 ms, 1.1.1.1/8.8.8.8 ~11 ms, DNS test ok.
-- All parsers (macOS live + Linux/Windows against documented format): unit tests green (`npm test`).
+- Link-local fallback: `169.254.x.x` is flagged as link-local and DHCP shows "no server answered".
+- 802.1Q tagging on both chipsets, verified on the wire — see
+  [docs/VLAN-FINDINGS.md](docs/VLAN-FINDINGS.md).
+- All parsers: unit tests green (`npm test`). The LLDP parser is now checked against **real**
+  `tcpdump` output, not only the documented format.
 
 ## 5. Remaining per-OS spike (not this machine)
 

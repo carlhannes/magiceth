@@ -78,7 +78,7 @@ export interface Diagnostics {
   ranAt: string // ISO timestamp
 }
 
-// --- VLAN/switch-port discovery (M3) ---
+// --- Port survey: VLANs on the wire, plus the switch itself when it says so (M3) ---
 
 export interface Neighbor {
   protocol: 'LLDP' | 'CDP'
@@ -88,11 +88,33 @@ export interface Neighbor {
   mgmtAddress?: string // the switch's mgmt IP
 }
 
+/**
+ * One 802.1Q VLAN seen on the wire. This is the part that works on any switch: a trunk floods
+ * tagged broadcast/multicast for every VLAN it carries, so the IDs can be read off the wire
+ * without the switch advertising anything.
+ *
+ * `addresses` are source addresses observed inside that VLAN — never a subnet, because a capture
+ * shows addresses and never netmasks.
+ */
+export interface VlanSighting {
+  id: number
+  frames: number
+  addresses: string[]
+}
+
 export type DiscoveryStatus = 'ok' | 'none-seen' | 'no-tool' | 'needs-privilege' | 'error'
 
 export interface DiscoveryResult {
   status: DiscoveryStatus
+  /** True while the capture is still running — results accumulate and are pushed as they arrive. */
+  running: boolean
+  device?: string
   neighbors: Neighbor[]
+  vlans: VlanSighting[]
+  /** Total frames captured, so the UI can show progress even before anything is identified. */
+  frames: number
+  /** How long the capture has been running, and after stopping, how long it ran for. */
+  elapsedSec: number
   message?: string
 }
 
@@ -122,7 +144,10 @@ export interface MagicethApi {
   listDongles(): Promise<Dongle[]>
   onDonglesChanged(cb: (dongles: Dongle[]) => void): () => void
   runDiagnostics(device: string): Promise<Diagnostics>
-  discover(device: string): Promise<DiscoveryResult>
+  startSurvey(device: string): Promise<DiscoveryResult>
+  /** Resolves with everything the survey collected, or null when none was running. */
+  stopSurvey(): Promise<DiscoveryResult | null>
+  onSurveyUpdate(cb: (result: DiscoveryResult) => void): () => void
   rollMac(device: string): Promise<ReconfigResult>
   applyProfile(device: string, profileId: string): Promise<ReconfigResult>
   undo(device: string): Promise<ReconfigResult>

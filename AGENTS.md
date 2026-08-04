@@ -39,6 +39,23 @@ pgrep -f "Electron.app/Contents/MacOS/Electron" | wc -l   # must be 0 before you
 If you target a window by name, sort candidates by window id descending (highest = newest) and
 warn when there is more than one. Never assume the first match is the live build.
 
+### The same trap, second form: main-process edits may not rebuild
+
+`npm run dev` hot-reloads the renderer reliably. **Main-process changes sometimes are not rebuilt at
+all** — on 2026-08-04 two consecutive fixes to `src/main/` were tested against a bundle that was
+20 minutes older, and one of them was very nearly written off as "the fix does not work".
+
+Before trusting any main-process result, compare mtimes:
+
+```sh
+ls -l out/main/index.js src/main/<the file you changed>.ts   # bundle must be NEWER
+```
+
+If it is stale: `pkill -f electron-vite; pkill -f "Electron.app/Contents/MacOS/Electron"; rm -rf out`
+and start again. Do **not** verify by grepping the bundle for a comment you just wrote — the build
+strips most comments, so that check fails on fresh code too and tells you nothing. Grep for a string
+literal or a distinctive expression instead.
+
 ## Driving the UI on macOS
 
 Screenshots and keystrokes need two separate macOS permissions for the process running the agent —
