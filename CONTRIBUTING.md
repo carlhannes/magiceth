@@ -20,14 +20,16 @@ npm run dev
 | Command             | Does                                            |
 | ------------------- | ----------------------------------------------- |
 | `npm run dev`       | Starts the app in development mode (hot reload) |
-| `npm run typecheck` | `tsc --noEmit` for main + renderer              |
+| `npm run typecheck` | `tsc --noEmit` for main + renderer + tests      |
 | `npm run lint`      | ESLint                                          |
 | `npm run format`    | Prettier                                        |
 | `npm test`          | Vitest (pure parsers/functions)                 |
 | `npm run build`     | Compiles to `out/`                              |
 | `npm run package`   | Builds an installable app (electron-builder)    |
 
-**Run `npm run typecheck && npm run lint && npm test` before submitting a PR.**
+**Run `npm run format && npm run typecheck && npm run lint && npm test` before submitting a PR.**
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same checks — plus
+`prettier --check` — on every push and pull request.
 
 ## Project structure
 
