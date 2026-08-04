@@ -23,7 +23,8 @@ All notable changes are documented here. The format follows
   (and its removal) never moved the signature. The real enumeration now also runs every ~4.5 s.
 - A self-assigned `169.254.x.x` address no longer reads as a healthy IP: the address is marked
   `link-local` and the DHCP row says `no server answered` instead of showing a green "INIT". The
-  link itself stays green, because the cable really is fine.
+  link itself stays green, because the cable really is fine. The DHCP row likewise stays amber
+  while a lease is still being negotiated and there is no address yet.
 - Diagnostics failures are shown in the app instead of only in the console. On Windows a blank
   PowerShell reply used to leave the UI on "Waiting for diagnostics…" with no explanation.
 - Windows: the adapter name is escaped before it goes into the elevated PowerShell scripts, so a

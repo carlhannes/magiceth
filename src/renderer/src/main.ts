@@ -91,6 +91,9 @@ function renderDiagnostics(d: Dongle): string {
       ? `${net.ipv4}${net.cidr != null ? `/${net.cidr}` : ''}${linkLocal ? ' · link-local' : ''}`
       : 'no IP'
     const dhcp = net.dhcp
+    // DHCP counts as working only once it has produced a usable address. Still negotiating (no IP
+    // yet) or fallen back to link-local are both "not there yet", so neither goes green.
+    const dhcpWorking = dhcp.enabled && net.ipv4 != null && !linkLocal
     const dhcpText = !dhcp.enabled
       ? 'static / not DHCP'
       : linkLocal
@@ -101,7 +104,7 @@ function renderDiagnostics(d: Dongle): string {
       ${row('IPv4', ipText, net.ipv4 ? (linkLocal ? 'warn' : 'ok') : 'bad')}
       ${net.netmask ? row('Netmask', net.netmask) : ''}
       ${row('Gateway', net.gateway ?? '—', net.gateway ? '' : 'warn')}
-      ${row('DHCP', dhcpText, dhcp.enabled && !linkLocal ? 'ok' : 'warn')}
+      ${row('DHCP', dhcpText, dhcpWorking ? 'ok' : 'warn')}
       ${dhcp.domain ? row('Domain', dhcp.domain) : ''}
       ${dhcp.leaseExpiration ? row('Lease until', dhcp.leaseExpiration) : ''}
       ${row('DNS', net.dnsServers.join(', ') || '—', net.dnsServers.length ? '' : 'warn')}
