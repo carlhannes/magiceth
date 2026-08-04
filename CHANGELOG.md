@@ -12,6 +12,7 @@ All notable changes are documented here. The format follows
   capabilities that were already in `chipsets.json` but never shown. The USB IDs are what a
   "please add this chipset" issue needs for a dongle that isn't in the database.
 - CI (`.github/workflows/ci.yml`) running prettier, typecheck, lint and tests on every push and PR.
+- Screenshots in the README (`docs/screenshot*.png`).
 
 ### Fixed
 
@@ -20,7 +21,11 @@ All notable changes are documented here. The format follows
 - Windows: the adapter name is escaped before it goes into the elevated PowerShell scripts, so a
   name containing `$`, `"` or a backtick no longer breaks (or reshapes) the command.
 - Stored profiles are format-validated when loaded, keeping a hand-edited `profiles.json` out of
-  the elevated command line built for `netsh`.
+  the elevated command line built for `netsh`. `NetInfo.dnsServers` is filtered through
+  `isValidIpv4` on all three platforms so a parser can never feed it a malformed address.
+- The profile rows sat ~40px right of their own section title: the global reset clears margin but
+  not padding, so the `<ul>` kept its default indent. They are now aligned, roomier, and the index
+  is drawn as the keycap you press to apply it.
 - Linux: DHCP is detected from the address lifetime reported by `ip -j addr` instead of always
   reporting "static". Undo after applying a static profile now returns the interface to DHCP
   rather than restoring the old address statically. _Not yet verified on real hardware._
