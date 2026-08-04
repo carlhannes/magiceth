@@ -128,7 +128,16 @@ async function readNetInfo(device: string): Promise<NetInfo> {
   const res = await run('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], {
     timeoutMs: 10000
   })
-  return parseWinNetInfo(res.stdout, device)
+  // Fail loudly rather than with a raw JSON.parse SyntaxError — the renderer shows this text.
+  // A fake "link down" result was the alternative and would have been actively misleading.
+  if (!res.stdout.trim()) {
+    throw new Error(`Could not read network info for "${device}" (PowerShell returned no output).`)
+  }
+  try {
+    return parseWinNetInfo(res.stdout, device)
+  } catch {
+    throw new Error(`Could not parse network info for "${device}".`)
+  }
 }
 
 function pingCommand(target: string, opts: PingOptions): PingSpec {

@@ -294,7 +294,10 @@ async function runDiag(device: string): Promise<void> {
   try {
     diag = await window.api.runDiagnostics(device)
   } catch (err) {
+    // Never clear the notice on success: runReconfig's finally calls us right after setting
+    // its own result message, and clearing here would wipe it.
     console.error('diagnostics failed', err)
+    notice = `Diagnostics failed: ${String(err)}`
   } finally {
     running = false
     render()
@@ -369,9 +372,13 @@ async function deleteSelectedProfile(): Promise<void> {
     render()
     return
   }
-  profiles = await window.api.deleteProfile(p.id)
-  profileSel = Math.min(profileSel, profiles.length - 1)
-  notice = `Deleted profile: ${p.name}`
+  try {
+    profiles = await window.api.deleteProfile(p.id)
+    profileSel = Math.min(profileSel, profiles.length - 1)
+    notice = `Deleted profile: ${p.name}`
+  } catch (err) {
+    notice = `Could not delete: ${String(err)}`
+  }
   render()
 }
 
