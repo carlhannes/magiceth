@@ -55,15 +55,32 @@ describe('udevToRawAdapter', () => {
   })
 })
 
+// A DHCP lease: iproute2 marks the address "dynamic" because it has a finite lifetime.
 const IP_ADDR = JSON.stringify([
   {
     ifname: 'eth1',
     operstate: 'UP',
     address: '6c:6e:07:01:ff:de',
     addr_info: [
-      { family: 'inet', local: '192.168.70.196', prefixlen: 23 },
+      {
+        family: 'inet',
+        local: '192.168.70.196',
+        prefixlen: 23,
+        dynamic: true,
+        valid_life_time: 85994
+      },
       { family: 'inet6', local: 'fe80::1', prefixlen: 64 }
     ]
+  }
+])
+
+// A statically configured address: no lifetime, so no "dynamic" key at all.
+const IP_ADDR_STATIC = JSON.stringify([
+  {
+    ifname: 'eth1',
+    operstate: 'UP',
+    address: '6c:6e:07:01:ff:de',
+    addr_info: [{ family: 'inet', local: '10.0.0.50', prefixlen: 24 }]
   }
 ])
 
@@ -78,8 +95,15 @@ describe('parseIpAddr', () => {
       mac: '6c:6e:07:01:ff:de',
       linkUp: true,
       ipv4: '192.168.70.196',
-      cidr: 23
+      cidr: 23,
+      dhcp: true
     })
+  })
+
+  it('reports a static address as not DHCP', () => {
+    const info = parseIpAddr(IP_ADDR_STATIC, 'eth1')
+    expect(info.ipv4).toBe('10.0.0.50')
+    expect(info.dhcp).toBe(false)
   })
 })
 

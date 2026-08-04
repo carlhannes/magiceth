@@ -82,7 +82,7 @@ interface IpAddrEntry {
   ifname?: string
   address?: string
   operstate?: string
-  addr_info?: Array<{ family?: string; local?: string; prefixlen?: number }>
+  addr_info?: Array<{ family?: string; local?: string; prefixlen?: number; dynamic?: boolean }>
 }
 
 export interface IpAddrInfo {
@@ -90,6 +90,7 @@ export interface IpAddrInfo {
   linkUp: boolean
   ipv4?: string
   cidr?: number
+  dhcp: boolean
 }
 
 /** Parse `ip -j addr show dev <if>`. */
@@ -101,7 +102,12 @@ export function parseIpAddr(json: string, device: string): IpAddrInfo {
     mac: (iface?.address ?? '').toLowerCase(),
     linkUp: (iface?.operstate ?? '').toUpperCase() === 'UP',
     ipv4: inet?.local,
-    cidr: inet?.prefixlen
+    cidr: inet?.prefixlen,
+    // Best effort, not yet verified on hardware: iproute2 prints "dynamic" for addresses with a
+    // finite lifetime, which is what a DHCP lease produces. The key is omitted when the flag is
+    // not set, so a static address reads false — the same result as before this was inferred at
+    // all. If it turns out unreliable, `ip -j route show default` also carries "protocol":"dhcp".
+    dhcp: inet?.dynamic === true
   }
 }
 
@@ -149,11 +155,11 @@ async function readNetInfo(device: string): Promise<NetInfo> {
     run('resolvectl', ['dns', device])
   ])
 
-  let addr: IpAddrInfo = { mac: '', linkUp: false }
+  let addr: IpAddrInfo = { mac: '', linkUp: false, dhcp: false }
   try {
     addr = parseIpAddr(addrRes.stdout, device)
   } catch {
-    addr = { mac: '', linkUp: false }
+    addr = { mac: '', linkUp: false, dhcp: false }
   }
 
   let gateway: string | undefined
@@ -180,8 +186,9 @@ async function readNetInfo(device: string): Promise<NetInfo> {
     cidr: addr.cidr,
     gateway,
     dnsServers,
-    // DHCP detail on Linux requires nmcli parsing — TODO/spike. Left minimal.
-    dhcp: { enabled: false },
+    // Only the on/off flag is inferred (see parseIpAddr). Server, lease and domain would need
+    // nmcli or lease-file parsing — left out; the renderer treats them as optional.
+    dhcp: { enabled: addr.dhcp },
     linkSpeedMbps: speed && speed > 0 ? speed : undefined,
     duplex: duplex ?? undefined
   }
