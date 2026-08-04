@@ -1,6 +1,6 @@
 import { run } from '../util/run-command'
 import { normalizeMac } from '../../shared/mac'
-import { cidrToDotted } from '../../shared/net'
+import { cidrToDotted, isValidIpv4 } from '../../shared/net'
 import { psEscapeDouble } from '../privilege'
 import type { ElevatedPlan } from '../privilege'
 import type { PingOptions, PingSpec, PlatformOps, RawAdapter } from './index'
@@ -101,7 +101,7 @@ export function parseWinNetInfo(json: string, device: string): NetInfo {
   } catch {
     mac = (r.mac ?? '').toLowerCase()
   }
-  const dnsServers = Array.isArray(r.dns) ? r.dns : r.dns ? [r.dns] : []
+  const dnsServers = (Array.isArray(r.dns) ? r.dns : r.dns ? [r.dns] : []).filter(isValidIpv4)
   return {
     device,
     linkUp: (r.status ?? '').toLowerCase() === 'up',

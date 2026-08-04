@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { run } from '../util/run-command'
 import { normalizeMac } from '../../shared/mac'
-import { cidrToDotted } from '../../shared/net'
+import { cidrToDotted, isValidIpv4 } from '../../shared/net'
 import { shQuote } from '../privilege'
 import type { ElevatedPlan } from '../privilege'
 import type { PingOptions, PingSpec, PlatformOps, RawAdapter } from './index'
@@ -119,16 +119,20 @@ export function parseIpRoute(json: string, device: string): string | undefined {
   return def?.gateway
 }
 
-/** Parse nameserver lines from /etc/resolv.conf or `resolvectl dns` output. */
+/**
+ * Parse nameserver lines from /etc/resolv.conf or `resolvectl dns` output. Everything is run
+ * through isValidIpv4 so NetInfo.dnsServers only ever holds real IPv4 addresses — resolvectl also
+ * lists IPv6 servers, and a loose "digits and dots" filter would let "1.2.3" through.
+ */
 export function parseDnsServers(output: string): string[] {
   const servers: string[] = []
   for (const line of output.split(/\r?\n/)) {
-    const rc = line.match(/^\s*nameserver\s+([\d.]+)/)
+    const rc = line.match(/^\s*nameserver\s+(\S+)/)
     if (rc) servers.push(rc[1])
     const rl = line.match(/Link\s+\d+\s+\([^)]+\):\s*(.+)$/)
-    if (rl) servers.push(...rl[1].split(/[,\s]+/).filter((s) => /^[\d.]+$/.test(s)))
+    if (rl) servers.push(...rl[1].split(/[,\s]+/))
   }
-  return servers
+  return servers.filter(isValidIpv4)
 }
 
 function readSysNumber(path: string): number | undefined {

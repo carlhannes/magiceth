@@ -1,6 +1,6 @@
 import { run } from '../util/run-command'
 import { normalizeMac } from '../../shared/mac'
-import { cidrToDotted } from '../../shared/net'
+import { cidrToDotted, isValidIpv4 } from '../../shared/net'
 import { shQuote } from '../privilege'
 import type { ElevatedPlan } from '../privilege'
 import type { PingOptions, PingSpec, PlatformOps, RawAdapter } from './index'
@@ -206,7 +206,7 @@ export function parseIpconfigSummary(output: string): SummaryInfo {
     info.dnsServers = dns[1]
       .split(/[,\s]+/)
       .map((s) => s.trim())
-      .filter(Boolean)
+      .filter(isValidIpv4)
   }
   const domain = output.match(/domain_name \(string\):\s*(.+)/)
   if (domain) info.domain = domain[1].trim()

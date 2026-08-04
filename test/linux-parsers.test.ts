@@ -114,6 +114,17 @@ describe('parseIpRoute', () => {
 })
 
 describe('parseDnsServers', () => {
+  it('keeps only valid IPv4 addresses', () => {
+    // resolvectl happily lists IPv6 servers alongside IPv4 ones.
+    expect(parseDnsServers('Link 3 (eth1): 192.168.70.1 fe80::1 1.1.1.1')).toEqual([
+      '192.168.70.1',
+      '1.1.1.1'
+    ])
+    expect(parseDnsServers('nameserver 1.2.3\nnameserver 999.1.1.1\nnameserver 8.8.8.8')).toEqual([
+      '8.8.8.8'
+    ])
+  })
+
   it('parses resolvectl and resolv.conf formats', () => {
     expect(parseDnsServers('Link 3 (eth1): 192.168.70.1 1.1.1.1')).toEqual([
       '192.168.70.1',
