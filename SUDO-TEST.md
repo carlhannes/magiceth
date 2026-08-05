@@ -44,9 +44,22 @@ ifconfig en9 | grep ether                 # verify it changed
 ```
 
 **Expected:** the second `grep ether` shows `02:11:22:33:44:55`.
-**If unchanged:** the ASIX chipset/OS may not allow a MAC change while the link is up —
-try unplugging/re-plugging, or it's a known limitation (the app then shows a clear warning).
+**If unchanged:** the chipset/OS may not allow a MAC change while the link is up — try
+unplugging/re-plugging, or it's a known limitation (the app then shows a clear warning).
 **Reset:** `sudo ifconfig en9 ether <your-original-MAC>` or unplug/re-plug the dongle.
+
+**Confirmed working on the ASIX AX88179A (2026-08-04), with the link up.** `M` set `en9` to
+`de:09:e7:4c:57:a8` — locally-administered, as intended — while `networksetup
+-listallhardwareports` kept reporting the burned-in `6c:6e:07:01:ff:de`. So that doubt above is
+settled for this chipset: the change sticks and does not need a re-plug.
+
+Two things that run came with, worth knowing before you press `M`:
+
+- **`networksetup` reports the hardware address, `ifconfig` the running one.** Only `ifconfig` tells
+  you a roll actually took effect.
+- **Undo does not survive a restart.** `undoStore` in `reconfig.ts` is an in-memory `Map`, so `U`
+  can only undo within the same app session. After a restart the original MAC is recoverable from
+  `networksetup -listallhardwareports`, or by re-plugging the dongle.
 
 ---
 

@@ -5,6 +5,22 @@ and why it is still open — so picking one up does not mean starting the invest
 
 Small enough to fix in one PR unless noted. See [CONTRIBUTING.md](../CONTRIBUTING.md) first.
 
+## A single unmodified keypress changes real network configuration
+
+`M` (roll MAC), `S` (save profile), `U` (undo) and `1`–`9` (apply profile) all act immediately, with
+no modifier and no confirmation. That is deliberate — the whole point is one-handed operation at a
+rack — but it means any stray keystroke reaching the window reconfigures the port.
+
+This is not hypothetical: on 2026-08-04 `en9`'s MAC was found rolled to a locally-administered
+address with nobody having pressed `M` on purpose. The likeliest explanation is characters landing
+in the app while an authentication dialog was expected to have focus, and the app happens to sit
+focused a lot while those dialogs come and go.
+
+Worth a deliberate decision rather than drift. Options, roughly in order of how much they cost the
+one-handed workflow: ignore keystrokes for a moment after the window regains focus; require a
+confirm keypress for the destructive four; or leave it and document it. Note also that `U` cannot
+rescue a mistake across a restart — `undoStore` (`reconfig.ts`) is in-memory only.
+
 ## Port survey: gaps left after the rebuild
 
 The survey works and is verified against a synthetic trunk
