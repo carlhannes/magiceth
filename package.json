@@ -1,6 +1,6 @@
 {
   "name": "magiceth",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "One-handed network port diagnostics via a USB ethernet dongle",
   "author": "magiceth",
   "license": "WTFPL",

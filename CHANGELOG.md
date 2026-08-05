@@ -6,8 +6,16 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] – 2026-08-05
+
 ### Added
 
+- **Port survey** (`C`) replaces the old LLDP/CDP listener. It captures until you stop it and lists
+  every 802.1Q VLAN on the port as it is discovered, with a frame count and the addresses seen
+  inside each — read straight off the wire, so it works on any switch rather than only on ones that
+  advertise. LLDP/CDP still contributes the switch name, port and management IP when offered. The
+  panel shows how long the capture has run, and says up front that a quiet VLAN can take ~30 s to
+  appear.
 - Chipset sub-view (`I`): max speed, VLAN support, reselling brands and the raw USB VID:PID — the
   capabilities that were already in `chipsets.json` but never shown. The USB IDs are what a
   "please add this chipset" issue needs for a dongle that isn't in the database.
@@ -23,13 +31,6 @@ All notable changes are documented here. The format follows
   The LLDP parser now has a fixture captured off real hardware — `tcpdump` prints "TLV" in every
   header and nests the port VLAN under an org-specific TLV, neither of which the hand-written
   fixture showed.
-
-- **Port survey** (`C`) replaces the old LLDP/CDP listener. It captures until you stop it and lists
-  every 802.1Q VLAN on the port as it is discovered, with a frame count and the addresses seen
-  inside each — read straight off the wire, so it works on any switch rather than only on ones that
-  advertise. LLDP/CDP still contributes the switch name, port and management IP when offered. The
-  panel shows how long the capture has run, and says up front that a quiet VLAN can take ~30 s to
-  appear.
 
 ### Fixed
 
@@ -70,9 +71,14 @@ All notable changes are documented here. The format follows
 
 - Unused `system:snapshot` / `adapters:changed` IPC surface left over from the M0 spike, along
   with the three shared types that only existed to carry it.
+- The one-shot `discover:run` channel, replaced by `survey:start` / `survey:stop` plus a
+  `survey:update` push — a capture that runs until stopped cannot be a single request/response.
 
 ### Changed
 
+- `capabilities/discover.ts` is now `capabilities/survey.ts`, and `DiscoveryResult` /
+  `DiscoveryStatus` are `SurveyResult` / `SurveyStatus`, so the code is named after what it does.
+  `parseDiscovery` keeps its name: it really does parse the discovery protocols, LLDP and CDP.
 - The whole repo is Prettier-formatted, and `test/**` is now type-checked.
 
 ## [0.2.0] – 2026-07-23
@@ -103,6 +109,7 @@ All notable changes are documented here. The format follows
 - Platform support for Windows/macOS/Linux (arm64 + amd64); packaging via electron-builder (unsigned).
 - macOS live-verified; Linux/Windows implemented against documented format with unit-tested parsers.
 
-[Unreleased]: https://github.com/carlhannes/magiceth/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/carlhannes/magiceth/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/carlhannes/magiceth/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/carlhannes/magiceth/releases/tag/v0.2.0
 [0.1.0]: https://github.com/carlhannes/magiceth/releases/tag/v0.1.0
