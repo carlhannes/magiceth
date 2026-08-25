@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [semantic versioning](https://semver.org/).
 
+0.1.0 and 0.2.0 predate this repository's first commit, so they have no tag to link to — the
+initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
+
 ## [Unreleased]
 
 ## [0.3.0] – 2026-08-05
@@ -81,7 +84,7 @@ All notable changes are documented here. The format follows
   `parseDiscovery` keeps its name: it really does parse the discovery protocols, LLDP and CDP.
 - The whole repo is Prettier-formatted, and `test/**` is now type-checked.
 
-## [0.2.0] – 2026-07-23
+## 0.2.0 – 2026-07-23
 
 ### Added
 
@@ -96,7 +99,7 @@ All notable changes are documented here. The format follows
   (`PnpDeviceID` → `PNPDeviceID`), which meant USB dongles weren't detected. All
   PowerShell JSON keys are now set deterministically via calculated properties.
 
-## [0.1.0] – 2026-07-23
+## 0.1.0 – 2026-07-23
 
 ### Added
 
@@ -110,6 +113,4 @@ All notable changes are documented here. The format follows
 - macOS live-verified; Linux/Windows implemented against documented format with unit-tested parsers.
 
 [Unreleased]: https://github.com/carlhannes/magiceth/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/carlhannes/magiceth/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/carlhannes/magiceth/releases/tag/v0.2.0
-[0.1.0]: https://github.com/carlhannes/magiceth/releases/tag/v0.1.0
+[0.3.0]: https://github.com/carlhannes/magiceth/releases/tag/v0.3.0
