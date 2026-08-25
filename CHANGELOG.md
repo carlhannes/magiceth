@@ -4,7 +4,54 @@ All notable changes are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [semantic versioning](https://semver.org/).
 
+0.1.0 and 0.2.0 predate this repository's first commit, so they have no tag to link to — the
+initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
+
 ## [Unreleased]
+
+### Added
+
+- **Built-in Wi-Fi and Ethernet are listed too**, so there is a port to diagnose with no dongle
+  attached. Loopback, bridges, Docker/veth, VPN tunnels and internal plumbing stay hidden, decided
+  by a structural signal on each OS rather than by matching names — see
+  [what counts as an adapter](docs/ARCHITECTURE.md). Dongles sort first and one you plug in takes
+  the selection by itself; USB detection is unchanged and independent, so no new rule can hide a
+  dongle. `Dongle` is now `Adapter` throughout, with a `kind`.
+- **Speed test** (`T`) — what the uplink behind the port actually delivers, both directions, bound
+  to the dongle so it measures the port rather than whatever holds the default route. Figures
+  appear within a second and update as it runs, so a slow uplink is obvious long before the test
+  ends. It transfers real data to `speed.cloudflare.com`, capped at 200 MB or 10 s per direction,
+  and runs only when you press `T`. `curl` does the transfer and the bytes are counted as they
+  stream, so there is no output format to parse — and no test at all where `curl` is missing,
+  which the app says out loud instead of failing.
+
+### Changed
+
+- The survey (`C`) and speed test (`T`) explain themselves on the first press and start on the
+  second, and their standing hint paragraphs are gone — the explanation now appears exactly when it
+  is relevant instead of taking up the window forever. Stopping either one is still immediate. The
+  principle behind the split is written down in the README: cheap things (diagnostics, ping, DNS)
+  happen by themselves, expensive ones (someone else's bandwidth, an admin password) need intent.
+- `M`, `U` and applying a profile now ask before acting **on a built-in port** — the machine's own
+  connection is not something a stray keystroke should reconfigure. Dongles still act on the first
+  press. Any other key cancels the pending confirmation. The prompt is in a sticky notice bar,
+  because the window scrolls past a static one: a confirmation you cannot see is worse than none,
+  since the first press then looks like it did nothing.
+- The badge says `WI-FI` or `BUILT-IN` instead of `UNKNOWN` for the machine's own ports. The
+  chipset database only covers USB dongles, so `UNKNOWN` there read as "we do not recognise your
+  laptop", and the chipset view now says as much rather than showing empty USB rows.
+- Link speed reads `up` rather than `up · —` when there is no negotiated rate to report, which is
+  what macOS does for Wi-Fi.
+- Windows 11: MAC rolling is now recorded as verified on real hardware. It was confirmed against
+  0.2.0; the only change to `winSetMacScript` since is that the adapter name goes through
+  `psEscapeDouble`, which is byte-identical for an ordinary name like `Ethernet 3`, so the result
+  carries over.
+- Pings now send five packets instead of two, so packet loss is a figure rather than a coin flip
+  (two packets could only ever report 0/50/100%). macOS and Linux space them 0.2 s apart and
+  finish in under a second — faster than the two-packet run they replace; Windows has no interval
+  flag and takes about four.
+- Latency rows show jitter and always state the loss, `0% loss` included. The old rendering hid a
+  zero, which made "measured, clean" and "never really measured" look identical.
 
 ## [0.3.0] – 2026-08-05
 
@@ -81,7 +128,7 @@ All notable changes are documented here. The format follows
   `parseDiscovery` keeps its name: it really does parse the discovery protocols, LLDP and CDP.
 - The whole repo is Prettier-formatted, and `test/**` is now type-checked.
 
-## [0.2.0] – 2026-07-23
+## 0.2.0 – 2026-07-23
 
 ### Added
 
@@ -96,7 +143,7 @@ All notable changes are documented here. The format follows
   (`PnpDeviceID` → `PNPDeviceID`), which meant USB dongles weren't detected. All
   PowerShell JSON keys are now set deterministically via calculated properties.
 
-## [0.1.0] – 2026-07-23
+## 0.1.0 – 2026-07-23
 
 ### Added
 
@@ -110,6 +157,4 @@ All notable changes are documented here. The format follows
 - macOS live-verified; Linux/Windows implemented against documented format with unit-tested parsers.
 
 [Unreleased]: https://github.com/carlhannes/magiceth/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/carlhannes/magiceth/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/carlhannes/magiceth/releases/tag/v0.2.0
-[0.1.0]: https://github.com/carlhannes/magiceth/releases/tag/v0.1.0
+[0.3.0]: https://github.com/carlhannes/magiceth/releases/tag/v0.3.0

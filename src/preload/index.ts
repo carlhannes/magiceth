@@ -1,21 +1,22 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   Diagnostics,
-  Dongle,
+  Adapter,
   MagicethApi,
   Profile,
   ReconfigResult,
+  SpeedTestResult,
   SurveyResult
 } from '../shared/types'
 
 // Exposes a small, typed API on window.api. contextIsolation is on and the renderer
 // never gets direct access to Node/Electron — only these methods.
 const api: MagicethApi = {
-  listDongles: () => ipcRenderer.invoke('dongles:list'),
-  onDonglesChanged: (cb: (dongles: Dongle[]) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: Dongle[]): void => cb(data)
-    ipcRenderer.on('dongles:changed', listener)
-    return () => ipcRenderer.removeListener('dongles:changed', listener)
+  listAdapters: () => ipcRenderer.invoke('adapters:list'),
+  onAdaptersChanged: (cb: (adapters: Adapter[]) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: Adapter[]): void => cb(data)
+    ipcRenderer.on('adapters:changed', listener)
+    return () => ipcRenderer.removeListener('adapters:changed', listener)
   },
   runDiagnostics: (device: string): Promise<Diagnostics> =>
     ipcRenderer.invoke('diagnostics:run', device),
@@ -26,6 +27,14 @@ const api: MagicethApi = {
     const listener = (_event: Electron.IpcRendererEvent, data: SurveyResult): void => cb(data)
     ipcRenderer.on('survey:update', listener)
     return () => ipcRenderer.removeListener('survey:update', listener)
+  },
+  startSpeedTest: (device: string): Promise<SpeedTestResult> =>
+    ipcRenderer.invoke('speedtest:start', device),
+  stopSpeedTest: (): Promise<SpeedTestResult | null> => ipcRenderer.invoke('speedtest:stop'),
+  onSpeedTestUpdate: (cb: (result: SpeedTestResult) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: SpeedTestResult): void => cb(data)
+    ipcRenderer.on('speedtest:update', listener)
+    return () => ipcRenderer.removeListener('speedtest:update', listener)
   },
   rollMac: (device: string): Promise<ReconfigResult> =>
     ipcRenderer.invoke('reconfig:rollMac', device),

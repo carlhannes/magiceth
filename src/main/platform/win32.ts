@@ -9,6 +9,8 @@ import type { NetInfo, Profile } from '../../shared/types'
 // Windows. Format per documentation — verify on real hardware (spike):
 //  - `Get-NetAdapter | Select ... | ConvertTo-Json` gives adapters; USB dongles have
 //    a PnpDeviceID starting with "USB\VID_xxxx&PID_xxxx".
+//  - `Virtual` is the documented split for Hyper-V, WSL, VPN and loopback adapters.
+//  - `NdisPhysicalMedium` 9 is Native 802.11 and 1 is Wireless LAN; 14 is 802.3.
 
 // The keys are intentionally lowercase and come from calculated properties in the PowerShell below,
 // so we never depend on the casing of the CIM properties (e.g. PNPDeviceID).
@@ -17,9 +19,20 @@ interface NetAdapterRaw {
   desc?: string
   mac?: string
   pnp?: string
+  virtual?: boolean
+  hardware?: boolean
+  media?: string
+  ndis?: number
 }
 
-/** Parse JSON from Get-NetAdapter and extract USB dongles with VID:PID from PNPDeviceID. */
+/**
+ * Parse JSON from Get-NetAdapter into the ports worth showing.
+ *
+ * Filtering happens here rather than through the cmdlet's -Physical switch on purpose: if that
+ * switch were ever unavailable the command would fail and the app would show *no* adapters at all,
+ * whereas a property this parser cannot see simply leaves the adapter in. Erring towards showing
+ * something is the right direction for the one platform with no hardware to test on.
+ */
 export function parseGetNetAdapter(json: string): RawAdapter[] {
   const parsed: unknown = JSON.parse(json)
   const data: NetAdapterRaw[] = Array.isArray(parsed)
@@ -27,9 +40,11 @@ export function parseGetNetAdapter(json: string): RawAdapter[] {
     : [parsed as NetAdapterRaw]
   const adapters: RawAdapter[] = []
   for (const a of data) {
+    if (a.virtual === true || a.hardware === false) continue
     const pnp = a.pnp ?? ''
-    if (!/^USB/i.test(pnp)) continue
+    const usb = /^USB/i.test(pnp)
     const m = pnp.match(/VID_([0-9A-Fa-f]{4}).*?PID_([0-9A-Fa-f]{4})/)
+    const wireless = /802\.11|wireless|wi-?fi/i.test(a.media ?? '') || a.ndis === 9 || a.ndis === 1
     let mac = ''
     try {
       mac = normalizeMac(a.mac ?? '')
@@ -40,9 +55,13 @@ export function parseGetNetAdapter(json: string): RawAdapter[] {
       device: a.name ?? '',
       portName: a.desc ?? a.name ?? '',
       mac,
-      usb: m
-        ? { vendorId: m[1].toLowerCase(), productId: m[2].toLowerCase(), productName: a.desc }
-        : undefined
+      // A USB Wi-Fi stick is still a dongle: USB wins, because that is what the chipset database
+      // is keyed on and what the tool is built around.
+      kind: usb ? 'usb' : wireless ? 'wifi' : 'ethernet',
+      usb:
+        usb && m
+          ? { vendorId: m[1].toLowerCase(), productId: m[2].toLowerCase(), productName: a.desc }
+          : undefined
     })
   }
   return adapters
@@ -55,7 +74,11 @@ async function enumerateAdapters(): Promise<RawAdapter[]> {
     "@{N='name';E={$_.Name}}," +
     "@{N='desc';E={$_.InterfaceDescription}}," +
     "@{N='mac';E={$_.MacAddress}}," +
-    "@{N='pnp';E={$_.PNPDeviceID}} | ConvertTo-Json -Compress"
+    "@{N='pnp';E={$_.PNPDeviceID}}," +
+    "@{N='virtual';E={$_.Virtual}}," +
+    "@{N='hardware';E={$_.HardwareInterface}}," +
+    "@{N='media';E={$_.PhysicalMediaType}}," +
+    "@{N='ndis';E={$_.NdisPhysicalMedium}} | ConvertTo-Json -Compress"
   const res = await run('powershell', ['-NoProfile', '-NonInteractive', '-Command', cmd], {
     timeoutMs: 10000
   })
@@ -142,6 +165,8 @@ async function readNetInfo(device: string): Promise<NetInfo> {
 
 function pingCommand(target: string, opts: PingOptions): PingSpec {
   // Windows: -n count, -w timeout in ms, -S binds source IP (interface binding is not available).
+  // There is no interval flag, so Windows always spends about a second per packet — the one place
+  // where a five-packet run is noticeably slower than the two-packet one it replaced.
   const args = ['-n', String(opts.count), '-w', '1000']
   if (opts.srcIp) args.push('-S', opts.srcIp)
   args.push(target)
@@ -191,11 +216,18 @@ async function buildProfilePlan(device: string, profile: Profile): Promise<Eleva
   return { interpreter: 'powershell', script: winProfileScript(device, profile) }
 }
 
+function speedTestBind(_device: string, srcIp?: string): string | undefined {
+  // Windows has no bind-by-interface, and curl would try to resolve an adapter name like
+  // "Ethernet 2" as a host. Without an address there is nothing to bind and no test to run.
+  return srcIp
+}
+
 export const win32: PlatformOps = {
   id: 'win32',
   enumerateAdapters,
   readNetInfo,
   pingCommand,
+  speedTestBind,
   buildSetMacPlan,
   buildProfilePlan
 }

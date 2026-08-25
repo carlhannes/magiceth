@@ -1,6 +1,16 @@
 import './styles.css'
-import type { Diagnostics, Dongle, PingResult, Profile, SurveyResult } from '../../shared/types'
+import type {
+  Diagnostics,
+  Adapter,
+  NetInfo,
+  PingResult,
+  Profile,
+  SpeedPhase,
+  SpeedTestResult,
+  SurveyResult
+} from '../../shared/types'
 import { isLinkLocalIpv4 } from '../../shared/net'
+import { pickSelected } from '../../shared/adapter'
 import { validateProfileDraft } from '../../shared/profile'
 import type { ProfileDraftInput } from '../../shared/profile'
 
@@ -8,14 +18,22 @@ const app = document.getElementById('app') as HTMLElement
 const APP_VERSION = __APP_VERSION__
 
 // --- State ---
-let dongles: Dongle[] = []
+let adapters: Adapter[] = []
 let selected = 0
 let diag: Diagnostics | null = null
 let running = false
 let survey: SurveyResult | null = null
 let surveyDevice: string | null = null
 let surveying = false
+let speed: SpeedTestResult | null = null
+let speedDevice: string | null = null
+let measuring = false
 let profiles: Profile[] = []
+// A config-changing key pressed on a built-in port, waiting for the same key again. Dongles are
+// what this tool is for and stay single-press; the machine's own Wi-Fi is not something a stray
+// keystroke should be able to reconfigure. Cleared by any other key, by switching adapter, and by
+// acting — deliberately not on a timer, since self-clearing notices are a separate open question.
+let pendingAction: { key: string; device: string } | null = null
 let panel = false // profile panel open
 let info = false // chipset info sub-view open (mutually exclusive with the profile panel)
 let profileSel = 0
@@ -36,6 +54,37 @@ function speedText(mbps?: number): string {
   return mbps >= 1000 ? `${mbps / 1000} Gbit/s` : `${mbps} Mbit/s`
 }
 
+/** True for the machine's own ports, which the chipset database says nothing about. */
+function isBuiltIn(d: Adapter): boolean {
+  return d.kind !== 'usb'
+}
+
+/**
+ * IDENTIFIED/UNKNOWN is a statement about the chipset database, which only covers USB dongles —
+ * so applying it to built-in Wi-Fi would read as "we do not recognise your laptop", which is both
+ * untrue and alarming. Built-ins say what they are instead.
+ */
+function badgeText(d: Adapter): string {
+  if (d.kind === 'wifi') return 'WI-FI'
+  if (d.kind === 'ethernet') return 'BUILT-IN'
+  return d.known ? 'IDENTIFIED' : 'UNKNOWN'
+}
+
+function cardClass(d: Adapter): string {
+  return isBuiltIn(d) ? 'builtin' : d.known ? 'known' : 'unknown'
+}
+
+/**
+ * The link row. Wi-Fi reports no `baseT` media on macOS, so there is no negotiated rate to show —
+ * "up" alone says what is known, where "up · —" reads like something failed to load.
+ */
+function linkText(net: NetInfo): string {
+  const parts = ['up']
+  if (net.linkSpeedMbps) parts.push(speedText(net.linkSpeedMbps))
+  if (net.duplex) parts.push(`${net.duplex} duplex`)
+  return parts.join(' · ')
+}
+
 function pingClass(p?: PingResult): string {
   if (!p) return 'bad'
   if (p.ok && (p.lossPct ?? 0) === 0) return 'ok'
@@ -47,8 +96,11 @@ function pingText(p?: PingResult): string {
   if (!p) return '—'
   if (!p.ok) return 'no response'
   const rtt = p.avgMs != null ? `${p.avgMs.toFixed(1)} ms` : 'response'
-  const loss = p.lossPct ? ` · ${p.lossPct}% loss` : ''
-  return `${rtt}${loss}`
+  const jitter = p.jitterMs != null ? ` ±${p.jitterMs.toFixed(1)}` : ''
+  // Always spell the loss out, 0% included: "we measured and it was clean" and "we never really
+  // measured" must not look the same on screen.
+  const loss = p.lossPct != null ? ` · ${p.lossPct}% loss` : ''
+  return `${rtt}${jitter}${loss}`
 }
 
 function row(label: string, value: string, cls = ''): string {
@@ -56,15 +108,15 @@ function row(label: string, value: string, cls = ''): string {
 }
 
 function currentNet() {
-  const d = dongles[selected]
+  const d = adapters[selected]
   return d && diag && diag.device === d.device ? diag.net : null
 }
 
 function renderSelector(): string {
-  if (dongles.length <= 1) return ''
-  return `<div class="selector">${dongles
+  if (adapters.length <= 1) return ''
+  return `<div class="selector">${adapters
     .map((d, i) => {
-      // Lead with the device: it is the one thing guaranteed unique, so two dongles of the same
+      // Lead with the device: it is the one thing guaranteed unique, so two adapters of the same
       // model stay tellable apart. The vendor is dropped — the card below spells it out in full.
       const name = `${d.device} · ${d.chipset ? d.chipset.chipset : d.portName || 'USB Ethernet'}`
       return `<span class="chip${i === selected ? ' active' : ''}">${escapeHtml(name)}</span>`
@@ -72,7 +124,7 @@ function renderSelector(): string {
     .join('')}<span class="selector-hint">↑ ↓ switch</span></div>`
 }
 
-function renderDiagnostics(d: Dongle): string {
+function renderDiagnostics(d: Adapter): string {
   const chip = d.chipset
   const title = chip ? `${chip.vendor} ${chip.chipset}` : d.portName || 'USB Ethernet'
   const diagForThis = diag && diag.device === d.device ? diag : null
@@ -102,7 +154,7 @@ function renderDiagnostics(d: Dongle): string {
         ? `no server answered${dhcp.state ? ` (${dhcp.state})` : ''}`
         : `${dhcp.state ?? 'on'}${dhcp.server ? ` · server ${dhcp.server}` : ''}`
     body = `
-      ${row('Link', `up · ${speedText(net.linkSpeedMbps)}${net.duplex ? ` · ${net.duplex} duplex` : ''}`, 'ok')}
+      ${row('Link', linkText(net), 'ok')}
       ${row('IPv4', ipText, net.ipv4 ? (linkLocal ? 'warn' : 'ok') : 'bad')}
       ${net.netmask ? row('Netmask', net.netmask) : ''}
       ${row('Gateway', net.gateway ?? '—', net.gateway ? '' : 'warn')}
@@ -129,15 +181,76 @@ function renderDiagnostics(d: Dongle): string {
   }
 
   return `
-    <article class="dongle ${d.known ? 'known' : 'unknown'}">
-      <div class="dongle-head">
-        <span class="badge">${d.known ? 'IDENTIFIED' : 'UNKNOWN'}</span>
+    <article class="adapter ${cardClass(d)}">
+      <div class="adapter-head">
+        <span class="badge">${badgeText(d)}</span>
         <h2>${escapeHtml(title)}</h2>
         <span class="dev">${escapeHtml(d.device)}</span>
       </div>
       <div class="diag">${body}</div>
-      <div class="diag">${renderSurvey(d)}</div>
+      ${[renderSpeed(d), renderSurvey(d)]
+        .filter(Boolean)
+        .map((section) => `<div class="diag">${section}</div>`)
+        .join('')}
     </article>`
+}
+
+/**
+ * Measured throughput. speedText() stays for the negotiated link rate: that one is an exact
+ * integer reported by the driver, this one is a measurement and wants significant digits.
+ */
+function rateText(mbps: number): string {
+  if (mbps >= 1000) return `${(mbps / 1000).toFixed(2)} Gbit/s`
+  if (mbps >= 100) return `${Math.round(mbps)} Mbit/s`
+  return `${mbps.toFixed(1)} Mbit/s`
+}
+
+/** The headline for one direction: the best trailing second, with the live figure while it runs. */
+function phaseText(p: SpeedPhase): string {
+  if (p.done) {
+    const best = p.peakMbps ?? p.nowMbps
+    return best != null ? rateText(best) : (p.message ?? 'nothing moved')
+  }
+  if (p.nowMbps == null) return 'starting…'
+  return p.peakMbps != null
+    ? `${rateText(p.nowMbps)} · peak ${rateText(p.peakMbps)}`
+    : rateText(p.nowMbps)
+}
+
+/** What pressing T is about to do. Shown as the confirmation, not as standing hint text. */
+const SPEED_EXPLAINER =
+  'Speed test — a real transfer to speed.cloudflare.com bound to this port, up to ~200 MB each way, about 20 s.'
+
+function renderSpeed(d: Adapter): string {
+  const forThis = speed && speedDevice === d.device ? speed : null
+  const live = forThis?.running === true
+  let inner: string
+
+  // Nothing to say until it has run: the footer already offers T, and the explanation arrives when
+  // it is actually wanted. A paragraph that never changes is a paragraph nobody reads twice.
+  if (!forThis) return ''
+  if (forThis.status !== 'ok' && !live) {
+    inner = `<p class="status-msg">${escapeHtml(forThis.message ?? 'The speed test failed.')}</p>`
+  } else {
+    const rows = (['download', 'upload'] as const)
+      .map((kind) => {
+        const label = kind === 'download' ? 'Download' : 'Upload'
+        const p = forThis.phases.find((x) => x.kind === kind)
+        if (!p) return row(label, live ? 'waiting…' : '—', 'warn')
+        const measured = (p.peakMbps ?? p.nowMbps) != null
+        return row(label, phaseText(p), measured ? 'ok' : p.done ? 'bad' : '')
+      })
+      .join('')
+
+    const moved = forThis.phases.reduce((sum, p) => sum + p.bytes, 0)
+    const volume = `${Math.round(moved / 1e6)} MB`
+    const footer = live
+      ? `<p class="hint2">Testing ${clock(forThis.elapsedSec)} · ${volume} · <b>T</b> stops</p>`
+      : `<p class="hint2">Ran ${clock(forThis.elapsedSec)} · ${volume} moved · <b>T</b> tests again</p>`
+
+    inner = rows + footer
+  }
+  return `<div class="section-title">Speed test</div>${inner}`
 }
 
 /**
@@ -160,16 +273,17 @@ function clock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-function renderSurvey(d: Dongle): string {
+/** What pressing C is about to do. Shown as the confirmation, not as standing hint text. */
+const SURVEY_EXPLAINER =
+  'Port survey — captures on this port until you stop it and lists every VLAN it carries. Needs admin rights, and a quiet VLAN can take ~30 s to show up.'
+
+function renderSurvey(d: Adapter): string {
   const forThis = survey && surveyDevice === d.device ? survey : null
   const live = forThis?.running === true
   let inner: string
 
-  if (!forThis) {
-    inner =
-      `<p class="status-msg">Press <b>C</b> to survey the port.</p>` +
-      `<p class="notes">Runs until you stop it. A busy trunk shows up in seconds, but a quiet VLAN only beacons every ~30 s — so give it half a minute before believing a port is untagged.</p>`
-  } else if (forThis.status !== 'ok' && !live) {
+  if (!forThis) return ''
+  if (forThis.status !== 'ok' && !live) {
     inner = `<p class="status-msg">${escapeHtml(forThis.message ?? 'No info')}</p>`
   } else {
     // The VLAN list is the part that works on any switch; LLDP/CDP below it is a bonus.
@@ -219,27 +333,33 @@ function renderSurvey(d: Dongle): string {
 }
 
 // Chipset sub-view (I). The capabilities live in resources/chipsets.json; the raw USB IDs are
-// what you need to file a new-chipset PR when a dongle is not in the database yet.
-function renderInfo(d: Dongle): string {
+// what you need to file a new-chipset PR when a dongle is not in the database yet. A built-in port
+// has no USB identity at all, so those rows are dropped rather than shown empty.
+function renderInfo(d: Adapter): string {
   if (!info) return ''
   const chip = d.chipset
   const usb = d.usb
   const usbId = usb ? `${usb.vendorId}:${usb.productId}` : ''
+  const builtIn = isBuiltIn(d)
   return `<section class="panel-card">
     <div class="section-title">Chipset / hardware</div>
-    ${row('Vendor', chip?.vendor ?? usb?.vendorName ?? '—')}
-    ${row('Chipset', chip?.chipset ?? 'unknown', d.known ? 'ok' : 'warn')}
-    ${chip?.maxSpeedMbps ? row('Max speed', speedText(chip.maxSpeedMbps)) : ''}
-    ${chip ? row('VLAN', chip.vlan ? 'yes' : 'no') : ''}
-    ${row('USB ID', usbId || '—', usbId ? '' : 'warn')}
+    ${row('Kind', builtIn ? (d.kind === 'wifi' ? 'built-in Wi-Fi' : 'built-in Ethernet') : 'USB dongle')}
+    ${builtIn ? '' : row('Vendor', chip?.vendor ?? usb?.vendorName ?? '—')}
+    ${builtIn ? '' : row('Chipset', chip?.chipset ?? 'unknown', d.known ? 'ok' : 'warn')}
+    ${!builtIn && chip?.maxSpeedMbps ? row('Max speed', speedText(chip.maxSpeedMbps)) : ''}
+    ${!builtIn && chip ? row('VLAN', chip.vlan ? 'yes' : 'no') : ''}
+    ${builtIn ? '' : row('USB ID', usbId || '—', usbId ? '' : 'warn')}
     ${usb?.productName ? row('USB name', usb.productName) : ''}
     ${row('Port', d.portName || '—')}
+    ${row('MAC', d.mac || '—')}
     ${chip?.brands?.length ? `<p class="notes">Sold as: ${escapeHtml(chip.brands.join(', '))}</p>` : ''}
     ${chip?.notes ? `<p class="notes">${escapeHtml(chip.notes)}</p>` : ''}
     ${
-      !d.known && usbId
-        ? `<p class="notes">Not in the chipset database — add "${escapeHtml(usbId)}" to resources/chipsets.json.</p>`
-        : ''
+      builtIn
+        ? `<p class="notes">Built-in port — the chipset database covers USB dongles, so there is nothing to look up here.</p>`
+        : !d.known && usbId
+          ? `<p class="notes">Not in the chipset database — add "${escapeHtml(usbId)}" to resources/chipsets.json.</p>`
+          : ''
     }
     <p class="hint2"><b>I</b> or <b>Esc</b> closes</p>
   </section>`
@@ -363,26 +483,26 @@ function render(): void {
   // While the profile form is open we never re-render (otherwise <input> loses focus/value).
   // Background flows update data in memory; the next render() after the form closes shows it.
   if (editorOpen) return
-  if (dongles.length === 0) {
+  if (adapters.length === 0) {
     app.innerHTML = `
       <header class="topbar"><h1>magiceth</h1><span class="ver">v${APP_VERSION}</span></header>
       <div class="empty">
-        <p class="big">Plug in a USB ethernet dongle</p>
-        <p class="sub">The tool detects it automatically and diagnoses the port.</p>
+        <p class="big">No network ports found</p>
+        <p class="sub">Plug in a USB ethernet dongle — it is detected automatically.</p>
       </div>
-      <footer class="hint">waiting for dongle…</footer>`
+      <footer class="hint">waiting for a port…</footer>`
     return
   }
-  const d = dongles[selected]
-  const spinner = running || surveying || busy ? '<span class="spin">⟳</span>' : ''
+  const d = adapters[selected]
+  const spinner = running || surveying || measuring || busy ? '<span class="spin">⟳</span>' : ''
   app.innerHTML = `
     <header class="topbar"><h1>magiceth</h1><span class="ver">v${APP_VERSION}</span>${spinner}</header>
-    ${notice ? `<div class="notice">${escapeHtml(notice)}</div>` : ''}
+    ${notice ? `<div class="notice${pendingAction ? ' confirm' : ''}">${escapeHtml(notice)}</div>` : ''}
     ${renderSelector()}
     ${renderDiagnostics(d)}
     ${renderInfo(d)}
     ${renderPanel()}
-    <footer class="hint"><b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>I</b> chipset · <b>S</b> save · <b>U</b> undo · <b>C</b> ${surveying ? 'stop' : 'survey'}</footer>`
+    <footer class="hint"><b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>I</b> chipset · <b>S</b> save · <b>U</b> undo · <b>C</b> ${surveying ? 'stop' : 'survey'} · <b>T</b> ${measuring ? 'stop' : 'speed'}</footer>`
 }
 
 async function runDiag(device: string): Promise<void> {
@@ -445,12 +565,58 @@ async function toggleSurvey(device: string): Promise<void> {
 function endSurveyIfRunning(): void {
   if (!surveying) return
   surveying = false
-  // Keep the final snapshot rather than the last live one: switching back to that dongle should
+  // Keep the final snapshot rather than the last live one: switching back to that adapter should
   // show what the capture found, not claim it is still running.
   void window.api
     .stopSurvey()
     .then((final) => {
       if (final) survey = final
+      render()
+    })
+    .catch(() => undefined)
+}
+
+/** T starts the speed test and, while one is running, stops it. Results stay on screen either way. */
+async function toggleSpeedTest(device: string): Promise<void> {
+  if (measuring) {
+    measuring = false
+    render()
+    try {
+      const final = await window.api.stopSpeedTest()
+      if (final) speed = final
+    } catch (err) {
+      console.error('stopping the speed test failed', err)
+      notice = `Stopping the speed test failed: ${String(err)}`
+    }
+    render()
+    return
+  }
+
+  measuring = true
+  speedDevice = device
+  speed = null
+  render()
+  try {
+    speed = await window.api.startSpeedTest(device)
+    // A refused start (no curl, no address) comes back already stopped.
+    measuring = speed.running
+  } catch (err) {
+    console.error('speed test failed', err)
+    measuring = false
+    speed = { status: 'error', running: false, phases: [], elapsedSec: 0, message: String(err) }
+  }
+  render()
+}
+
+/** Stop a running speed test when it is no longer the thing on screen. */
+function endSpeedTestIfRunning(): void {
+  if (!measuring) return
+  measuring = false
+  // Keep the final snapshot rather than the last live one, for the same reason the survey does.
+  void window.api
+    .stopSpeedTest()
+    .then((final) => {
+      if (final) speed = final
       render()
     })
     .catch(() => undefined)
@@ -518,20 +684,73 @@ async function deleteSelectedProfile(): Promise<void> {
   render()
 }
 
-function applyProfileByIndex(idx: number): void {
+function keyLabel(key: string): string {
+  return key === 'Enter' ? 'Enter' : key.toUpperCase()
+}
+
+/**
+ * Ask once, act on the next press of the same key. Returns true when the caller should go ahead.
+ *
+ * `pending` is whatever was outstanding when this keystroke arrived; the handler clears it on
+ * every press, so anything in between cancels rather than confirms. The message doubles as the
+ * explanation of what is about to happen, which is why the survey and speed test use this instead
+ * of standing paragraphs of hint text.
+ */
+function confirmStep(
+  key: string,
+  device: string,
+  message: string,
+  pending: { key: string; device: string } | null
+): boolean {
+  if (pending && pending.key === key && pending.device === device) return true
+  pendingAction = { key, device }
+  notice = `${message} Press ${keyLabel(key)} again to start.`
+  render()
+  return false
+}
+
+/**
+ * Gate for the keys that change real network configuration. A dongle acts on the first press —
+ * one-handed operation at a rack is the whole point. A built-in port is the machine's own
+ * connection, so the first press asks and only the very next press of the same key acts.
+ */
+function confirmed(
+  key: string,
+  d: Adapter,
+  what: string,
+  pending: { key: string; device: string } | null
+): boolean {
+  if (!isBuiltIn(d)) return true
+  const where = d.kind === 'wifi' ? 'built-in Wi-Fi' : 'built-in Ethernet'
+  return confirmStep(key, d.device, `${what} on ${where} (${d.device})?`, pending)
+}
+
+function applyProfileByIndex(
+  idx: number,
+  key: string,
+  pending: { key: string; device: string } | null
+): void {
   const p = profiles[idx]
-  const d = dongles[selected]
+  const d = adapters[selected]
   if (!p || !d || busy) return
+  if (!confirmed(key, d, `Apply "${p.name}"`, pending)) return
   void runReconfig(d.device, () => window.api.applyProfile(d.device, p.id), `Applied ${p.name}`)
 }
 
-function onDongles(next: Dongle[]): void {
-  const prevDevice = dongles[selected]?.device
-  dongles = next
-  const idx = dongles.findIndex((d) => d.device === prevDevice)
-  selected = idx >= 0 ? idx : 0
+function onAdapters(next: Adapter[]): void {
+  const previous = adapters
+  const prevDevice = previous[selected]?.device
+  adapters = next
+  selected = pickSelected(previous, next, prevDevice)
+  // A pending confirmation belongs to the port it was asked about. If a dongle has just arrived
+  // and taken the selection, the next press would land on that dongle instead — and a dongle acts
+  // on the first press, so the question and the answer would be about different ports.
+  if (pendingAction && adapters[selected]?.device !== pendingAction.device) {
+    pendingAction = null
+    notice = null
+  }
   render()
-  const current = dongles[selected]
+  const current = adapters[selected]
   if (current) void runDiag(current.device)
 }
 
@@ -544,8 +763,19 @@ document.addEventListener('keydown', (e) => {
     }
     return
   }
-  if (dongles.length === 0 || busy) return
-  const device = dongles[selected].device
+  if (adapters.length === 0 || busy) return
+  const adapter = adapters[selected]
+  const device = adapter.device
+  // Every keystroke consumes any outstanding confirmation: only the very next press of the same
+  // key can confirm, so anything in between cancels it. Take the question off screen with it —
+  // leaving "press M again to confirm" up after it stopped being true is how a prompt teaches
+  // people to ignore it. Whatever happens next sets its own notice.
+  const pending = pendingAction
+  pendingAction = null
+  if (pending) {
+    notice = null
+    render()
+  }
 
   if (panel) {
     if (e.key === 'ArrowDown') {
@@ -553,7 +783,7 @@ document.addEventListener('keydown', (e) => {
     } else if (e.key === 'ArrowUp') {
       profileSel = (profileSel - 1 + profiles.length) % profiles.length
     } else if (e.key === 'Enter') {
-      applyProfileByIndex(profileSel)
+      applyProfileByIndex(profileSel, e.key, pending)
     } else if (e.key === 'Backspace' || e.key === 'Delete') {
       void deleteSelectedProfile()
     } else if (e.key === 'n' || e.key === 'N') {
@@ -579,25 +809,37 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (e.key === 'ArrowDown') {
-    // The capture belongs to the dongle it was started on, so switching away ends it rather than
-    // leaving a privileged tcpdump running for a port that is no longer on screen.
+    // Both belong to the adapter they were started on, so switching away ends them rather than
+    // leaving a privileged tcpdump — or a curl saturating the uplink — on a port that is no longer
+    // on screen.
     endSurveyIfRunning()
-    selected = (selected + 1) % dongles.length
+    endSpeedTestIfRunning()
+    selected = (selected + 1) % adapters.length
     render()
-    void runDiag(dongles[selected].device)
+    void runDiag(adapters[selected].device)
   } else if (e.key === 'ArrowUp') {
     endSurveyIfRunning()
-    selected = (selected - 1 + dongles.length) % dongles.length
+    endSpeedTestIfRunning()
+    selected = (selected - 1 + adapters.length) % adapters.length
     render()
-    void runDiag(dongles[selected].device)
+    void runDiag(adapters[selected].device)
   } else if (e.key === 'r' || e.key === 'R' || e.key === ' ') {
     if (!running) void runDiag(device)
   } else if (e.key === 'c' || e.key === 'C') {
-    void toggleSurvey(device)
+    // Stopping is always safe and immediate; starting explains itself first.
+    if (surveying || confirmStep('c', device, SURVEY_EXPLAINER, pending)) void toggleSurvey(device)
+  } else if (e.key === 't' || e.key === 'T') {
+    if (measuring || confirmStep('t', device, SPEED_EXPLAINER, pending)) {
+      void toggleSpeedTest(device)
+    }
   } else if (e.key === 'm' || e.key === 'M') {
-    void runReconfig(device, () => window.api.rollMac(device), 'MAC rolled')
+    if (confirmed('m', adapter, 'Roll the MAC', pending)) {
+      void runReconfig(device, () => window.api.rollMac(device), 'MAC rolled')
+    }
   } else if (e.key === 'u' || e.key === 'U') {
-    void runReconfig(device, () => window.api.undo(device), 'Undone')
+    if (confirmed('u', adapter, 'Undo the last change', pending)) {
+      void runReconfig(device, () => window.api.undo(device), 'Undone')
+    }
   } else if (e.key === 's' || e.key === 'S') {
     void saveCurrent(device)
   } else if (e.key === 'p' || e.key === 'P') {
@@ -613,7 +855,7 @@ document.addEventListener('keydown', (e) => {
     info = false
     render()
   } else if (e.key >= '1' && e.key <= '9') {
-    applyProfileByIndex(Number(e.key) - 1)
+    applyProfileByIndex(Number(e.key) - 1, e.key, pending)
   } else {
     return
   }
@@ -621,16 +863,22 @@ document.addEventListener('keydown', (e) => {
 })
 
 async function init(): Promise<void> {
-  ;[dongles, profiles] = await Promise.all([window.api.listDongles(), window.api.listProfiles()])
+  ;[adapters, profiles] = await Promise.all([window.api.listAdapters(), window.api.listProfiles()])
   render()
-  if (dongles[selected]) void runDiag(dongles[selected].device)
-  window.api.onDonglesChanged(onDongles)
+  if (adapters[selected]) void runDiag(adapters[selected].device)
+  window.api.onAdaptersChanged(onAdapters)
   window.api.onSurveyUpdate((result) => {
     // Partial results keep arriving until the capture is stopped. Drop any that belong to a
-    // dongle we have since switched away from.
+    // adapter we have since switched away from.
     if (result.device && result.device !== surveyDevice) return
     survey = result
     surveying = result.running
+    if (!editorOpen) render()
+  })
+  window.api.onSpeedTestUpdate((result) => {
+    if (result.device && result.device !== speedDevice) return
+    speed = result
+    measuring = result.running
     if (!editorOpen) render()
   })
 }

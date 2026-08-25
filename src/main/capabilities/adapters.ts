@@ -1,6 +1,7 @@
 import { getPlatform } from '../platform'
 import chipsetsRaw from '../../../resources/chipsets.json'
-import type { ChipsetInfo, Dongle } from '../../shared/types'
+import { sortAdapters } from '../../shared/adapter'
+import type { Adapter, ChipsetInfo } from '../../shared/types'
 
 interface ChipsetDb {
   vendors: Record<string, string>
@@ -37,18 +38,21 @@ export function resolveChipset(
   return { known: false }
 }
 
-/** List connected USB dongles with resolved chipset info. */
-export async function listDongles(): Promise<Dongle[]> {
+/** List the ports worth diagnosing, dongles first, with chipset info resolved for the USB ones. */
+export async function listAdapters(): Promise<Adapter[]> {
   const raw = await getPlatform().enumerateAdapters()
-  return raw.map((r) => {
-    const { chipset, known } = resolveChipset(r.usb?.vendorId, r.usb?.productId)
-    return {
-      device: r.device,
-      portName: r.portName,
-      mac: r.mac,
-      usb: r.usb,
-      chipset,
-      known
-    }
-  })
+  return sortAdapters(
+    raw.map((r) => {
+      const { chipset, known } = resolveChipset(r.usb?.vendorId, r.usb?.productId)
+      return {
+        device: r.device,
+        portName: r.portName,
+        mac: r.mac,
+        kind: r.kind,
+        usb: r.usb,
+        chipset,
+        known
+      }
+    })
+  )
 }

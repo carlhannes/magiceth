@@ -8,10 +8,14 @@
 
 Plug in a USB-ethernet dongle, connect it to a network port, and immediately see everything a
 network technician needs to troubleshoot the port — IP, DHCP, gateway, DNS, link speed, ping
-to the gateway and the internet, and (optionally) VLAN/switch info via LLDP/CDP. Change the MAC
-address or switch between saved DHCP/static profiles with a couple of keystrokes. Everything is
-designed to be operable **with one hand** — for the technician holding the laptop in the other
-up by the rack.
+to the gateway and the internet, throughput in both directions, and (optionally) VLAN/switch info
+via LLDP/CDP. Change the MAC address or switch between saved DHCP/static profiles with a couple of
+keystrokes. Everything is designed to be operable **with one hand** — for the technician holding
+the laptop in the other up by the rack.
+
+The machine's **own Wi-Fi and built-in Ethernet** are listed too, so there is something to
+diagnose with no dongle attached. Dongles always sort first, and one you plug in takes the
+selection by itself.
 
 Works on **Windows, macOS, and Linux** (arm64 + amd64). The tool is a thin Electron GUI that
 orchestrates the OS's own network commands — no custom drivers, no background service.
@@ -29,11 +33,37 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 
 ## Features
 
+- **Ports, not just dongles** — USB dongles plus the machine's built-in Wi-Fi and Ethernet. Loopback, bridges, Docker/veth, VPN tunnels and internal plumbing are left out, using a structural signal on each OS rather than name matching: on macOS the ports macOS itself made into network services, on Linux the sysfs `device` entry only real hardware has, on Windows the `Virtual`/`HardwareInterface` properties.
 - **Identification** — detects the dongle on insertion and shows chipset + capabilities (VID:PID is looked up against a built-in database). Press `I` for the chipset sub-view: max speed, VLAN support, the brands that resell it and the raw USB IDs. Deltaco, Plexgear, Saitech, Apple, UGreen, and others are resellers — the underlying chipset (ASIX, Realtek, …) is what matters.
 - **Diagnostics** — IP/mask, gateway, DNS, full DHCP info (server, lease, domain), link speed/duplex, and MAC. Runs automatically as soon as the dongle gets link.
-- **Connectivity test** — pings the gateway + `1.1.1.1`/`8.8.8.8` _bound to the dongle_ (not via Wi-Fi), plus a DNS test against the DHCP-assigned server.
+- **Connectivity test** — pings the gateway + `1.1.1.1`/`8.8.8.8` _bound to the dongle_ (not via Wi-Fi), plus a DNS test against the DHCP-assigned server. Five packets per target, so latency comes with jitter and a packet-loss figure that means something.
+- **Speed test** _(manual, `T`)_ — measures what the uplink behind the port actually delivers, in both directions, bound to the dongle. Numbers appear within a second and update as it runs, so a 1 Mbit uplink is obvious long before the test ends. It transfers real data to `speed.cloudflare.com` — up to ~200 MB each way, about 20 s — and **never runs on its own**; `T` starts it and `T` stops it early.
 - **Port survey / VLAN discovery** _(optional, macOS/Linux)_ — press `C` on an uplink and every 802.1Q VLAN carried on it is listed as it is discovered, with a frame count and the addressing seen inside each one. It reads the tags straight off the wire, so it works on **any** switch, managed or not — no LLDP required. When the switch does advertise, LLDP/CDP adds its name, port and management IP on top. Runs until you stop it. Not implemented on Windows (it would need tshark + Npcap); the app says so instead of failing. Measured behaviour and the evidence behind it: [docs/VLAN-FINDINGS.md](docs/VLAN-FINDINGS.md).
 - **Active control** — roll a new (locally-administered) MAC, switch between DHCP and static profiles, create/edit profiles inline, and undo the last change.
+
+### Cheap things happen by themselves; expensive things need intent
+
+Everything the tool does falls into one of two classes, and which one it is decides how it starts.
+
+**Cheap enough to be automatic.** Reading OS state, a handful of ping packets, one DNS query — a
+few kilobytes and a second or two, on a network that will not notice. These run on their own the
+moment a port appears or its link changes, because "plug it in and see" is the entire promise. No
+key needed, no permission needed.
+
+**Expensive enough to want intent.** The speed test moves up to 400 MB across someone else's
+uplink. The port survey wants an admin password and then captures traffic for as long as you leave
+it running. Neither ever starts by itself, and neither starts on a single keystroke: **the first
+press explains what it is about to do, the second press does it.** Any other key in between
+cancels it.
+
+That is also why those two have no standing hint text. Instead of a paragraph sitting on screen
+being scrolled past forever, the explanation appears exactly when it is relevant — as the thing you
+are agreeing to. The list stays short and the window stays readable.
+
+**Changing configuration** is the same idea applied to risk rather than cost. `M`, `U` and applying
+a profile act on the first press on a **dongle** — one-handed operation at a rack is the point —
+but ask first on a **built-in** port, because that is the machine's own connection and a stray
+keystroke should not be able to take it down.
 
 <p align="center">
   <img src="docs/screenshot-vlan.png" alt="The port survey listing every VLAN on a trunk, opened with C" width="420">
@@ -53,11 +83,11 @@ what a "please add this chipset" issue or PR needs.
 
 ## Platform status
 
-| Platform                | Status                                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified                                          |
-| **Windows 11** (x64)    | Identification, diagnostics, ping and DHCP/static profile switching verified on real hardware; MAC rolling not yet |
-| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**                  |
+| Platform                | Status                                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified                                      |
+| **Windows 11** (x64)    | Identification, diagnostics, ping, DHCP/static profile switching and MAC rolling all verified on real hardware |
+| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**              |
 
 On Linux the DHCP-vs-static readout is inferred from the address lifetime that `ip -j addr`
 reports, which is the one part of the port readout that has not been checked against a live
@@ -87,9 +117,10 @@ diagnostics are shown automatically. Everything is controlled from the keyboard:
 
 | Key               | Action                                                                 |
 | ----------------- | ---------------------------------------------------------------------- |
-| `↑` `↓`           | Switch selected dongle (or navigate the profile panel)                 |
+| `↑` `↓`           | Switch selected port (or navigate the profile panel)                   |
 | `R` / space       | Re-run diagnostics                                                     |
 | `C`               | Start / stop the port survey (VLANs on the wire, LLDP/CDP)             |
+| `T`               | Start / stop the speed test (real transfer, see above)                 |
 | `I`               | Open/close the chipset sub-view (capabilities + raw USB IDs)           |
 | `M`               | Roll a new MAC address                                                 |
 | `P`               | Open/close the profile panel                                           |
@@ -98,6 +129,10 @@ diagnostics are shown automatically. Everything is controlled from the keyboard:
 | `Backspace`       | Delete the selected profile                                            |
 | `S`               | Save the current config as a profile                                   |
 | `U`               | Undo the last change                                                   |
+
+`M`, `U` and applying a profile change real network configuration. On a **dongle** they act on the
+first press — that is the one-handed point. On a **built-in** port they ask first and act on the
+second press of the same key, because that is the machine's own connection; any other key cancels.
 
 <p align="center">
   <img src="docs/screenshot-profiles.png" alt="The profile panel, opened with P" width="420">
@@ -108,6 +143,14 @@ diagnostics are shown automatically. Everything is controlled from the keyboard:
 Reads/diagnostics run unprivileged. Actions that _change_ the adapter (MAC, IP config) or
 capture packets (LLDP/CDP) require admin/root and request it **per action** via an OS prompt
 (macOS password dialog, Linux `pkexec`, Windows UAC). See [SECURITY.md](SECURITY.md).
+
+### What leaves the machine
+
+Everything the tool does stays on the local link, with one exception you start yourself: the
+speed test (`T`) transfers data to and from `speed.cloudflare.com`. Nothing about your network is
+sent with it — it is a volume of filler bytes, timed — but it is outbound traffic to a third
+party, it uses real bandwidth on the network under test, and it needs a working internet
+connection. It runs only when you press `T`.
 
 ## Building & packaging
 

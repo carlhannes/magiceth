@@ -60,13 +60,7 @@ body {
   font-variant: tabular-nums;
 }
 
-.dongles {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.dongle {
+.adapter {
   background: var(--panel);
   border: 1px solid var(--dim);
   border-left: 4px solid var(--muted);
@@ -74,22 +68,28 @@ body {
   padding: 14px 16px;
 }
 
-.dongle.known {
+.adapter.known {
   border-left-color: var(--ok);
 }
 
-.dongle.unknown {
+.adapter.unknown {
   border-left-color: var(--warn);
 }
 
-.dongle-head {
+/* Built-in Wi-Fi/Ethernet: no chipset lookup applies, so neither green nor amber would be
+   honest. The accent reads as "this is a port, just not a dongle". */
+.adapter.builtin {
+  border-left-color: var(--accent);
+}
+
+.adapter-head {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 10px;
 }
 
-.dongle-head h2 {
+.adapter-head h2 {
   font-size: 18px;
 }
 
@@ -151,7 +151,7 @@ body {
   border-radius: 5px;
 }
 
-.dongle-head .dev {
+.adapter-head .dev {
   margin-left: auto;
   color: var(--muted);
   font-size: 13px;
@@ -251,13 +251,26 @@ body {
   animation: spin 1s linear infinite;
 }
 
+/* Sticks to the top of the window because the content below it is taller than the window and the
+   user is usually scrolled past it. A confirmation prompt you cannot see is worse than none at
+   all: the first press looks like it did nothing, so you press again — and that is the press that
+   acts. Applies to every notice, not only confirmations. */
 .notice {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg));
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--text);
   border-radius: 10px;
   padding: 8px 12px;
   font-size: 13px;
+}
+
+/* A pending confirmation is a question, not a result — amber says "waiting on you". */
+.notice.confirm {
+  background: color-mix(in srgb, var(--warn) 18%, var(--bg));
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
 }
 
 /* Shared shell for the sub-views (profile panel, chipset info). */

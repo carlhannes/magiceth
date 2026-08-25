@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   parseHardwarePorts,
   parseIoregUsbMacs,
-  joinDarwinAdapters
+  joinDarwinAdapters,
+  parseNetworkServiceDevices,
+  builtinDarwinAdapters
 } from '../src/main/platform/darwin'
 
 // Real output captured on macOS (Apple Silicon) with an ASIX AX88179A dongle plugged in.
@@ -117,6 +119,7 @@ describe('joinDarwinAdapters', () => {
         device: 'en9',
         portName: 'AX88179A',
         mac: '6c:6e:07:01:ff:de',
+        kind: 'usb',
         usb: {
           vendorId: '0b95',
           productId: '1790',
@@ -127,12 +130,12 @@ describe('joinDarwinAdapters', () => {
     ])
   })
 
-  it('returns no dongles when no USB MAC matches a port', () => {
+  it('returns no adapters when no USB MAC matches a port', () => {
     expect(joinDarwinAdapters(parseHardwarePorts(NETWORKSETUP), [])).toEqual([])
   })
 
   it('emits one adapter per MAC even when ioreg repeats it', () => {
-    // Captured with two dongles attached: the Realtek publishes IOMACAddress on two nodes of the
+    // Captured with two adapters attached: the Realtek publishes IOMACAddress on two nodes of the
     // tree, so the parser legitimately sees it twice and the join must not produce a phantom.
     const entries = parseIoregUsbMacs(IOREG_TWO_DONGLES)
     expect(entries).toHaveLength(3)
@@ -146,5 +149,132 @@ describe('joinDarwinAdapters', () => {
       vendorName: 'Realtek',
       productName: 'USB 10/100/1000 LAN'
     })
+  })
+})
+
+// Real output captured on this development Mac, with no dongle attached. Both commands, verbatim:
+// the hardware list still offers plenty that is not a usable port, and the service list is what
+// separates them.
+const HARDWARE_PORTS_LAPTOP = `
+Hardware Port: Ethernet Adapter (en4)
+Device: en4
+Ethernet Address: 0e:30:9c:e7:25:0a
+
+Hardware Port: Ethernet Adapter (en5)
+Device: en5
+Ethernet Address: 0e:30:9c:e7:25:0b
+
+Hardware Port: Ethernet Adapter (en6)
+Device: en6
+Ethernet Address: 0e:30:9c:e7:25:0c
+
+Hardware Port: Thunderbolt Bridge
+Device: bridge0
+Ethernet Address: 36:7b:bc:d7:59:c0
+
+Hardware Port: Wi-Fi
+Device: en0
+Ethernet Address: 84:2f:57:44:d6:4f
+
+Hardware Port: Thunderbolt 1
+Device: en1
+Ethernet Address: 36:7b:bc:d7:59:c0
+
+Hardware Port: Thunderbolt 2
+Device: en2
+Ethernet Address: 36:7b:bc:d7:59:c4
+
+Hardware Port: Thunderbolt 3
+Device: en3
+Ethernet Address: 36:7b:bc:d7:59:c8
+
+VLAN Configurations
+===================
+`
+
+// The matching service order. Note en7/en8/en9/en10: SystemConfiguration keeps services long after
+// the hardware is unplugged, so this list alone would invent ports that are not there.
+const SERVICE_ORDER_LAPTOP = `An asterisk (*) denotes that a network service is disabled.
+(1) Wi-Fi
+(Hardware Port: Wi-Fi, Device: en0)
+
+(2) USB 10/100/1000 LAN
+(Hardware Port: USB 10/100/1000 LAN, Device: en7)
+
+(3) AX88179A
+(Hardware Port: AX88179A, Device: en9)
+
+(4) Thunderbolt Ethernet Slot 2
+(Hardware Port: Thunderbolt Ethernet Slot 2, Device: en8)
+
+(5) Thunderbolt Bridge
+(Hardware Port: Thunderbolt Bridge, Device: bridge0)
+
+(6) iPhone USB
+(Hardware Port: iPhone USB, Device: en10)
+
+(7) UniFi Teleport
+(Hardware Port: com.ubnt.wifiman, Device: )
+
+(8) wg-h.home.0xp.se-mbpm4
+(Hardware Port: com.wireguard.macos, Device: )
+`
+
+describe('parseNetworkServiceDevices', () => {
+  it('collects the devices macOS has made into network services', () => {
+    const devices = parseNetworkServiceDevices(SERVICE_ORDER_LAPTOP)
+    expect([...devices].sort()).toEqual(['bridge0', 'en0', 'en10', 'en7', 'en8', 'en9'])
+  })
+
+  it('skips services with no device, which is what a VPN looks like here', () => {
+    const devices = parseNetworkServiceDevices(SERVICE_ORDER_LAPTOP)
+    expect(devices.has('')).toBe(false)
+    expect(devices.size).toBe(6)
+  })
+})
+
+describe('builtinDarwinAdapters', () => {
+  const ports = parseHardwarePorts(HARDWARE_PORTS_LAPTOP)
+  const services = parseNetworkServiceDevices(SERVICE_ORDER_LAPTOP)
+
+  it('finds exactly the one real built-in port on this machine', () => {
+    // en1-en3 are Thunderbolt ports and en4-en6 are the T2 plumbing: macOS lists all six as
+    // hardware and none of them as a service, which is the whole reason the service list is read.
+    const adapters = builtinDarwinAdapters(ports, services, new Set())
+    expect(adapters).toEqual([
+      { device: 'en0', portName: 'Wi-Fi', mac: '84:2f:57:44:d6:4f', kind: 'wifi' }
+    ])
+  })
+
+  it('invents nothing for services whose hardware is gone', () => {
+    // en7/en8/en9/en10 all have services but are not plugged in, so they are not in the hardware
+    // list and must not appear.
+    const devices = builtinDarwinAdapters(ports, services, new Set()).map((a) => a.device)
+    expect(devices).not.toContain('en7')
+    expect(devices).not.toContain('en9')
+  })
+
+  it('leaves the Thunderbolt bridge out even though it is both hardware and a service', () => {
+    expect(services.has('bridge0')).toBe(true)
+    expect(builtinDarwinAdapters(ports, services, new Set()).map((a) => a.device)).not.toContain(
+      'bridge0'
+    )
+  })
+
+  it('does not list a port the USB pass already claimed', () => {
+    expect(builtinDarwinAdapters(ports, services, new Set(['en0']))).toEqual([])
+  })
+
+  it('calls a wired built-in ethernet, not wifi', () => {
+    // A Mac mini / iMac names its built-in port exactly "Ethernet".
+    const desktop = parseHardwarePorts(`
+Hardware Port: Ethernet
+Device: en0
+Ethernet Address: 84:2f:57:44:d6:4f
+`)
+    const adapters = builtinDarwinAdapters(desktop, new Set(['en0']), new Set())
+    expect(adapters).toEqual([
+      { device: 'en0', portName: 'Ethernet', mac: '84:2f:57:44:d6:4f', kind: 'ethernet' }
+    ])
   })
 })
