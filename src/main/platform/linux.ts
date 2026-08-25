@@ -90,8 +90,11 @@ async function enumerateAdapters(): Promise<RawAdapter[]> {
     }
     const wireless = existsSync(`/sys/class/net/${iface}/wireless`)
     const res = await run('udevadm', ['info', '-q', 'property', '-p', `/sys/class/net/${iface}`])
-    if (res.code !== 0) continue
-    adapters.push(udevToRawAdapter(iface, mac, parseUdevProperties(res.stdout), wireless))
+    // udev is what identifies a dongle (ID_BUS, and the VID:PID the chipset database is keyed on),
+    // but sysfs alone already proved this is a real port and said whether it is wireless. Listing
+    // it unidentified beats listing nothing at all on a system without udevadm.
+    const props = res.code === 0 ? parseUdevProperties(res.stdout) : {}
+    adapters.push(udevToRawAdapter(iface, mac, props, wireless))
   }
   return adapters
 }

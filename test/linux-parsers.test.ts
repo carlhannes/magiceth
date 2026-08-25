@@ -55,6 +55,16 @@ describe('udevToRawAdapter', () => {
     expect(adapter.usb).toBeUndefined()
   })
 
+  it('still describes a port when udev told us nothing', () => {
+    // udevadm missing or failing must not make a real port disappear; it only costs the USB
+    // identification, and sysfs has already said whether the interface is wireless.
+    const adapter = udevToRawAdapter('eth0', '00:11:22:33:44:66', {})
+    expect(adapter.device).toBe('eth0')
+    expect(adapter.portName).toBe('eth0')
+    expect(adapter.kind).toBe('ethernet')
+    expect(udevToRawAdapter('wlan0', '00:11:22:33:44:77', {}, true).kind).toBe('wifi')
+  })
+
   it('reads Wi-Fi from the sysfs wireless directory or from DEVTYPE', () => {
     const bySysfs = udevToRawAdapter(
       'wlan0',
