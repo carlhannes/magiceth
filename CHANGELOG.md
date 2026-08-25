@@ -27,6 +27,11 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ### Changed
 
+- The survey (`C`) and speed test (`T`) explain themselves on the first press and start on the
+  second, and their standing hint paragraphs are gone — the explanation now appears exactly when it
+  is relevant instead of taking up the window forever. Stopping either one is still immediate. The
+  principle behind the split is written down in the README: cheap things (diagnostics, ping, DNS)
+  happen by themselves, expensive ones (someone else's bandwidth, an admin password) need intent.
 - `M`, `U` and applying a profile now ask before acting **on a built-in port** — the machine's own
   connection is not something a stray keystroke should reconfigure. Dongles still act on the first
   press. Any other key cancels the pending confirmation. The prompt is in a sticky notice bar,

@@ -41,6 +41,30 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 - **Port survey / VLAN discovery** _(optional, macOS/Linux)_ — press `C` on an uplink and every 802.1Q VLAN carried on it is listed as it is discovered, with a frame count and the addressing seen inside each one. It reads the tags straight off the wire, so it works on **any** switch, managed or not — no LLDP required. When the switch does advertise, LLDP/CDP adds its name, port and management IP on top. Runs until you stop it. Not implemented on Windows (it would need tshark + Npcap); the app says so instead of failing. Measured behaviour and the evidence behind it: [docs/VLAN-FINDINGS.md](docs/VLAN-FINDINGS.md).
 - **Active control** — roll a new (locally-administered) MAC, switch between DHCP and static profiles, create/edit profiles inline, and undo the last change.
 
+### Cheap things happen by themselves; expensive things need intent
+
+Everything the tool does falls into one of two classes, and which one it is decides how it starts.
+
+**Cheap enough to be automatic.** Reading OS state, a handful of ping packets, one DNS query — a
+few kilobytes and a second or two, on a network that will not notice. These run on their own the
+moment a port appears or its link changes, because "plug it in and see" is the entire promise. No
+key needed, no permission needed.
+
+**Expensive enough to want intent.** The speed test moves up to 400 MB across someone else's
+uplink. The port survey wants an admin password and then captures traffic for as long as you leave
+it running. Neither ever starts by itself, and neither starts on a single keystroke: **the first
+press explains what it is about to do, the second press does it.** Any other key in between
+cancels it.
+
+That is also why those two have no standing hint text. Instead of a paragraph sitting on screen
+being scrolled past forever, the explanation appears exactly when it is relevant — as the thing you
+are agreeing to. The list stays short and the window stays readable.
+
+**Changing configuration** is the same idea applied to risk rather than cost. `M`, `U` and applying
+a profile act on the first press on a **dongle** — one-handed operation at a rack is the point —
+but ask first on a **built-in** port, because that is the machine's own connection and a stray
+keystroke should not be able to take it down.
+
 <p align="center">
   <img src="docs/screenshot-vlan.png" alt="The port survey listing every VLAN on a trunk, opened with C" width="420">
 </p>

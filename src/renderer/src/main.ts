@@ -188,8 +188,10 @@ function renderDiagnostics(d: Adapter): string {
         <span class="dev">${escapeHtml(d.device)}</span>
       </div>
       <div class="diag">${body}</div>
-      <div class="diag">${renderSpeed(d, net)}</div>
-      <div class="diag">${renderSurvey(d)}</div>
+      ${[renderSpeed(d), renderSurvey(d)]
+        .filter(Boolean)
+        .map((section) => `<div class="diag">${section}</div>`)
+        .join('')}
     </article>`
 }
 
@@ -215,18 +217,19 @@ function phaseText(p: SpeedPhase): string {
     : rateText(p.nowMbps)
 }
 
-function renderSpeed(d: Adapter, net?: NetInfo): string {
+/** What pressing T is about to do. Shown as the confirmation, not as standing hint text. */
+const SPEED_EXPLAINER =
+  'Speed test — a real transfer to speed.cloudflare.com bound to this port, up to ~200 MB each way, about 20 s.'
+
+function renderSpeed(d: Adapter): string {
   const forThis = speed && speedDevice === d.device ? speed : null
   const live = forThis?.running === true
   let inner: string
 
-  if (!forThis) {
-    // Said before anything runs, because the cost lands on someone else's network.
-    inner = !net?.ipv4
-      ? `<p class="status-msg">A speed test needs an IPv4 address on the port.</p>`
-      : `<p class="status-msg">Press <b>T</b> to measure the uplink.</p>` +
-        `<p class="notes">A real transfer to speed.cloudflare.com, bound to this port — up to ~200 MB each way, about 20 s. It never runs on its own.</p>`
-  } else if (forThis.status !== 'ok' && !live) {
+  // Nothing to say until it has run: the footer already offers T, and the explanation arrives when
+  // it is actually wanted. A paragraph that never changes is a paragraph nobody reads twice.
+  if (!forThis) return ''
+  if (forThis.status !== 'ok' && !live) {
     inner = `<p class="status-msg">${escapeHtml(forThis.message ?? 'The speed test failed.')}</p>`
   } else {
     const rows = (['download', 'upload'] as const)
@@ -270,16 +273,17 @@ function clock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
+/** What pressing C is about to do. Shown as the confirmation, not as standing hint text. */
+const SURVEY_EXPLAINER =
+  'Port survey — captures on this port until you stop it and lists every VLAN it carries. Needs admin rights, and a quiet VLAN can take ~30 s to show up.'
+
 function renderSurvey(d: Adapter): string {
   const forThis = survey && surveyDevice === d.device ? survey : null
   const live = forThis?.running === true
   let inner: string
 
-  if (!forThis) {
-    inner =
-      `<p class="status-msg">Press <b>C</b> to survey the port.</p>` +
-      `<p class="notes">Runs until you stop it. A busy trunk shows up in seconds, but a quiet VLAN only beacons every ~30 s — so give it half a minute before believing a port is untagged.</p>`
-  } else if (forThis.status !== 'ok' && !live) {
+  if (!forThis) return ''
+  if (forThis.status !== 'ok' && !live) {
     inner = `<p class="status-msg">${escapeHtml(forThis.message ?? 'No info')}</p>`
   } else {
     // The VLAN list is the part that works on any switch; LLDP/CDP below it is a bonus.
@@ -685,12 +689,30 @@ function keyLabel(key: string): string {
 }
 
 /**
+ * Ask once, act on the next press of the same key. Returns true when the caller should go ahead.
+ *
+ * `pending` is whatever was outstanding when this keystroke arrived; the handler clears it on
+ * every press, so anything in between cancels rather than confirms. The message doubles as the
+ * explanation of what is about to happen, which is why the survey and speed test use this instead
+ * of standing paragraphs of hint text.
+ */
+function confirmStep(
+  key: string,
+  device: string,
+  message: string,
+  pending: { key: string; device: string } | null
+): boolean {
+  if (pending && pending.key === key && pending.device === device) return true
+  pendingAction = { key, device }
+  notice = `${message} Press ${keyLabel(key)} again to start.`
+  render()
+  return false
+}
+
+/**
  * Gate for the keys that change real network configuration. A dongle acts on the first press —
  * one-handed operation at a rack is the whole point. A built-in port is the machine's own
  * connection, so the first press asks and only the very next press of the same key acts.
- *
- * `pending` is whatever was outstanding when this keystroke arrived; the handler clears it on
- * every press, so anything in between cancels rather than confirms.
  */
 function confirmed(
   key: string,
@@ -699,12 +721,8 @@ function confirmed(
   pending: { key: string; device: string } | null
 ): boolean {
   if (!isBuiltIn(d)) return true
-  if (pending && pending.key === key && pending.device === d.device) return true
-  pendingAction = { key, device: d.device }
   const where = d.kind === 'wifi' ? 'built-in Wi-Fi' : 'built-in Ethernet'
-  notice = `${what} on ${where} (${d.device})? Press ${keyLabel(key)} again to confirm.`
-  render()
-  return false
+  return confirmStep(key, d.device, `${what} on ${where} (${d.device})?`, pending)
 }
 
 function applyProfileByIndex(
@@ -724,6 +742,13 @@ function onAdapters(next: Adapter[]): void {
   const prevDevice = previous[selected]?.device
   adapters = next
   selected = pickSelected(previous, next, prevDevice)
+  // A pending confirmation belongs to the port it was asked about. If a dongle has just arrived
+  // and taken the selection, the next press would land on that dongle instead — and a dongle acts
+  // on the first press, so the question and the answer would be about different ports.
+  if (pendingAction && adapters[selected]?.device !== pendingAction.device) {
+    pendingAction = null
+    notice = null
+  }
   render()
   const current = adapters[selected]
   if (current) void runDiag(current.device)
@@ -742,9 +767,15 @@ document.addEventListener('keydown', (e) => {
   const adapter = adapters[selected]
   const device = adapter.device
   // Every keystroke consumes any outstanding confirmation: only the very next press of the same
-  // key can confirm, so anything in between cancels it.
+  // key can confirm, so anything in between cancels it. Take the question off screen with it —
+  // leaving "press M again to confirm" up after it stopped being true is how a prompt teaches
+  // people to ignore it. Whatever happens next sets its own notice.
   const pending = pendingAction
   pendingAction = null
+  if (pending) {
+    notice = null
+    render()
+  }
 
   if (panel) {
     if (e.key === 'ArrowDown') {
@@ -795,9 +826,12 @@ document.addEventListener('keydown', (e) => {
   } else if (e.key === 'r' || e.key === 'R' || e.key === ' ') {
     if (!running) void runDiag(device)
   } else if (e.key === 'c' || e.key === 'C') {
-    void toggleSurvey(device)
+    // Stopping is always safe and immediate; starting explains itself first.
+    if (surveying || confirmStep('c', device, SURVEY_EXPLAINER, pending)) void toggleSurvey(device)
   } else if (e.key === 't' || e.key === 'T') {
-    void toggleSpeedTest(device)
+    if (measuring || confirmStep('t', device, SPEED_EXPLAINER, pending)) {
+      void toggleSpeedTest(device)
+    }
   } else if (e.key === 'm' || e.key === 'M') {
     if (confirmed('m', adapter, 'Roll the MAC', pending)) {
       void runReconfig(device, () => window.api.rollMac(device), 'MAC rolled')
