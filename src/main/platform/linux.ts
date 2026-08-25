@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { run } from '../util/run-command'
 import { normalizeMac } from '../../shared/mac'
 import { cidrToDotted, isValidIpv4 } from '../../shared/net'
@@ -21,13 +21,21 @@ export function parseUdevProperties(output: string): Record<string, string> {
   return props
 }
 
-/** Build a RawAdapter from udev properties. Returns null if the interface is not USB. */
+/**
+ * Build a RawAdapter from udev properties. USB is `ID_BUS=usb`, which also carries the VID:PID the
+ * chipset database is keyed on. Wireless is `DEVTYPE=wlan`, corroborated by the caller with the
+ * `wireless` directory in sysfs; everything else physical is wired.
+ *
+ * Whether the interface is physical at all is the caller's decision — that is a filesystem
+ * question, not a parsing one.
+ */
 export function udevToRawAdapter(
   iface: string,
   mac: string,
-  props: Record<string, string>
-): RawAdapter | null {
-  if (props.ID_BUS !== 'usb') return null
+  props: Record<string, string>,
+  wireless = false
+): RawAdapter {
+  const usb = props.ID_BUS === 'usb'
   const vid = (props.ID_VENDOR_ID ?? '').toLowerCase()
   const pid = (props.ID_MODEL_ID ?? '').toLowerCase()
   let normMac = mac
@@ -40,8 +48,9 @@ export function udevToRawAdapter(
     device: iface,
     portName: props.ID_MODEL_FROM_DATABASE || props.ID_MODEL || iface,
     mac: normMac,
+    kind: usb ? 'usb' : wireless || props.DEVTYPE === 'wlan' ? 'wifi' : 'ethernet',
     usb:
-      vid && pid
+      usb && vid && pid
         ? {
             vendorId: vid,
             productId: pid,
@@ -50,6 +59,17 @@ export function udevToRawAdapter(
           }
         : undefined
   }
+}
+
+/**
+ * True if the interface is backed by real hardware. Every entry in /sys/class/net is a symlink into
+ * /sys/devices, and only hardware-backed ones carry a `device` entry pointing at the PCI/USB node —
+ * virtual interfaces resolve under /sys/devices/virtual/net instead. That single check drops lo,
+ * docker0, veth*, br-*, virbr*, tun*, wg* and bonds without matching a single name, and it also
+ * spares us running udevadm once per interface on a machine full of containers.
+ */
+function isPhysical(iface: string): boolean {
+  return existsSync(`/sys/class/net/${iface}/device`)
 }
 
 async function enumerateAdapters(): Promise<RawAdapter[]> {
@@ -61,17 +81,17 @@ async function enumerateAdapters(): Promise<RawAdapter[]> {
   }
   const adapters: RawAdapter[] = []
   for (const iface of ifaces) {
-    if (iface === 'lo') continue
+    if (!isPhysical(iface)) continue
     let mac = ''
     try {
       mac = readFileSync(`/sys/class/net/${iface}/address`, 'utf8').trim()
     } catch {
       mac = ''
     }
+    const wireless = existsSync(`/sys/class/net/${iface}/wireless`)
     const res = await run('udevadm', ['info', '-q', 'property', '-p', `/sys/class/net/${iface}`])
     if (res.code !== 0) continue
-    const adapter = udevToRawAdapter(iface, mac, parseUdevProperties(res.stdout))
-    if (adapter) adapters.push(adapter)
+    adapters.push(udevToRawAdapter(iface, mac, parseUdevProperties(res.stdout), wireless))
   }
   return adapters
 }
@@ -199,8 +219,12 @@ async function readNetInfo(device: string): Promise<NetInfo> {
 }
 
 function pingCommand(target: string, opts: PingOptions): PingSpec {
-  // Linux: -c count, -W timeout in seconds, -I binds to interface.
-  return { file: 'ping', args: ['-c', String(opts.count), '-W', '1', '-I', opts.device, target] }
+  // Linux: -c count, -i interval in seconds, -W timeout in seconds, -I binds to interface.
+  // 0.2 s is exactly iputils' floor for an unprivileged user, so five packets take about a second.
+  return {
+    file: 'ping',
+    args: ['-c', String(opts.count), '-i', '0.2', '-W', '1', '-I', opts.device, target]
+  }
 }
 
 // --- Active control (M4) — documented (iproute2/dhclient), verify on real hardware. ---
@@ -235,11 +259,17 @@ async function buildProfilePlan(device: string, profile: Profile): Promise<Eleva
   return { interpreter: 'sh', script: linuxProfileScript(device, profile) }
 }
 
+function speedTestBind(device: string): string | undefined {
+  // Linux binds a socket to an interface by name, which is what curl --interface does here.
+  return device || undefined
+}
+
 export const linux: PlatformOps = {
   id: 'linux',
   enumerateAdapters,
   readNetInfo,
   pingCommand,
+  speedTestBind,
   buildSetMacPlan,
   buildProfilePlan
 }

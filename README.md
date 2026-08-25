@@ -31,7 +31,8 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 
 - **Identification** — detects the dongle on insertion and shows chipset + capabilities (VID:PID is looked up against a built-in database). Press `I` for the chipset sub-view: max speed, VLAN support, the brands that resell it and the raw USB IDs. Deltaco, Plexgear, Saitech, Apple, UGreen, and others are resellers — the underlying chipset (ASIX, Realtek, …) is what matters.
 - **Diagnostics** — IP/mask, gateway, DNS, full DHCP info (server, lease, domain), link speed/duplex, and MAC. Runs automatically as soon as the dongle gets link.
-- **Connectivity test** — pings the gateway + `1.1.1.1`/`8.8.8.8` _bound to the dongle_ (not via Wi-Fi), plus a DNS test against the DHCP-assigned server.
+- **Connectivity test** — pings the gateway + `1.1.1.1`/`8.8.8.8` _bound to the dongle_ (not via Wi-Fi), plus a DNS test against the DHCP-assigned server. Five packets per target, so latency comes with jitter and a packet-loss figure that means something.
+- **Speed test** _(manual, `T`)_ — measures what the uplink behind the port actually delivers, in both directions, bound to the dongle. Numbers appear within a second and update as it runs, so a 1 Mbit uplink is obvious long before the test ends. It transfers real data to `speed.cloudflare.com` — up to ~200 MB each way, about 20 s — and **never runs on its own**; `T` starts it and `T` stops it early.
 - **Port survey / VLAN discovery** _(optional, macOS/Linux)_ — press `C` on an uplink and every 802.1Q VLAN carried on it is listed as it is discovered, with a frame count and the addressing seen inside each one. It reads the tags straight off the wire, so it works on **any** switch, managed or not — no LLDP required. When the switch does advertise, LLDP/CDP adds its name, port and management IP on top. Runs until you stop it. Not implemented on Windows (it would need tshark + Npcap); the app says so instead of failing. Measured behaviour and the evidence behind it: [docs/VLAN-FINDINGS.md](docs/VLAN-FINDINGS.md).
 - **Active control** — roll a new (locally-administered) MAC, switch between DHCP and static profiles, create/edit profiles inline, and undo the last change.
 
@@ -90,6 +91,7 @@ diagnostics are shown automatically. Everything is controlled from the keyboard:
 | `↑` `↓`           | Switch selected dongle (or navigate the profile panel)                 |
 | `R` / space       | Re-run diagnostics                                                     |
 | `C`               | Start / stop the port survey (VLANs on the wire, LLDP/CDP)             |
+| `T`               | Start / stop the speed test (real transfer, see above)                 |
 | `I`               | Open/close the chipset sub-view (capabilities + raw USB IDs)           |
 | `M`               | Roll a new MAC address                                                 |
 | `P`               | Open/close the profile panel                                           |
@@ -108,6 +110,14 @@ diagnostics are shown automatically. Everything is controlled from the keyboard:
 Reads/diagnostics run unprivileged. Actions that _change_ the adapter (MAC, IP config) or
 capture packets (LLDP/CDP) require admin/root and request it **per action** via an OS prompt
 (macOS password dialog, Linux `pkexec`, Windows UAC). See [SECURITY.md](SECURITY.md).
+
+### What leaves the machine
+
+Everything the tool does stays on the local link, with one exception you start yourself: the
+speed test (`T`) transfers data to and from `speed.cloudflare.com`. Nothing about your network is
+sent with it — it is a volume of filler bytes, timed — but it is outbound traffic to a third
+party, it uses real bandwidth on the network under test, and it needs a working internet
+connection. It runs only when you press `T`.
 
 ## Building & packaging
 

@@ -1,5 +1,14 @@
 import './styles.css'
-import type { Diagnostics, Dongle, PingResult, Profile, SurveyResult } from '../../shared/types'
+import type {
+  Diagnostics,
+  Adapter,
+  NetInfo,
+  PingResult,
+  Profile,
+  SpeedPhase,
+  SpeedTestResult,
+  SurveyResult
+} from '../../shared/types'
 import { isLinkLocalIpv4 } from '../../shared/net'
 import { validateProfileDraft } from '../../shared/profile'
 import type { ProfileDraftInput } from '../../shared/profile'
@@ -8,13 +17,16 @@ const app = document.getElementById('app') as HTMLElement
 const APP_VERSION = __APP_VERSION__
 
 // --- State ---
-let dongles: Dongle[] = []
+let adapters: Adapter[] = []
 let selected = 0
 let diag: Diagnostics | null = null
 let running = false
 let survey: SurveyResult | null = null
 let surveyDevice: string | null = null
 let surveying = false
+let speed: SpeedTestResult | null = null
+let speedDevice: string | null = null
+let measuring = false
 let profiles: Profile[] = []
 let panel = false // profile panel open
 let info = false // chipset info sub-view open (mutually exclusive with the profile panel)
@@ -47,8 +59,11 @@ function pingText(p?: PingResult): string {
   if (!p) return '—'
   if (!p.ok) return 'no response'
   const rtt = p.avgMs != null ? `${p.avgMs.toFixed(1)} ms` : 'response'
-  const loss = p.lossPct ? ` · ${p.lossPct}% loss` : ''
-  return `${rtt}${loss}`
+  const jitter = p.jitterMs != null ? ` ±${p.jitterMs.toFixed(1)}` : ''
+  // Always spell the loss out, 0% included: "we measured and it was clean" and "we never really
+  // measured" must not look the same on screen.
+  const loss = p.lossPct != null ? ` · ${p.lossPct}% loss` : ''
+  return `${rtt}${jitter}${loss}`
 }
 
 function row(label: string, value: string, cls = ''): string {
@@ -56,15 +71,15 @@ function row(label: string, value: string, cls = ''): string {
 }
 
 function currentNet() {
-  const d = dongles[selected]
+  const d = adapters[selected]
   return d && diag && diag.device === d.device ? diag.net : null
 }
 
 function renderSelector(): string {
-  if (dongles.length <= 1) return ''
-  return `<div class="selector">${dongles
+  if (adapters.length <= 1) return ''
+  return `<div class="selector">${adapters
     .map((d, i) => {
-      // Lead with the device: it is the one thing guaranteed unique, so two dongles of the same
+      // Lead with the device: it is the one thing guaranteed unique, so two adapters of the same
       // model stay tellable apart. The vendor is dropped — the card below spells it out in full.
       const name = `${d.device} · ${d.chipset ? d.chipset.chipset : d.portName || 'USB Ethernet'}`
       return `<span class="chip${i === selected ? ' active' : ''}">${escapeHtml(name)}</span>`
@@ -72,7 +87,7 @@ function renderSelector(): string {
     .join('')}<span class="selector-hint">↑ ↓ switch</span></div>`
 }
 
-function renderDiagnostics(d: Dongle): string {
+function renderDiagnostics(d: Adapter): string {
   const chip = d.chipset
   const title = chip ? `${chip.vendor} ${chip.chipset}` : d.portName || 'USB Ethernet'
   const diagForThis = diag && diag.device === d.device ? diag : null
@@ -129,15 +144,73 @@ function renderDiagnostics(d: Dongle): string {
   }
 
   return `
-    <article class="dongle ${d.known ? 'known' : 'unknown'}">
-      <div class="dongle-head">
+    <article class="adapter ${d.known ? 'known' : 'unknown'}">
+      <div class="adapter-head">
         <span class="badge">${d.known ? 'IDENTIFIED' : 'UNKNOWN'}</span>
         <h2>${escapeHtml(title)}</h2>
         <span class="dev">${escapeHtml(d.device)}</span>
       </div>
       <div class="diag">${body}</div>
+      <div class="diag">${renderSpeed(d, net)}</div>
       <div class="diag">${renderSurvey(d)}</div>
     </article>`
+}
+
+/**
+ * Measured throughput. speedText() stays for the negotiated link rate: that one is an exact
+ * integer reported by the driver, this one is a measurement and wants significant digits.
+ */
+function rateText(mbps: number): string {
+  if (mbps >= 1000) return `${(mbps / 1000).toFixed(2)} Gbit/s`
+  if (mbps >= 100) return `${Math.round(mbps)} Mbit/s`
+  return `${mbps.toFixed(1)} Mbit/s`
+}
+
+/** The headline for one direction: the best trailing second, with the live figure while it runs. */
+function phaseText(p: SpeedPhase): string {
+  if (p.done) {
+    const best = p.peakMbps ?? p.nowMbps
+    return best != null ? rateText(best) : (p.message ?? 'nothing moved')
+  }
+  if (p.nowMbps == null) return 'starting…'
+  return p.peakMbps != null
+    ? `${rateText(p.nowMbps)} · peak ${rateText(p.peakMbps)}`
+    : rateText(p.nowMbps)
+}
+
+function renderSpeed(d: Adapter, net?: NetInfo): string {
+  const forThis = speed && speedDevice === d.device ? speed : null
+  const live = forThis?.running === true
+  let inner: string
+
+  if (!forThis) {
+    // Said before anything runs, because the cost lands on someone else's network.
+    inner = !net?.ipv4
+      ? `<p class="status-msg">A speed test needs an IPv4 address on the port.</p>`
+      : `<p class="status-msg">Press <b>T</b> to measure the uplink.</p>` +
+        `<p class="notes">A real transfer to speed.cloudflare.com, bound to this port — up to ~200 MB each way, about 20 s. It never runs on its own.</p>`
+  } else if (forThis.status !== 'ok' && !live) {
+    inner = `<p class="status-msg">${escapeHtml(forThis.message ?? 'The speed test failed.')}</p>`
+  } else {
+    const rows = (['download', 'upload'] as const)
+      .map((kind) => {
+        const label = kind === 'download' ? 'Download' : 'Upload'
+        const p = forThis.phases.find((x) => x.kind === kind)
+        if (!p) return row(label, live ? 'waiting…' : '—', 'warn')
+        const measured = (p.peakMbps ?? p.nowMbps) != null
+        return row(label, phaseText(p), measured ? 'ok' : p.done ? 'bad' : '')
+      })
+      .join('')
+
+    const moved = forThis.phases.reduce((sum, p) => sum + p.bytes, 0)
+    const volume = `${Math.round(moved / 1e6)} MB`
+    const footer = live
+      ? `<p class="hint2">Testing ${clock(forThis.elapsedSec)} · ${volume} · <b>T</b> stops</p>`
+      : `<p class="hint2">Ran ${clock(forThis.elapsedSec)} · ${volume} moved · <b>T</b> tests again</p>`
+
+    inner = rows + footer
+  }
+  return `<div class="section-title">Speed test</div>${inner}`
 }
 
 /**
@@ -160,7 +233,7 @@ function clock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-function renderSurvey(d: Dongle): string {
+function renderSurvey(d: Adapter): string {
   const forThis = survey && surveyDevice === d.device ? survey : null
   const live = forThis?.running === true
   let inner: string
@@ -220,7 +293,7 @@ function renderSurvey(d: Dongle): string {
 
 // Chipset sub-view (I). The capabilities live in resources/chipsets.json; the raw USB IDs are
 // what you need to file a new-chipset PR when a dongle is not in the database yet.
-function renderInfo(d: Dongle): string {
+function renderInfo(d: Adapter): string {
   if (!info) return ''
   const chip = d.chipset
   const usb = d.usb
@@ -363,7 +436,7 @@ function render(): void {
   // While the profile form is open we never re-render (otherwise <input> loses focus/value).
   // Background flows update data in memory; the next render() after the form closes shows it.
   if (editorOpen) return
-  if (dongles.length === 0) {
+  if (adapters.length === 0) {
     app.innerHTML = `
       <header class="topbar"><h1>magiceth</h1><span class="ver">v${APP_VERSION}</span></header>
       <div class="empty">
@@ -373,8 +446,8 @@ function render(): void {
       <footer class="hint">waiting for dongle…</footer>`
     return
   }
-  const d = dongles[selected]
-  const spinner = running || surveying || busy ? '<span class="spin">⟳</span>' : ''
+  const d = adapters[selected]
+  const spinner = running || surveying || measuring || busy ? '<span class="spin">⟳</span>' : ''
   app.innerHTML = `
     <header class="topbar"><h1>magiceth</h1><span class="ver">v${APP_VERSION}</span>${spinner}</header>
     ${notice ? `<div class="notice">${escapeHtml(notice)}</div>` : ''}
@@ -382,7 +455,7 @@ function render(): void {
     ${renderDiagnostics(d)}
     ${renderInfo(d)}
     ${renderPanel()}
-    <footer class="hint"><b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>I</b> chipset · <b>S</b> save · <b>U</b> undo · <b>C</b> ${surveying ? 'stop' : 'survey'}</footer>`
+    <footer class="hint"><b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>I</b> chipset · <b>S</b> save · <b>U</b> undo · <b>C</b> ${surveying ? 'stop' : 'survey'} · <b>T</b> ${measuring ? 'stop' : 'speed'}</footer>`
 }
 
 async function runDiag(device: string): Promise<void> {
@@ -445,12 +518,58 @@ async function toggleSurvey(device: string): Promise<void> {
 function endSurveyIfRunning(): void {
   if (!surveying) return
   surveying = false
-  // Keep the final snapshot rather than the last live one: switching back to that dongle should
+  // Keep the final snapshot rather than the last live one: switching back to that adapter should
   // show what the capture found, not claim it is still running.
   void window.api
     .stopSurvey()
     .then((final) => {
       if (final) survey = final
+      render()
+    })
+    .catch(() => undefined)
+}
+
+/** T starts the speed test and, while one is running, stops it. Results stay on screen either way. */
+async function toggleSpeedTest(device: string): Promise<void> {
+  if (measuring) {
+    measuring = false
+    render()
+    try {
+      const final = await window.api.stopSpeedTest()
+      if (final) speed = final
+    } catch (err) {
+      console.error('stopping the speed test failed', err)
+      notice = `Stopping the speed test failed: ${String(err)}`
+    }
+    render()
+    return
+  }
+
+  measuring = true
+  speedDevice = device
+  speed = null
+  render()
+  try {
+    speed = await window.api.startSpeedTest(device)
+    // A refused start (no curl, no address) comes back already stopped.
+    measuring = speed.running
+  } catch (err) {
+    console.error('speed test failed', err)
+    measuring = false
+    speed = { status: 'error', running: false, phases: [], elapsedSec: 0, message: String(err) }
+  }
+  render()
+}
+
+/** Stop a running speed test when it is no longer the thing on screen. */
+function endSpeedTestIfRunning(): void {
+  if (!measuring) return
+  measuring = false
+  // Keep the final snapshot rather than the last live one, for the same reason the survey does.
+  void window.api
+    .stopSpeedTest()
+    .then((final) => {
+      if (final) speed = final
       render()
     })
     .catch(() => undefined)
@@ -520,18 +639,18 @@ async function deleteSelectedProfile(): Promise<void> {
 
 function applyProfileByIndex(idx: number): void {
   const p = profiles[idx]
-  const d = dongles[selected]
+  const d = adapters[selected]
   if (!p || !d || busy) return
   void runReconfig(d.device, () => window.api.applyProfile(d.device, p.id), `Applied ${p.name}`)
 }
 
-function onDongles(next: Dongle[]): void {
-  const prevDevice = dongles[selected]?.device
-  dongles = next
-  const idx = dongles.findIndex((d) => d.device === prevDevice)
+function onDongles(next: Adapter[]): void {
+  const prevDevice = adapters[selected]?.device
+  adapters = next
+  const idx = adapters.findIndex((d) => d.device === prevDevice)
   selected = idx >= 0 ? idx : 0
   render()
-  const current = dongles[selected]
+  const current = adapters[selected]
   if (current) void runDiag(current.device)
 }
 
@@ -544,8 +663,8 @@ document.addEventListener('keydown', (e) => {
     }
     return
   }
-  if (dongles.length === 0 || busy) return
-  const device = dongles[selected].device
+  if (adapters.length === 0 || busy) return
+  const device = adapters[selected].device
 
   if (panel) {
     if (e.key === 'ArrowDown') {
@@ -579,21 +698,26 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (e.key === 'ArrowDown') {
-    // The capture belongs to the dongle it was started on, so switching away ends it rather than
-    // leaving a privileged tcpdump running for a port that is no longer on screen.
+    // Both belong to the adapter they were started on, so switching away ends them rather than
+    // leaving a privileged tcpdump — or a curl saturating the uplink — on a port that is no longer
+    // on screen.
     endSurveyIfRunning()
-    selected = (selected + 1) % dongles.length
+    endSpeedTestIfRunning()
+    selected = (selected + 1) % adapters.length
     render()
-    void runDiag(dongles[selected].device)
+    void runDiag(adapters[selected].device)
   } else if (e.key === 'ArrowUp') {
     endSurveyIfRunning()
-    selected = (selected - 1 + dongles.length) % dongles.length
+    endSpeedTestIfRunning()
+    selected = (selected - 1 + adapters.length) % adapters.length
     render()
-    void runDiag(dongles[selected].device)
+    void runDiag(adapters[selected].device)
   } else if (e.key === 'r' || e.key === 'R' || e.key === ' ') {
     if (!running) void runDiag(device)
   } else if (e.key === 'c' || e.key === 'C') {
     void toggleSurvey(device)
+  } else if (e.key === 't' || e.key === 'T') {
+    void toggleSpeedTest(device)
   } else if (e.key === 'm' || e.key === 'M') {
     void runReconfig(device, () => window.api.rollMac(device), 'MAC rolled')
   } else if (e.key === 'u' || e.key === 'U') {
@@ -621,16 +745,22 @@ document.addEventListener('keydown', (e) => {
 })
 
 async function init(): Promise<void> {
-  ;[dongles, profiles] = await Promise.all([window.api.listDongles(), window.api.listProfiles()])
+  ;[adapters, profiles] = await Promise.all([window.api.listAdapters(), window.api.listProfiles()])
   render()
-  if (dongles[selected]) void runDiag(dongles[selected].device)
-  window.api.onDonglesChanged(onDongles)
+  if (adapters[selected]) void runDiag(adapters[selected].device)
+  window.api.onAdaptersChanged(onDongles)
   window.api.onSurveyUpdate((result) => {
     // Partial results keep arriving until the capture is stopped. Drop any that belong to a
-    // dongle we have since switched away from.
+    // adapter we have since switched away from.
     if (result.device && result.device !== surveyDevice) return
     survey = result
     surveying = result.running
+    if (!editorOpen) render()
+  })
+  window.api.onSpeedTestUpdate((result) => {
+    if (result.device && result.device !== speedDevice) return
+    speed = result
+    measuring = result.running
     if (!editorOpen) render()
   })
 }

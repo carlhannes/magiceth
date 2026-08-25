@@ -9,6 +9,25 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ## [Unreleased]
 
+### Added
+
+- **Speed test** (`T`) — what the uplink behind the port actually delivers, both directions, bound
+  to the dongle so it measures the port rather than whatever holds the default route. Figures
+  appear within a second and update as it runs, so a slow uplink is obvious long before the test
+  ends. It transfers real data to `speed.cloudflare.com`, capped at 200 MB or 10 s per direction,
+  and runs only when you press `T`. `curl` does the transfer and the bytes are counted as they
+  stream, so there is no output format to parse — and no test at all where `curl` is missing,
+  which the app says out loud instead of failing.
+
+### Changed
+
+- Pings now send five packets instead of two, so packet loss is a figure rather than a coin flip
+  (two packets could only ever report 0/50/100%). macOS and Linux space them 0.2 s apart and
+  finish in under a second — faster than the two-packet run they replace; Windows has no interval
+  flag and takes about four.
+- Latency rows show jitter and always state the loss, `0% loss` included. The old rendering hid a
+  zero, which made "measured, clean" and "never really measured" look identical.
+
 ## [0.3.0] – 2026-08-05
 
 ### Added

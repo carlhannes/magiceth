@@ -60,13 +60,7 @@ body {
   font-variant: tabular-nums;
 }
 
-.dongles {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.dongle {
+.adapter {
   background: var(--panel);
   border: 1px solid var(--dim);
   border-left: 4px solid var(--muted);
@@ -74,22 +68,28 @@ body {
   padding: 14px 16px;
 }
 
-.dongle.known {
+.adapter.known {
   border-left-color: var(--ok);
 }
 
-.dongle.unknown {
+.adapter.unknown {
   border-left-color: var(--warn);
 }
 
-.dongle-head {
+/* Built-in Wi-Fi/Ethernet: no chipset lookup applies, so neither green nor amber would be
+   honest. The accent reads as "this is a port, just not a dongle". */
+.adapter.builtin {
+  border-left-color: var(--accent);
+}
+
+.adapter-head {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 10px;
 }
 
-.dongle-head h2 {
+.adapter-head h2 {
   font-size: 18px;
 }
 
@@ -151,7 +151,7 @@ body {
   border-radius: 5px;
 }
 
-.dongle-head .dev {
+.adapter-head .dev {
   margin-left: auto;
   color: var(--muted);
   font-size: 13px;

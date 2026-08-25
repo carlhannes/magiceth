@@ -1,6 +1,6 @@
 // Shared types between main, preload and renderer.
 
-// --- Dongle identification (M1) ---
+// --- Adapter identification (M1) ---
 
 export interface UsbInfo {
   vendorId: string // hex, lowercase, e.g. "0b95"
@@ -18,13 +18,22 @@ export interface ChipsetInfo {
   notes?: string
 }
 
-export interface Dongle {
+/**
+ * What kind of port this is. USB dongles are the tool's reason for existing and sort first, but a
+ * machine's own Wi-Fi and Ethernet are ports worth diagnosing too. Everything else an OS calls a
+ * network interface — loopback, bridges, Docker/veth, VPN tunnels, internal plumbing — is filtered
+ * out in the platform layer and never reaches this type.
+ */
+export type AdapterKind = 'usb' | 'ethernet' | 'wifi'
+
+export interface Adapter {
   device: string // OS interface name, e.g. "en9" / "eth0" / "Ethernet 2"
   portName: string // human-friendly port name from the OS
   mac: string
-  usb?: UsbInfo
+  kind: AdapterKind
+  usb?: UsbInfo // USB dongles only
   chipset?: ChipsetInfo // looked up from chipsets.json, if known
-  known: boolean // true if the chipset could be looked up
+  known: boolean // true if the chipset could be looked up — only ever meaningful for a dongle
 }
 
 // --- Diagnostics (M2) ---
@@ -59,6 +68,12 @@ export interface PingResult {
   ok: boolean
   lossPct?: number
   avgMs?: number
+  /**
+   * Standard deviation of the round-trip times — how much the port wobbles, which is what a
+   * technician reads as "is this link steady". Undefined on Windows: its ping reports
+   * minimum/maximum/average and no deviation at all.
+   */
+  jitterMs?: number
 }
 
 export interface DnsResult {
@@ -118,6 +133,40 @@ export interface SurveyResult {
   message?: string
 }
 
+// --- Speed test: what the uplink behind the port actually delivers (M5) ---
+
+/**
+ * One direction of a speed test. Both figures are trailing one-second windows, not
+ * total ÷ elapsed: TCP slow start on the way down and buffer fill on the way up both distort an
+ * average taken over the whole run, and a window that moves past them does not care.
+ */
+export interface SpeedPhase {
+  kind: 'download' | 'upload'
+  /** Best trailing second of the phase — the headline figure. */
+  peakMbps?: number
+  /** Most recent trailing second, for the live readout while the phase runs. */
+  nowMbps?: number
+  bytes: number
+  seconds: number
+  done: boolean
+  /** Why this direction produced nothing, when it produced nothing. */
+  message?: string
+}
+
+export type SpeedTestStatus = 'ok' | 'no-tool' | 'no-address' | 'error'
+
+export interface SpeedTestResult {
+  status: SpeedTestStatus
+  /** True while a transfer is still running — phases are pushed as they progress. */
+  running: boolean
+  device?: string
+  /** Download first, then upload. A phase appears once it starts. */
+  phases: SpeedPhase[]
+  /** Wall clock for the whole test, including the gap between the two phases. */
+  elapsedSec: number
+  message?: string
+}
+
 // --- Active control: profiles & reconfig (M4) ---
 
 export interface Profile {
@@ -141,13 +190,17 @@ export interface ReconfigResult {
 
 // The API that preload exposes on window.api (contract between main and renderer).
 export interface MagicethApi {
-  listDongles(): Promise<Dongle[]>
-  onDonglesChanged(cb: (dongles: Dongle[]) => void): () => void
+  listAdapters(): Promise<Adapter[]>
+  onAdaptersChanged(cb: (adapters: Adapter[]) => void): () => void
   runDiagnostics(device: string): Promise<Diagnostics>
   startSurvey(device: string): Promise<SurveyResult>
   /** Resolves with everything the survey collected, or null when none was running. */
   stopSurvey(): Promise<SurveyResult | null>
   onSurveyUpdate(cb: (result: SurveyResult) => void): () => void
+  startSpeedTest(device: string): Promise<SpeedTestResult>
+  /** Resolves with everything the test measured, or null when none was running. */
+  stopSpeedTest(): Promise<SpeedTestResult | null>
+  onSpeedTestUpdate(cb: (result: SpeedTestResult) => void): () => void
   rollMac(device: string): Promise<ReconfigResult>
   applyProfile(device: string, profileId: string): Promise<ReconfigResult>
   undo(device: string): Promise<ReconfigResult>

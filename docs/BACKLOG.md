@@ -37,6 +37,38 @@ The survey works and is verified against a synthetic trunk
   port rather than merely present. Feasible: both dongles are confirmed to pass 802.1Q. It changes
   real network config, so it wants its own design pass.
 
+## Speed test: what the figures do and do not cover
+
+The test works and is verified end to end on macOS (556 Mbit/s down, 331 up over `en0`, both caps
+holding exactly). What is still open:
+
+- **Upload is counted at the pipe, not the wire.** `speedtest.ts` counts bytes handed to `curl`;
+  the pipe and curl's own buffer hold a constant amount back, so the final total overstates by
+  roughly one buffer. It cancels out of a trailing-window rate, which is why the headline is a
+  windowed peak — but `bytes` itself is very slightly generous.
+- **Request boundaries cost a little.** The download chains 50 MB requests over one reused
+  connection; each boundary is a brief gap, and one was measured depressing a quarter-second
+  window to 134 Mbit/s on a link doing 550. Larger chunks would mean fewer boundaries, but the
+  endpoint refuses 100 MB and 50 MB keeps headroom if that limit ever tightens. The figure errs
+  low, which is the safe direction.
+- **Latency under load (bufferbloat) is not measured.** It is what a technician actually wants
+  next — "the uplink is 100/100 but ping goes to 900 ms while it is busy". macOS `networkQuality`
+  measures exactly this, so a cross-platform version needs the pings to run _during_ a transfer.
+- **Windows and Linux are unverified.** The code paths are shared and only the bind value differs
+  (`speedTestBind`), but neither has been run on real hardware.
+- **Only tested against Cloudflare.** A captive portal or transparent proxy is handled as an error
+  rather than a wrong number, but no such network has actually been tried.
+
+## Ping: worst-case RTT is parsed and thrown away
+
+`parsePing` reads `min/avg/max/stddev` and keeps the average and the deviation. The maximum is the
+one that spots an intermittently bad port — a 15 ms average with a 900 ms outlier is a very
+different port from a steady 15 ms — but showing it needs a rule for when it is worth the width,
+so it was left out rather than guessed at.
+
+Related and older: the regexes assume English output. `Minimum`/`Maximum`/`Average` are localized
+on non-English Windows, so latency would be missing there while loss (a bare `%`) still parses.
+
 ## Linux: static profiles silently drop DNS
 
 `linuxProfileScript` (`src/main/platform/linux.ts`) applies the address and default route for a

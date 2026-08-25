@@ -297,7 +297,7 @@ export async function startSurvey(
   }
 
   // Probe before claiming `active`. Everything from here to the launch has to be synchronous: an
-  // await in between lets a second start (C pressed twice, or a dongle switch) take over `active`,
+  // await in between lets a second start (C pressed twice, or an adapter switch) take over `active`,
   // and this call would then spawn a tcpdump that nothing is tracking and nothing will ever stop.
   const direct = await canCaptureDirectly(device)
 

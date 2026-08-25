@@ -39,6 +39,7 @@ describe('udevToRawAdapter', () => {
       device: 'eth1',
       portName: 'RTL8153 Gigabit Ethernet Adapter',
       mac: '00:11:22:33:44:55',
+      kind: 'usb',
       usb: {
         vendorId: '0bda',
         productId: '8153',
@@ -48,10 +49,26 @@ describe('udevToRawAdapter', () => {
     })
   })
 
-  it('returns null for non-USB interfaces', () => {
-    expect(
-      udevToRawAdapter('eth0', '00:11:22:33:44:66', parseUdevProperties(UDEV_BUILTIN))
-    ).toBeNull()
+  it('treats a non-USB interface as built-in ethernet rather than discarding it', () => {
+    const adapter = udevToRawAdapter('eth0', '00:11:22:33:44:66', parseUdevProperties(UDEV_BUILTIN))
+    expect(adapter.kind).toBe('ethernet')
+    expect(adapter.usb).toBeUndefined()
+  })
+
+  it('reads Wi-Fi from the sysfs wireless directory or from DEVTYPE', () => {
+    const bySysfs = udevToRawAdapter(
+      'wlan0',
+      '00:11:22:33:44:77',
+      parseUdevProperties(UDEV_BUILTIN),
+      true
+    )
+    expect(bySysfs.kind).toBe('wifi')
+    const byDevtype = udevToRawAdapter(
+      'wlan0',
+      '00:11:22:33:44:77',
+      parseUdevProperties(`${UDEV_BUILTIN}\nDEVTYPE=wlan`)
+    )
+    expect(byDevtype.kind).toBe('wifi')
   })
 })
 

@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
 import os from 'node:os'
-import { listDongles } from './capabilities/adapters'
+import { listAdapters } from './capabilities/adapters'
 import { runDiagnostics } from './capabilities/diagnostics'
 import { startSurvey, stopSurvey } from './capabilities/survey'
+import { startSpeedTest, stopSpeedTest } from './capabilities/speedtest'
 import { applyProfile, rollMac, undo } from './capabilities/reconfig'
 import {
   deleteProfile,
@@ -12,11 +13,11 @@ import {
   saveProfile
 } from './capabilities/profiles'
 import { getPlatform } from './platform'
-import type { Dongle, Profile, ReconfigResult } from '../shared/types'
+import type { Adapter, Profile, ReconfigResult } from '../shared/types'
 
 // The hotplug probe: a signature over os.networkInterfaces() (platform-independent, no
 // privileges, cheap enough to poll) that changes when a dongle is plugged/unplugged or link
-// comes up/down. Main-process only — it never crosses IPC; the renderer gets Dongle[] instead.
+// comes up/down. Main-process only — it never crosses IPC; the renderer gets Adapter[] instead.
 function interfaceSignature(): string {
   return Object.entries(os.networkInterfaces())
     .map(([name, addrs]) => {
@@ -59,16 +60,16 @@ const POLL_MS = 1500
 // macOS, ioreg is ~10 ms and networksetup ~20 ms, and they run in parallel.
 const FULL_SCAN_EVERY = 3 // ≈ every 4.5 s
 
-/** Identity of the connected dongles, for spotting appear/disappear between full scans. */
-function dongleSignature(dongles: Dongle[]): string {
-  return dongles
+/** Identity of the connected adapters, for spotting appear/disappear between full scans. */
+function adapterSignature(adapters: Adapter[]): string {
+  return adapters
     .map((d) => `${d.device}:${d.mac}`)
     .sort()
     .join(';')
 }
 
 // Simple poll (KISS) — no native udev/event hook in V1. The cheap interface signature is polled
-// often, so link-up and address changes are picked up quickly; the heavier dongle enumeration
+// often, so link-up and address changes are picked up quickly; the heavier adapter enumeration
 // runs when that signature moves, and otherwise on the slower full-scan cadence above.
 function startHotplugPolling(): void {
   let lastInterfaces = ''
@@ -87,14 +88,14 @@ function startHotplugPolling(): void {
     scanning = true
     try {
       lastInterfaces = sig
-      const dongles = await listDongles()
-      const key = dongleSignature(dongles)
+      const adapters = await listAdapters()
+      const key = adapterSignature(adapters)
       // On a full scan with nothing new there is nothing to tell the renderer. When the interface
       // signature moved we always push, because that is what re-runs diagnostics.
       if (!interfacesChanged && key === lastDongles) return
       lastDongles = key
       for (const win of BrowserWindow.getAllWindows()) {
-        win.webContents.send('dongles:changed', dongles)
+        win.webContents.send('adapters:changed', adapters)
       }
     } finally {
       scanning = false
@@ -107,7 +108,7 @@ function startHotplugPolling(): void {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle('dongles:list', () => listDongles())
+  ipcMain.handle('adapters:list', () => listAdapters())
   ipcMain.handle('diagnostics:run', (_event, device: string) => runDiagnostics(device))
   // The survey runs until stopped, pushing partial results as they accumulate.
   ipcMain.handle('survey:start', (_event, device: string) =>
@@ -118,6 +119,17 @@ app.whenReady().then(() => {
     })
   )
   ipcMain.handle('survey:stop', () => stopSurvey())
+
+  // The speed test moves real traffic, so it only ever runs on a keypress. Same push shape as the
+  // survey: partial results arrive while it runs, both directions in turn.
+  ipcMain.handle('speedtest:start', (_event, device: string) =>
+    startSpeedTest(device, (result) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('speedtest:update', result)
+      }
+    })
+  )
+  ipcMain.handle('speedtest:stop', () => stopSpeedTest())
 
   // Profiles
   ipcMain.handle('profiles:list', () => loadProfiles())
@@ -148,10 +160,12 @@ app.whenReady().then(() => {
   })
 })
 
-// Quitting mid-capture must not orphan a root tcpdump. The script has a hard cap as a backstop,
-// but stopping it here means the process is gone the moment the window is.
+// Quitting mid-run must not orphan a root tcpdump or a curl saturating someone's uplink. Both
+// have their own hard caps as a backstop, but stopping them here means the processes are gone the
+// moment the window is.
 app.on('before-quit', () => {
   stopSurvey()
+  stopSpeedTest()
 })
 
 app.on('window-all-closed', () => {

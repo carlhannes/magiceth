@@ -1,9 +1,11 @@
 # Architecture
 
 `magiceth` is an Electron GUI that acts as a thin **shell around the operating system's own
-network commands**. There is no background service, no custom driver, and no network traffic
-beyond the tests the user starts themselves (ping/DNS/LLDP). The design goals are KISS, low
-risk, and code that can still be understood long afterwards.
+network commands**. There is no background service and no custom driver. Traffic only leaves the
+machine because a test put it there: the automatic ones (ping/DNS) stay on the local link and its
+gateway, and the one that reaches a third party — the speed test, which transfers filler bytes to
+`speed.cloudflare.com` — runs only on a keypress. The design goals are KISS, low risk, and code
+that can still be understood long afterwards.
 
 ## Process model
 
@@ -38,6 +40,7 @@ src/
       diagnostics.ts       # orchestrates netinfo + probes
       probe.ts             # bound pings + DNS test (+ ping parser)
       survey.ts            # port survey: VLAN tags off the wire + LLDP/CDP, capture + parsers
+      speedtest.ts           # manual throughput test: curl transfers, Node counts the bytes
       reconfig.ts          # MAC rolling + profile application + undo
       profiles.ts          # fs/electron glue for profile storage
       profiles-core.ts     # pure profile operations (upsert/remove/…)
@@ -68,6 +71,7 @@ timeout and `windowsHide`.
 | `adapters`                   | None       | Enumerates USB dongles, looks up the chipset via `chipsets.json`.                                             |
 | `diagnostics` → `probe`      | None       | Reads netinfo and runs gateway/internet ping + DNS test in parallel.                                          |
 | `survey`                     | Root/admin | Port survey: runs `tcpdump` until stopped, tallying 802.1Q VLANs and LLDP/CDP. Optional; degrades gracefully. |
+| `speedtest`                  | None       | Throughput both ways, bound to the dongle. Manual only — it moves real traffic. Degrades gracefully.          |
 | `reconfig`                   | Root/admin | Rolls MAC, applies DHCP/static profile, undoes.                                                               |
 | `profiles` / `profiles-core` | None       | Reads/writes profile JSON; pure CRUD operations.                                                              |
 
@@ -81,6 +85,7 @@ interface PlatformOps {
   enumerateAdapters(): Promise<RawAdapter[]>
   readNetInfo(device: string): Promise<NetInfo>
   pingCommand(target, opts): PingSpec // flags differ per OS (-b/-I/-S)
+  speedTestBind(device, srcIp): string | undefined // curl --interface: name, or address on Windows
   buildSetMacPlan(device, mac): Promise<ElevatedPlan>
   buildProfilePlan(device, profile): Promise<ElevatedPlan>
 }
@@ -105,7 +110,8 @@ The preload exposes `window.api` per `MagicethApi` (`src/shared/types.ts`). Chan
 - **Writes (profiles, unprivileged):** `profiles:save`, `profiles:saveCurrent`, `profiles:delete`
 - **Privileged:** `reconfig:rollMac`, `reconfig:applyProfile`, `reconfig:undo`
 - **Long-running (privileged):** `survey:start`, `survey:stop`
-- **Push events (main → renderer):** `dongles:changed`, `survey:update`
+- **Long-running (unprivileged):** `speedtest:start`, `speedtest:stop`
+- **Push events (main → renderer):** `dongles:changed`, `survey:update`, `speedtest:update`
 
 Every channel has a consumer in the renderer — if a capability stops being used, its channel,
 its `MagicethApi` method and its preload wiring go with it.
@@ -153,6 +159,12 @@ open, `render()` becomes a **no-op** so that background events (hotplug/diagnost
 the input fields — field values are read from the DOM only on Save. The version is injected at
 build time (`__APP_VERSION__` via Vite `define`) and shown in the topbar.
 
+Below the diagnostics sit two sections that fill in over time rather than on request: the speed
+test (`T`) and the port survey (`C`). Both follow the same shape — a `start`/`stop` pair plus an
+`*:update` push, one module-level "active run" in main, and a renderer that keeps the last result
+on screen after it ends. Both are torn down when the selected dongle changes or the app quits, so
+a measurement never outlives the port it belongs to.
+
 Two sub-views hang below the diagnostics — the profile panel (`P`) and the chipset view (`I`,
 which is where `chipsets.json`'s capabilities and the raw USB IDs are shown). Each is a
 `render*()` that returns `''` when closed, they share the `.panel-card` shell, and opening one
@@ -167,6 +179,19 @@ closes the other so the single screen never grows past a glance.
   privileged ones (MAC/IP) and capture. Manual procedures are in
   [`../SUDO-TEST.md`](../SUDO-TEST.md) and [`../WINDOWS-TEST.md`](../WINDOWS-TEST.md).
 - Run `npm run typecheck && npm run lint && npm test` before every PR.
+
+## Measuring throughput
+
+`speedtest.ts` is the one capability that talks to a third party, so its choices are worth
+spelling out. `curl` does the transfer and Node counts the bytes off the child's stdout (download)
+or into its stdin (upload) — no output format to parse, and `--interface` is what makes the test
+measure _this_ port instead of whatever holds the default route. macOS and Linux bind by interface
+name; Windows can only bind a source address, which is the same split `pingCommand` already has.
+
+Throughput is always a trailing one-second window, never total ÷ elapsed, and the first second of
+each direction is discarded: it holds TCP slow start going down and buffer fill coming up, neither
+of which is the speed of the link. Each direction stops at a time cap or a byte cap, whichever
+comes first, because the bandwidth being spent belongs to whoever owns the network under test.
 
 ## Extending the tool
 

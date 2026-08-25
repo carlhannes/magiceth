@@ -94,7 +94,7 @@ export function parseIoregUsbMacs(output: string): UsbMacEntry[] {
 }
 
 /**
- * Join on MAC: pair USB devices with hardware ports. Only matching USB dongles are returned,
+ * Join on MAC: pair USB devices with hardware ports. Only matching USB adapters are returned,
  * at most one per MAC — some drivers (e.g. Realtek RTL8153) publish IOMACAddress on more than one
  * node of the ioreg tree, so parseIoregUsbMacs legitimately yields the same dongle twice.
  */
@@ -125,6 +125,7 @@ export function joinDarwinAdapters(ports: HardwarePort[], usb: UsbMacEntry[]): R
       device: port.device,
       portName: port.portName,
       mac: key,
+      kind: 'usb',
       usb: {
         vendorId: entry.vendorId,
         productId: entry.productId,
@@ -136,12 +137,75 @@ export function joinDarwinAdapters(ports: HardwarePort[], usb: UsbMacEntry[]): R
   return adapters
 }
 
+/**
+ * Devices macOS itself has configured as a usable network service. Same command as
+ * parseNetworkServiceName, different question asked of it.
+ *
+ * This is the discriminator for built-in ports. `-listallhardwareports` already hides loopback,
+ * utun, awdl and the anpi plumbing, but it still lists things that are not ports you can use — on
+ * the development Mac it offers "Thunderbolt 1/2/3" and three "Ethernet Adapter (enN)" entries
+ * belonging to the T2 chip, none of which appear here.
+ *
+ * Note the reverse is also true: services outlive the hardware, so this lists dongles that were
+ * unplugged long ago. Only the intersection with hardware that is actually present is meaningful.
+ */
+export function parseNetworkServiceDevices(output: string): Set<string> {
+  const devices = new Set<string>()
+  for (const m of output.matchAll(/\bDevice:\s*([A-Za-z0-9]+)\s*\)/g)) devices.add(m[1])
+  return devices
+}
+
+/** A bridge is an aggregate of other ports, not a port. Thunderbolt Bridge is one by default. */
+const VIRTUAL_DEVICE = /^(bridge|awdl|llw|utun|gif|stf|anpi|ap\d|p2p|vmnet)/
+
+/**
+ * Built-in ports worth showing: hardware that is present, that macOS made a network service, and
+ * that is not a bridge or already claimed by the USB pass. Wi-Fi is the port macOS names "Wi-Fi"
+ * (or "AirPort" on older versions); anything else wired is Ethernet.
+ */
+export function builtinDarwinAdapters(
+  ports: HardwarePort[],
+  serviceDevices: Set<string>,
+  usbDevices: Set<string>
+): RawAdapter[] {
+  const adapters: RawAdapter[] = []
+  for (const port of ports) {
+    if (!port.device || !port.mac) continue
+    if (usbDevices.has(port.device)) continue
+    if (!serviceDevices.has(port.device)) continue
+    if (VIRTUAL_DEVICE.test(port.device)) continue
+    let mac: string
+    try {
+      mac = normalizeMac(port.mac)
+    } catch {
+      continue
+    }
+    adapters.push({
+      device: port.device,
+      portName: port.portName,
+      mac,
+      kind: /^(Wi-Fi|AirPort)$/i.test(port.portName) ? 'wifi' : 'ethernet'
+    })
+  }
+  return adapters
+}
+
 async function enumerateAdapters(): Promise<RawAdapter[]> {
-  const [ports, usb] = await Promise.all([
+  const [ports, usb, services] = await Promise.all([
     run('networksetup', ['-listallhardwareports']),
-    run('ioreg', ['-r', '-c', 'IOUSBHostDevice', '-l'], { timeoutMs: 10000 })
+    run('ioreg', ['-r', '-c', 'IOUSBHostDevice', '-l'], { timeoutMs: 10000 }),
+    run('networksetup', ['-listnetworkserviceorder'])
   ])
-  return joinDarwinAdapters(parseHardwarePorts(ports.stdout), parseIoregUsbMacs(usb.stdout))
+  const hardware = parseHardwarePorts(ports.stdout)
+  // The USB pass is deliberately independent of the service list: a dongle is found because ioreg
+  // says it is one, so it still shows up on a Mac where the network service was deleted by hand.
+  const dongles = joinDarwinAdapters(hardware, parseIoregUsbMacs(usb.stdout))
+  const builtins = builtinDarwinAdapters(
+    hardware,
+    parseNetworkServiceDevices(services.stdout),
+    new Set(dongles.map((d) => d.device))
+  )
+  return [...dongles, ...builtins]
 }
 
 // --- Netinfo (M2) ---
@@ -257,8 +321,13 @@ async function readNetInfo(device: string): Promise<NetInfo> {
 }
 
 function pingCommand(target: string, opts: PingOptions): PingSpec {
-  // macOS: -c count, -W response time in ms, -b binds to interface.
-  return { file: 'ping', args: ['-c', String(opts.count), '-W', '1000', '-b', opts.device, target] }
+  // macOS: -c count, -i interval in seconds, -W response time in ms, -b binds to interface.
+  // 0.2 s spacing is the fastest an ordinary user may ask for (macOS reserves anything under
+  // 0.1 s for root), and it is what makes a five-packet loss figure cost under a second.
+  return {
+    file: 'ping',
+    args: ['-c', String(opts.count), '-i', '0.2', '-W', '1000', '-b', opts.device, target]
+  }
 }
 
 // --- Active control (M4). Pure script builders are tested; the actual execution requires sudo (SUDO-TEST.md). ---
@@ -312,11 +381,17 @@ async function buildProfilePlan(device: string, profile: Profile): Promise<Eleva
   return { interpreter: 'sh', script: macProfileScript(device, service, profile) }
 }
 
+function speedTestBind(device: string): string | undefined {
+  // macOS binds a socket to an interface by name, which is what curl --interface does here.
+  return device || undefined
+}
+
 export const darwin: PlatformOps = {
   id: 'darwin',
   enumerateAdapters,
   readNetInfo,
   pingCommand,
+  speedTestBind,
   buildSetMacPlan,
   buildProfilePlan
 }
