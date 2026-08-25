@@ -21,6 +21,10 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ### Changed
 
+- Windows 11: MAC rolling is now recorded as verified on real hardware. It was confirmed against
+  0.2.0; the only change to `winSetMacScript` since is that the adapter name goes through
+  `psEscapeDouble`, which is byte-identical for an ordinary name like `Ethernet 3`, so the result
+  carries over.
 - Pings now send five packets instead of two, so packet loss is a figure rather than a coin flip
   (two packets could only ever report 0/50/100%). macOS and Linux space them 0.2 s apart and
   finish in under a second — faster than the two-packet run they replace; Windows has no interval

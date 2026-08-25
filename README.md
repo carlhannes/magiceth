@@ -54,11 +54,11 @@ what a "please add this chipset" issue or PR needs.
 
 ## Platform status
 
-| Platform                | Status                                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified                                          |
-| **Windows 11** (x64)    | Identification, diagnostics, ping and DHCP/static profile switching verified on real hardware; MAC rolling not yet |
-| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**                  |
+| Platform                | Status                                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified                                      |
+| **Windows 11** (x64)    | Identification, diagnostics, ping, DHCP/static profile switching and MAC rolling all verified on real hardware |
+| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**              |
 
 On Linux the DHCP-vs-static readout is inferred from the address lifetime that `ip -j addr`
 reports, which is the one part of the port readout that has not been checked against a live
