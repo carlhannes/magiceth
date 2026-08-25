@@ -15,8 +15,18 @@ mac:
       arch: [arm64, x64]
 win:
   target:
+    # One installer covering both architectures — it picks the right one at install time.
     - target: nsis
       arch: [x64, arm64]
+    # A single self-contained .exe that runs without installing: for a machine you are not allowed
+    # to install software on, or a USB stick you carry to the rack. x64 only, which arm64 Windows
+    # runs under emulation anyway — a second copy would double the size for very little reach.
+    - target: portable
+      arch: [x64]
+# Default names are "magiceth Setup 0.4.0.exe" and "magiceth 0.4.0.exe", which differ by one word
+# and sit next to each other in a release list. Spell the portable one out.
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
 linux:
   category: Utility
   target:

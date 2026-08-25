@@ -162,11 +162,22 @@ npm run lint       # eslint
 npm test           # vitest (pure parsers/functions)
 ```
 
-Unsigned, unpacked Windows build from any platform (no Wine):
+Everything is unsigned — no macOS notarization, no Windows certificate — so macOS needs
+right-click → Open and Windows shows SmartScreen → More info → Run anyway.
 
-```sh
-npx electron-builder --win --x64 --dir
-```
+A full release is four files, and all four build from macOS with no Wine involved (electron-builder
+fetches its own NSIS toolchain):
+
+| Artifact                    | Built by                                    | For                              |
+| --------------------------- | ------------------------------------------- | -------------------------------- |
+| `magiceth-<v>-arm64.dmg`    | `npm run package -- --mac`                  | macOS, Apple Silicon             |
+| `magiceth-<v>.dmg`          | `npm run package -- --mac`                  | macOS, Intel                     |
+| `magiceth Setup <v>.exe`    | `npx electron-builder --win nsis`           | Windows installer, x64 + arm64   |
+| `magiceth-<v>-portable.exe` | `npx electron-builder --win portable --x64` | Windows, runs without installing |
+
+The Linux AppImage target exists in `electron-builder.yml` but needs a Linux host (or Docker), and
+**no part of the Linux path has been run on real hardware** — see [docs/BACKLOG.md](docs/BACKLOG.md)
+before publishing one.
 
 ## How it works
 
