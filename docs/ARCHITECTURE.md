@@ -107,12 +107,12 @@ brittle text parsing.
 
 The preload exposes `window.api` per `MagicethApi` (`src/shared/types.ts`). Channels:
 
-- **Reads:** `dongles:list`, `diagnostics:run`, `profiles:list`
+- **Reads:** `adapters:list`, `diagnostics:run`, `profiles:list`
 - **Writes (profiles, unprivileged):** `profiles:save`, `profiles:saveCurrent`, `profiles:delete`
 - **Privileged:** `reconfig:rollMac`, `reconfig:applyProfile`, `reconfig:undo`
 - **Long-running (privileged):** `survey:start`, `survey:stop`
 - **Long-running (unprivileged):** `speedtest:start`, `speedtest:stop`
-- **Push events (main → renderer):** `dongles:changed`, `survey:update`, `speedtest:update`
+- **Push events (main → renderer):** `adapters:changed`, `survey:update`, `speedtest:update`
 
 Every channel has a consumer in the renderer — if a capability stops being used, its channel,
 its `MagicethApi` method and its preload wiring go with it.
@@ -121,10 +121,12 @@ its `MagicethApi` method and its preload wiring go with it.
 
 Main polls cheaply (`os.networkInterfaces()`, every 1.5 s) and computes a signature
 (`interfaceSignature()`, main-only — it never crosses IPC). When it changes (dongle in/out, link
-up/down) the heavier dongle enumeration runs and `dongles:changed` is pushed. The renderer then automatically runs diagnostics for the selected dongle → so "plug
-in the cable → everything shows up" works without user interaction. Pings are bound to the
-dongle's interface/source IP so the internet test goes via the dongle, not via a possible Wi-Fi
-default route.
+up/down) the heavier adapter enumeration runs and `adapters:changed` is pushed. The renderer
+re-runs diagnostics for the selected adapter → so "plug in the cable → everything shows up" works
+without user interaction. A dongle that has just appeared takes the selection (`pickSelected`),
+because the list always holds the machine's own ports and would otherwise never visibly change.
+Pings and the speed test are bound to the adapter's interface/source IP, so they measure that port
+rather than a possible Wi-Fi default route.
 
 ## Privilege model
 
@@ -163,7 +165,7 @@ build time (`__APP_VERSION__` via Vite `define`) and shown in the topbar.
 Below the diagnostics sit two sections that fill in over time rather than on request: the speed
 test (`T`) and the port survey (`C`). Both follow the same shape — a `start`/`stop` pair plus an
 `*:update` push, one module-level "active run" in main, and a renderer that keeps the last result
-on screen after it ends. Both are torn down when the selected dongle changes or the app quits, so
+on screen after it ends. Both are torn down when the selected adapter changes or the app quits, so
 a measurement never outlives the port it belongs to.
 
 Two sub-views hang below the diagnostics — the profile panel (`P`) and the chipset view (`I`,

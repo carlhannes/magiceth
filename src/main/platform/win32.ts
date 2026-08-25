@@ -19,10 +19,12 @@ interface NetAdapterRaw {
   desc?: string
   mac?: string
   pnp?: string
-  virtual?: boolean
-  hardware?: boolean
+  // Typed loosely on purpose: these come from a Windows we cannot test against, and the parser's
+  // job is to survive whatever PowerShell decided to emit.
+  virtual?: boolean | string
+  hardware?: boolean | string
   media?: string
-  ndis?: number
+  ndis?: number | string
 }
 
 /**
@@ -40,11 +42,22 @@ export function parseGetNetAdapter(json: string): RawAdapter[] {
     : [parsed as NetAdapterRaw]
   const adapters: RawAdapter[] = []
   for (const a of data) {
-    if (a.virtual === true || a.hardware === false) continue
     const pnp = a.pnp ?? ''
     const usb = /^USB/i.test(pnp)
+    // A dongle is never dropped by these heuristics. It is the tool's whole reason for existing and
+    // the PnP ID already proves what it is, so if HardwareInterface ever came back false for one,
+    // that must cost nothing. Same rule as macOS, where the USB pass ignores the service list.
+    //
+    // The comparisons are strict on purpose: only a real boolean excludes an adapter. Anything
+    // unexpected — a missing property, a string, a null — leaves it in, because showing one port
+    // too many is a complaint and hiding the port someone is standing in front of is a failure.
+    if (!usb && (a.virtual === true || a.hardware === false)) continue
     const m = pnp.match(/VID_([0-9A-Fa-f]{4}).*?PID_([0-9A-Fa-f]{4})/)
-    const wireless = /802\.11|wireless|wi-?fi/i.test(a.media ?? '') || a.ndis === 9 || a.ndis === 1
+    // Number() so a medium that arrives as "9" instead of 9 still reads as Wi-Fi. ConvertTo-Json
+    // emits enums as integers on both 5.1 and 7, but this costs nothing and the medium is the only
+    // signal when PhysicalMediaType is absent.
+    const medium = Number(a.ndis)
+    const wireless = /802\.11|wireless|wi-?fi/i.test(a.media ?? '') || medium === 9 || medium === 1
     let mac = ''
     try {
       mac = normalizeMac(a.mac ?? '')

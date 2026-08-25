@@ -9,6 +9,8 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ## [Unreleased]
 
+## [0.4.0] – 2026-08-26
+
 ### Added
 
 - **Built-in Wi-Fi and Ethernet are listed too**, so there is a port to diagnose with no dongle
@@ -52,6 +54,16 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   flag and takes about four.
 - Latency rows show jitter and always state the loss, `0% loss` included. The old rendering hid a
   zero, which made "measured, clean" and "never really measured" look identical.
+
+### Fixed
+
+- Linux: a `udevadm` that fails no longer removes the interface from the list altogether. udev is
+  what identifies a dongle, but sysfs has already proved the port is real hardware and said whether
+  it is wireless — so the port is listed unidentified instead of vanishing. This mattered less when
+  only dongles were listed; now it would have meant no ports at all.
+- Windows: a USB dongle is never dropped by the new virtual/hardware filter. The PnP ID already
+  proves what it is, and no heuristic on a platform we cannot test against gets to hide the one
+  thing the tool exists for. The same rule already holds on macOS.
 
 ## [0.3.0] – 2026-08-05
 
@@ -156,5 +168,6 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 - Platform support for Windows/macOS/Linux (arm64 + amd64); packaging via electron-builder (unsigned).
 - macOS live-verified; Linux/Windows implemented against documented format with unit-tested parsers.
 
-[Unreleased]: https://github.com/carlhannes/magiceth/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/carlhannes/magiceth/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/carlhannes/magiceth/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/carlhannes/magiceth/releases/tag/v0.3.0

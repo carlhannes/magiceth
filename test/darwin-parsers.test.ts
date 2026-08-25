@@ -265,6 +265,35 @@ describe('builtinDarwinAdapters', () => {
     expect(builtinDarwinAdapters(ports, services, new Set(['en0']))).toEqual([])
   })
 
+  it('lists a dongle once, from the USB pass, never twice', () => {
+    // Both passes see the same hardware list. The dongles have services too, so without the
+    // exclusion they would appear a second time — and the second copy would have no chipset.
+    const hw = parseHardwarePorts(NETWORKSETUP_TWO_DONGLES)
+    const dongles = joinDarwinAdapters(hw, parseIoregUsbMacs(IOREG_TWO_DONGLES))
+    const svc = parseNetworkServiceDevices(SERVICE_ORDER_LAPTOP)
+    const all = [
+      ...dongles,
+      ...builtinDarwinAdapters(hw, svc, new Set(dongles.map((d) => d.device)))
+    ]
+
+    expect(all.map((a) => [a.device, a.kind])).toEqual([
+      ['en9', 'usb'],
+      ['en7', 'usb'],
+      ['en0', 'wifi']
+    ])
+    expect(new Set(all.map((a) => a.device)).size).toBe(all.length)
+  })
+
+  it('still shows a dongle the USB pass missed, as a plain port rather than not at all', () => {
+    // If ioreg ever fails to pair one, the built-in pass picks it up: no chipset, but the port is
+    // there and can be diagnosed. Losing identification beats losing the port.
+    const hw = parseHardwarePorts(NETWORKSETUP_TWO_DONGLES)
+    const svc = parseNetworkServiceDevices(SERVICE_ORDER_LAPTOP)
+    const fallback = builtinDarwinAdapters(hw, svc, new Set())
+    expect(fallback.map((a) => a.device)).toEqual(['en9', 'en7', 'en0'])
+    expect(fallback[0].kind).toBe('ethernet')
+  })
+
   it('calls a wired built-in ethernet, not wifi', () => {
     // A Mac mini / iMac names its built-in port exactly "Ethernet".
     const desktop = parseHardwarePorts(`
