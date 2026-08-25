@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sortAdapters, pickSelected } from '../src/main/capabilities/adapters'
+import { sortAdapters, pickSelected } from '../src/shared/adapter'
 import type { Adapter, AdapterKind } from '../src/shared/types'
 
 function adapter(device: string, kind: AdapterKind): Adapter {
