@@ -5,21 +5,29 @@ and why it is still open — so picking one up does not mean starting the invest
 
 Small enough to fix in one PR unless noted. See [CONTRIBUTING.md](../CONTRIBUTING.md) first.
 
-## A single unmodified keypress changes real network configuration
+## A single unmodified keypress changes real network configuration — on a dongle
 
-`M` (roll MAC), `S` (save profile), `U` (undo) and `1`–`9` (apply profile) all act immediately, with
-no modifier and no confirmation. That is deliberate — the whole point is one-handed operation at a
-rack — but it means any stray keystroke reaching the window reconfigures the port.
+**Partly addressed.** `M`, `U` and `1`–`9` now ask for a confirming second press when the selected
+port is built-in Wi-Fi or Ethernet, so a stray keystroke can no longer reconfigure the machine's
+own connection. On a **dongle** they still act immediately, with no modifier and no confirmation.
+That is deliberate — the whole point is one-handed operation at a rack — but it means any stray
+keystroke reaching the window reconfigures the port.
+
+`S` (save profile) is deliberately outside the gate: it writes a profile and changes nothing on the
+adapter.
 
 This is not hypothetical: on 2026-08-04 `en9`'s MAC was found rolled to a locally-administered
 address with nobody having pressed `M` on purpose. The likeliest explanation is characters landing
 in the app while an authentication dialog was expected to have focus, and the app happens to sit
 focused a lot while those dialogs come and go.
 
-Worth a deliberate decision rather than drift. Options, roughly in order of how much they cost the
-one-handed workflow: ignore keystrokes for a moment after the window regains focus; require a
-confirm keypress for the destructive four; or leave it and document it. Note also that `U` cannot
-rescue a mistake across a restart — `undoStore` (`reconfig.ts`) is in-memory only.
+Still worth a deliberate decision for dongles rather than drift. Options, roughly in order of how
+much they cost the one-handed workflow: ignore keystrokes for a moment after the window regains
+focus; extend the confirm keypress to dongles as well; or leave it and document it. Note also that
+`U` cannot rescue a mistake across a restart — `undoStore` (`reconfig.ts`) is in-memory only.
+
+The confirmation is cleared by any other keypress and never by a timer, because self-clearing
+notices are their own open question further down this file.
 
 ## Port survey: gaps left after the rebuild
 
@@ -68,6 +76,25 @@ so it was left out rather than guessed at.
 
 Related and older: the regexes assume English output. `Minimum`/`Maximum`/`Average` are localized
 on non-English Windows, so latency would be missing there while loss (a bare `%`) still parses.
+
+## Built-in ports: only macOS has been seen working
+
+Built-in Wi-Fi is verified live on macOS, where the rule leaves exactly the one real port on the
+development machine. What is still open:
+
+- **Built-in Ethernet has never been seen.** The development Mac is a laptop with none. The rule
+  that classifies it (a hardware port named `Ethernet` with a network service) is unit-tested
+  against a hand-built fixture, not real output from a Mac mini or iMac.
+- **Linux and Windows enumeration are unverified on hardware.** Both changed shape: Linux now
+  filters on the sysfs `device` entry instead of running `udevadm` per interface, and Windows now
+  filters on `Virtual`/`HardwareInterface` and classifies Wi-Fi from the physical medium. The
+  parsers are unit-tested; nothing has been run on a real machine.
+- **Wi-Fi has no link rate on macOS.** `ifconfig` prints no `baseT` media for it, so the Link row
+  says `up` with no speed. `system_profiler SPAirPortDataType` knows the rate but takes seconds,
+  which is too slow for the enumeration poll. SSID, channel and signal strength are missing for the
+  same reason — every OS answers differently and macOS removed `airport`.
+- **A Mac where the user deleted a port's network service** will not list that built-in port, since
+  the service list is half the rule. Dongles are unaffected — they are found through `ioreg`.
 
 ## Linux: static profiles silently drop DNS
 

@@ -54,6 +54,7 @@ src/
     types.ts               # shared types + the MagicethApi contract
     mac.ts                 # MAC helpers (normalize, randomize locally-administered)
     net.ts                 # cidr<->netmask, isValidIpv4
+    adapter.ts             # sortAdapters / pickSelected (pure, used by main + renderer)
     profile.ts             # validateProfileDraft (shared by renderer + tests)
 resources/chipsets.json    # VID:PID -> chipset (single source of truth, bundled in at build)
 test/                      # vitest — pure parsers/functions
@@ -68,7 +69,7 @@ timeout and `windowsHide`.
 
 | Module                       | Privileges | What it does                                                                                                  |
 | ---------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
-| `adapters`                   | None       | Enumerates USB dongles, looks up the chipset via `chipsets.json`.                                             |
+| `adapters`                   | None       | Enumerates the ports worth showing, dongles first; looks up chipsets via `chipsets.json`.                     |
 | `diagnostics` → `probe`      | None       | Reads netinfo and runs gateway/internet ping + DNS test in parallel.                                          |
 | `survey`                     | Root/admin | Port survey: runs `tcpdump` until stopped, tallying 802.1Q VLANs and LLDP/CDP. Optional; degrades gracefully. |
 | `speedtest`                  | None       | Throughput both ways, bound to the dongle. Manual only — it moves real traffic. Degrades gracefully.          |
@@ -179,6 +180,31 @@ closes the other so the single screen never grows past a glance.
   privileged ones (MAC/IP) and capture. Manual procedures are in
   [`../SUDO-TEST.md`](../SUDO-TEST.md) and [`../WINDOWS-TEST.md`](../WINDOWS-TEST.md).
 - Run `npm run typecheck && npm run lint && npm test` before every PR.
+
+## What counts as an adapter
+
+The tool lists USB dongles, built-in Ethernet and built-in Wi-Fi, and nothing else — no loopback,
+bridges, Docker/veth, VPN tunnels or internal plumbing. Each platform decides this with a
+**structural** signal rather than by matching interface names, because names are the thing most
+likely to differ on a machine nobody here has:
+
+| OS      | Signal                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| macOS   | Hardware present in `networksetup -listallhardwareports` **and** configured as a service in `-listnetworkserviceorder`, minus bridges. The hardware list alone still offers Thunderbolt ports and the T2 `anpi` plumbing; the service list alone still names dongles unplugged months ago, because SystemConfiguration keeps services after the hardware leaves. Only the intersection means anything. |
+| Linux   | `/sys/class/net/<if>/device` exists. Every entry in `/sys/class/net` is a symlink into `/sys/devices`, and only hardware-backed ones carry that entry — virtual interfaces resolve under `/sys/devices/virtual/net` instead. Wi-Fi is the `wireless` directory or udev `DEVTYPE=wlan`.                                                                                                                 |
+| Windows | `Get-NetAdapter`'s `Virtual` and `HardwareInterface` properties, filtered in the parser rather than via the `-Physical` switch — a switch that failed would return _no_ adapters, whereas a property the parser cannot see simply leaves the adapter in. Wi-Fi is `PhysicalMediaType` 802.11 or `NdisPhysicalMedium` 1/9.                                                                              |
+
+USB detection stays independent of all of this — a dongle is found because `ioreg`/udev/the PnP ID
+says it is one — so no built-in rule can ever hide a dongle. `AdapterKind` (`usb` | `ethernet` |
+`wifi`) rides along on `RawAdapter` and drives sort order, the badge, and whether a
+config-changing key needs confirming. `sortAdapters` and `pickSelected` are pure and live in
+`src/shared/adapter.ts`, for the same reason `validateProfileDraft` does: the renderer needs them
+and must never import from `main/`.
+
+A key that changes real configuration (`M`, `U`, applying a profile) acts on the first press for a
+dongle and asks first on a built-in. The prompt goes in the notice bar, which is `position: sticky`
+on purpose — the window scrolls past it, and a confirmation you cannot see is worse than none: the
+first press looks like it did nothing, so you press again, and that is the press that acts.
 
 ## Measuring throughput
 

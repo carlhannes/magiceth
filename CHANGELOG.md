@@ -11,6 +11,12 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ### Added
 
+- **Built-in Wi-Fi and Ethernet are listed too**, so there is a port to diagnose with no dongle
+  attached. Loopback, bridges, Docker/veth, VPN tunnels and internal plumbing stay hidden, decided
+  by a structural signal on each OS rather than by matching names — see
+  [what counts as an adapter](docs/ARCHITECTURE.md). Dongles sort first and one you plug in takes
+  the selection by itself; USB detection is unchanged and independent, so no new rule can hide a
+  dongle. `Dongle` is now `Adapter` throughout, with a `kind`.
 - **Speed test** (`T`) — what the uplink behind the port actually delivers, both directions, bound
   to the dongle so it measures the port rather than whatever holds the default route. Figures
   appear within a second and update as it runs, so a slow uplink is obvious long before the test
@@ -21,6 +27,16 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ### Changed
 
+- `M`, `U` and applying a profile now ask before acting **on a built-in port** — the machine's own
+  connection is not something a stray keystroke should reconfigure. Dongles still act on the first
+  press. Any other key cancels the pending confirmation. The prompt is in a sticky notice bar,
+  because the window scrolls past a static one: a confirmation you cannot see is worse than none,
+  since the first press then looks like it did nothing.
+- The badge says `WI-FI` or `BUILT-IN` instead of `UNKNOWN` for the machine's own ports. The
+  chipset database only covers USB dongles, so `UNKNOWN` there read as "we do not recognise your
+  laptop", and the chipset view now says as much rather than showing empty USB rows.
+- Link speed reads `up` rather than `up · —` when there is no negotiated rate to report, which is
+  what macOS does for Wi-Fi.
 - Windows 11: MAC rolling is now recorded as verified on real hardware. It was confirmed against
   0.2.0; the only change to `winSetMacScript` since is that the adapter name goes through
   `psEscapeDouble`, which is byte-identical for an ordinary name like `Ethernet 3`, so the result

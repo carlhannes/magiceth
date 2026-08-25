@@ -8,10 +8,14 @@
 
 Plug in a USB-ethernet dongle, connect it to a network port, and immediately see everything a
 network technician needs to troubleshoot the port — IP, DHCP, gateway, DNS, link speed, ping
-to the gateway and the internet, and (optionally) VLAN/switch info via LLDP/CDP. Change the MAC
-address or switch between saved DHCP/static profiles with a couple of keystrokes. Everything is
-designed to be operable **with one hand** — for the technician holding the laptop in the other
-up by the rack.
+to the gateway and the internet, throughput in both directions, and (optionally) VLAN/switch info
+via LLDP/CDP. Change the MAC address or switch between saved DHCP/static profiles with a couple of
+keystrokes. Everything is designed to be operable **with one hand** — for the technician holding
+the laptop in the other up by the rack.
+
+The machine's **own Wi-Fi and built-in Ethernet** are listed too, so there is something to
+diagnose with no dongle attached. Dongles always sort first, and one you plug in takes the
+selection by itself.
 
 Works on **Windows, macOS, and Linux** (arm64 + amd64). The tool is a thin Electron GUI that
 orchestrates the OS's own network commands — no custom drivers, no background service.
@@ -29,6 +33,7 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 
 ## Features
 
+- **Ports, not just dongles** — USB dongles plus the machine's built-in Wi-Fi and Ethernet. Loopback, bridges, Docker/veth, VPN tunnels and internal plumbing are left out, using a structural signal on each OS rather than name matching: on macOS the ports macOS itself made into network services, on Linux the sysfs `device` entry only real hardware has, on Windows the `Virtual`/`HardwareInterface` properties.
 - **Identification** — detects the dongle on insertion and shows chipset + capabilities (VID:PID is looked up against a built-in database). Press `I` for the chipset sub-view: max speed, VLAN support, the brands that resell it and the raw USB IDs. Deltaco, Plexgear, Saitech, Apple, UGreen, and others are resellers — the underlying chipset (ASIX, Realtek, …) is what matters.
 - **Diagnostics** — IP/mask, gateway, DNS, full DHCP info (server, lease, domain), link speed/duplex, and MAC. Runs automatically as soon as the dongle gets link.
 - **Connectivity test** — pings the gateway + `1.1.1.1`/`8.8.8.8` _bound to the dongle_ (not via Wi-Fi), plus a DNS test against the DHCP-assigned server. Five packets per target, so latency comes with jitter and a packet-loss figure that means something.
@@ -88,7 +93,7 @@ diagnostics are shown automatically. Everything is controlled from the keyboard:
 
 | Key               | Action                                                                 |
 | ----------------- | ---------------------------------------------------------------------- |
-| `↑` `↓`           | Switch selected dongle (or navigate the profile panel)                 |
+| `↑` `↓`           | Switch selected port (or navigate the profile panel)                   |
 | `R` / space       | Re-run diagnostics                                                     |
 | `C`               | Start / stop the port survey (VLANs on the wire, LLDP/CDP)             |
 | `T`               | Start / stop the speed test (real transfer, see above)                 |
@@ -100,6 +105,10 @@ diagnostics are shown automatically. Everything is controlled from the keyboard:
 | `Backspace`       | Delete the selected profile                                            |
 | `S`               | Save the current config as a profile                                   |
 | `U`               | Undo the last change                                                   |
+
+`M`, `U` and applying a profile change real network configuration. On a **dongle** they act on the
+first press — that is the one-handed point. On a **built-in** port they ask first and act on the
+second press of the same key, because that is the machine's own connection; any other key cancels.
 
 <p align="center">
   <img src="docs/screenshot-profiles.png" alt="The profile panel, opened with P" width="420">
