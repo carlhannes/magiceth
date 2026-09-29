@@ -44,12 +44,20 @@ src/
       reconfig.ts          # MAC rolling + profile application + undo
       profiles.ts          # fs/electron glue for profile storage
       profiles-core.ts     # pure profile operations (upsert/remove/…)
+      wifiscan.ts          # WLAN mode: drives the Wi-Fi helper, holds the active scan
+      wifi-model.ts        # pure: group APs by SSID, fold sightings into min/max/avg tracks
+      ie80211.ts           # pure: decode 802.11 beacon information elements
   preload/index.ts
   renderer/
     index.html
-    src/main.ts            # dashboard + keyboard logic + profile editor
+    src/main.ts            # entry: mounts, dispatches render + keys by mode
+    src/shell.ts           # mode chooser, notice bar, pending confirmations, render hook
+    src/view.ts            # pure formatters shared by both modes (row, clock, escapeHtml…)
+    src/ethernet.ts        # Ethernet mode: the port dashboard + profile editor
+    src/wlan.ts            # WLAN mode: network list, AP list, AP detail, recording
     src/styles.css
     src/env.d.ts
+resources/wifi-helper/     # Swift source + Info.plist for the macOS Wi-Fi helper .app
   shared/
     types.ts               # shared types + the MagicethApi contract
     mac.ts                 # MAC helpers (normalize, randomize locally-administered)
@@ -75,6 +83,7 @@ timeout and `windowsHide`.
 | `speedtest`                  | None       | Throughput both ways, bound to the dongle. Manual only — it moves real traffic. Degrades gracefully.          |
 | `reconfig`                   | Root/admin | Rolls MAC, applies DHCP/static profile, undoes.                                                               |
 | `profiles` / `profiles-core` | None       | Reads/writes profile JSON; pure CRUD operations.                                                              |
+| `wifiscan` → `ie80211`       | Location   | WLAN mode. Runs the Wi-Fi helper, decodes beacons, accumulates a recording. macOS only.                       |
 
 ## Platform layer (`PlatformOps`)
 
@@ -112,7 +121,8 @@ The preload exposes `window.api` per `MagicethApi` (`src/shared/types.ts`). Chan
 - **Privileged:** `reconfig:rollMac`, `reconfig:applyProfile`, `reconfig:undo`
 - **Long-running (privileged):** `survey:start`, `survey:stop`
 - **Long-running (unprivileged):** `speedtest:start`, `speedtest:stop`
-- **Push events (main → renderer):** `adapters:changed`, `survey:update`, `speedtest:update`
+- **Long-running (unprivileged):** `wifi:start`, `wifi:stop`
+- **Push events (main → renderer):** `adapters:changed`, `survey:update`, `speedtest:update`, `wifi:update`
 
 Every channel has a consumer in the renderer — if a capability stops being used, its channel,
 its `MagicethApi` method and its preload wiring go with it.
@@ -172,6 +182,35 @@ Two sub-views hang below the diagnostics — the profile panel (`P`) and the chi
 which is where `chipsets.json`'s capabilities and the raw USB IDs are shown). Each is a
 `render*()` that returns `''` when closed, they share the `.panel-card` shell, and opening one
 closes the other so the single screen never grows past a glance.
+
+## Two modes
+
+The app opens on a chooser: **Ethernet**, the wired port dashboard, and **WLAN**, the Wi-Fi
+scanner. `Tab` switches between them and `Esc` steps back out. They are separate because they
+answer different questions, and mixing them on one screen would cost the at-a-glance readability
+the whole tool is built around.
+
+`main.ts` is the only module that knows both exist. `shell.ts` holds what they share — the mode,
+the notice bar, the pending-confirmation gate and the render hook — and imports neither of them,
+so the dependency graph stays a tree. Leaving a mode shuts down whatever it had running, for the
+same reason switching adapter does: a capture or a scan belongs to the screen it was started from.
+
+## The macOS Wi-Fi helper
+
+WLAN mode is the one capability that cannot be a shell command, because there is no longer a
+command for it — `airport` is gone and nothing replaced it. It runs a small Swift binary shipped
+as a **real `.app` bundle** inside the app's resources, which then behaves like every other
+capability: run it, read JSON, parse.
+
+The bundle is not tidiness. macOS reveals a scanned network's BSSID and its beacon information
+elements only to a process holding a Location Services grant, and only ever offers that grant to
+something with a bundle identity — and elevation does not substitute, because TCC and root are
+independent gates. The full evidence is in [WIFI-FINDINGS.md](WIFI-FINDINGS.md).
+
+The helper stays deliberately stupid: it emits raw information elements as hex and decodes nothing.
+Every parser lives in `ie80211.ts` as a pure function tested against real captured beacons, which
+keeps the untestable Swift surface to about a hundred lines. Build it with
+`scripts/build-wifi-helper.sh`; `npm run package` does so first.
 
 ## Test philosophy
 

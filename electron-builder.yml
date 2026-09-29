@@ -7,6 +7,15 @@ files:
 # chipsets.json is bundled into the main bundle (via import), so no extra runtime resources are needed.
 # The app has no production dependencies — everything is bundled by electron-vite/electron-builder.
 
+# The exception is the macOS Wi-Fi helper, which cannot be bundled into JavaScript: it is a signed
+# .app of its own, because macOS grants Location access — and therefore BSSIDs and beacon
+# information elements — only to a process with a bundle identity. Build it first with
+# scripts/build-wifi-helper.sh; see docs/WIFI-FINDINGS.md for why it has to work this way.
+extraResources:
+  - from: resources/wifi-helper/build/magiceth-wifi.app
+    to: wifi-helper/magiceth-wifi.app
+    filter: ['**/*']
+
 # Internal tool -> unsigned. No macOS notarization, no Windows certificate.
 mac:
   identity: null

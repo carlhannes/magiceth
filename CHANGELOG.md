@@ -9,6 +9,26 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ## [Unreleased]
 
+### Added
+
+- **WLAN mode** — a Wi-Fi scanner alongside the existing port diagnostics, reached from a new mode
+  chooser on startup (`Tab` switches, `Esc` steps back). Lists every network in earshot, the access
+  points behind each one, and for each access point its channel, band, width, PHY generation with
+  MIMO stream count, security, channel utilization, client count and country — all decoded from the
+  raw beacon, so none of it needs monitor mode. macOS only for now.
+- **Recording** (`L`) — keeps scanning and tracks every access point over time, giving min/max/avg
+  for signal, clients and channel load. Access points met along the way are kept even once they
+  stop being heard, which is the point of walking a site with it.
+- A small Swift **Wi-Fi helper**, shipped as its own signed `.app` inside the app's resources.
+  macOS hands out BSSIDs and beacon information elements only to a process with a bundle identity
+  holding a Location grant, and root does not substitute — the measurements behind that claim are
+  in [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md).
+
+### Changed
+
+- The renderer is split into `main` (entry and dispatch), `shell` (mode, notice bar, confirmations),
+  `view` (pure formatters), `ethernet` and `wlan`. Ethernet mode behaves exactly as before.
+
 ## [0.4.0] – 2026-08-26
 
 ### Added

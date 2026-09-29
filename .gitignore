@@ -4,3 +4,6 @@ dist/
 *.log
 .DS_Store
 .claude/settings.local.json
+
+# The Wi-Fi helper is compiled from resources/wifi-helper/main.swift by scripts/build-wifi-helper.sh
+resources/wifi-helper/build/

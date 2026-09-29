@@ -5,6 +5,7 @@ import { listAdapters } from './capabilities/adapters'
 import { runDiagnostics } from './capabilities/diagnostics'
 import { startSurvey, stopSurvey } from './capabilities/survey'
 import { startSpeedTest, stopSpeedTest } from './capabilities/speedtest'
+import { startWifiScan, stopWifiScan } from './capabilities/wifiscan'
 import { applyProfile, rollMac, undo } from './capabilities/reconfig'
 import {
   deleteProfile,
@@ -131,6 +132,17 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('speedtest:stop', () => stopSpeedTest())
 
+  // Scanning moves the radio off-channel, so a recording only ever runs on a keypress. Same push
+  // shape as the survey: partial results arrive while it runs.
+  ipcMain.handle('wifi:start', (_event, device: string, mode: 'once' | 'record') =>
+    startWifiScan(device, mode, (result) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('wifi:update', result)
+      }
+    })
+  )
+  ipcMain.handle('wifi:stop', () => stopWifiScan())
+
   // Profiles
   ipcMain.handle('profiles:list', () => loadProfiles())
   ipcMain.handle('profiles:saveCurrent', async (_event, device: string, name: string) => {
@@ -166,6 +178,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   stopSurvey()
   stopSpeedTest()
+  stopWifiScan()
 })
 
 app.on('window-all-closed', () => {

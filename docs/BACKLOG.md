@@ -29,6 +29,32 @@ focus; extend the confirm keypress to dongles as well; or leave it and document 
 The confirmation is cleared by any other keypress and never by a timer, because self-clearing
 notices are their own open question further down this file.
 
+## WLAN mode: what is missing
+
+The scanner works on macOS and is verified end to end ([WIFI-FINDINGS.md](WIFI-FINDINGS.md)). What
+is still open:
+
+- **Linux and Windows are not implemented at all** — not merely unverified. `startWifiScan` returns
+  `unsupported` off macOS. Linux would use monitor mode via `tcpdump -I` (richer: real client counts
+  from data frames, and no permission needed) plus channel hopping; Windows would need
+  `netsh wlan show networks` for a thin version, or Npcap for a real one.
+- **No vendor database.** A manufacturer is shown only when an access point broadcasts a WPS
+  element, which in practice is almost never. Bundling the IEEE MA-L registry as
+  `resources/oui.json` (about 1.2 MB, `import`-ed like `chipsets.json`) would name most of them —
+  and would need a `.prettierignore`, since none exists and CI runs `prettier --check .`. Note that
+  a randomised BSSID cannot be looked up at all, while vendor elements such as Ubiquiti's
+  `00:15:6d` identify the maker even then. That second signal is currently parsed and discarded.
+- **No card selection.** The interface is whichever port enumerates as Wi-Fi. The helper already
+  accepts `--interface` and reports every interface it can see, so the plumbing exists.
+- **No channel-overlap view.** The next question after "who else is on channel 6" is the spectrum
+  picture, which needs the channel/width pairs drawn rather than listed.
+- **Unverified against enterprise networks, captive portals, or WPS-broadcasting access points.**
+  The AKM parser handles 802.1X suites but has never met one.
+- **A TCC grant is keyed to a code signature.** The helper is ad-hoc signed, so a rebuild may
+  re-prompt for Location access. This has not been measured across a version bump.
+- **The scan cadence is not adaptive.** A recording scans as fast as the radio allows, which moves
+  it off-channel continuously and will cost throughput on the machine's own connection.
+
 ## Port survey: gaps left after the rebuild
 
 The survey works and is verified against a synthetic trunk

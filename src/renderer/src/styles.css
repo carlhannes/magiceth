@@ -424,3 +424,118 @@ body {
     transform: rotate(360deg);
   }
 }
+
+/* --- Mode chooser and the mode tag in the topbar --- */
+
+/* Which mode is on screen, next to the product name. Quiet on purpose: it answers a question you
+   only ask once, and must not compete with the port or network being diagnosed. */
+.mode-tag {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.chooser {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+/* Same shell as .panel-card, with the 4px accent stripe the adapter card uses — the two choices
+   are the two halves of the tool, so they should read as substantial rather than as menu items. */
+.mode-card {
+  background: var(--panel);
+  border-radius: 12px;
+  border-left: 4px solid var(--accent);
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 1.75em 1fr;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.mode-card h2 {
+  font-size: 18px;
+}
+
+.mode-card p {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+/* The digit you press, drawn as the same keycap the profile list uses for its index. */
+.mode-key {
+  grid-row: span 2;
+  background: var(--dim);
+  border-radius: 5px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  padding: 2px 0;
+}
+
+/* --- WLAN mode --- */
+
+/* Signal strength as five steps. "-67 dBm" is precise and unreadable at a glance; the bar is the
+   opposite, so both are shown and the bar does the scanning-down-a-list work. */
+.meter {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.meter .bar {
+  width: 3px;
+  background: var(--dim);
+  border-radius: 1px;
+}
+
+.meter .bar:nth-child(1) {
+  height: 30%;
+}
+.meter .bar:nth-child(2) {
+  height: 45%;
+}
+.meter .bar:nth-child(3) {
+  height: 60%;
+}
+.meter .bar:nth-child(4) {
+  height: 80%;
+}
+.meter .bar:nth-child(5) {
+  height: 100%;
+}
+
+.meter.ok .bar.on {
+  background: var(--ok);
+}
+.meter.warn .bar.on {
+  background: var(--warn);
+}
+.meter.bad .bar.on {
+  background: #e05a5a;
+}
+
+/* The second line of a list row: channel, width and PHY under the name. */
+.sub-line {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.profiles .pd.ok {
+  color: var(--ok);
+}
+.profiles .pd.warn {
+  color: var(--warn);
+}
+.profiles .pd.bad {
+  color: #e05a5a;
+}

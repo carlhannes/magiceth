@@ -16,7 +16,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "package": "npm run build && electron-builder"
+    "build:helper": "sh scripts/build-wifi-helper.sh",
+    "package": "npm run build:helper && npm run build && electron-builder"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",

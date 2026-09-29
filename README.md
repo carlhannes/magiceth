@@ -40,6 +40,7 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 - **Speed test** _(manual, `T`)_ — measures what the uplink behind the port actually delivers, in both directions, bound to the dongle. Numbers appear within a second and update as it runs, so a 1 Mbit uplink is obvious long before the test ends. It transfers real data to `speed.cloudflare.com` — up to ~200 MB each way, about 20 s — and **never runs on its own**; `T` starts it and `T` stops it early.
 - **Port survey / VLAN discovery** _(optional, macOS/Linux)_ — press `C` on an uplink and every 802.1Q VLAN carried on it is listed as it is discovered, with a frame count and the addressing seen inside each one. It reads the tags straight off the wire, so it works on **any** switch, managed or not — no LLDP required. When the switch does advertise, LLDP/CDP adds its name, port and management IP on top. Runs until you stop it. Not implemented on Windows (it would need tshark + Npcap); the app says so instead of failing. Measured behaviour and the evidence behind it: [docs/VLAN-FINDINGS.md](docs/VLAN-FINDINGS.md).
 - **Active control** — roll a new (locally-administered) MAC, switch between DHCP and static profiles, create/edit profiles inline, and undo the last change.
+- **WLAN mode** _(macOS)_ — the same idea pointed at the air. Every network in earshot, the access points behind each one, and per access point: channel, band, width, PHY generation with MIMO stream count (`802.11be, MIMO 4×4`), security read from the actual AKM suites, channel utilization, client count and country. All of it is decoded from the raw beacon, so **no monitor mode and no disconnection** — your Wi-Fi keeps working while you scan. Press `L` to record: it keeps scanning while you walk a site and gives min/max/average for signal, clients and channel load, keeping access points you have moved away from. macOS hands out this detail only to an app with Location access, which magiceth asks for once — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for exactly what is and is not obtainable.
 
 ### Cheap things happen by themselves; expensive things need intent
 
@@ -85,7 +86,7 @@ what a "please add this chipset" issue or PR needs.
 
 | Platform                | Status                                                                                                         |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified                                      |
+| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified; **Wi-Fi mode live-verified**        |
 | **Windows 11** (x64)    | Identification, diagnostics, ping, DHCP/static profile switching and MAC rolling all verified on real hardware |
 | **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**              |
 
@@ -112,8 +113,13 @@ npm run dev        # starts the app in development mode
 
 ## Usage
 
-Launch the app (does **not** require admin). With a dongle plugged in, identification and
-diagnostics are shown automatically. Everything is controlled from the keyboard:
+Launch the app (does **not** require admin). It opens on a chooser with two modes — press `1`/`E`
+for **Ethernet** or `2`/`W` for **Wi-Fi**. `Tab` switches between them at any time and `Esc` steps
+back out. Everything is controlled from the keyboard.
+
+### Ethernet mode
+
+With a dongle plugged in, identification and diagnostics are shown automatically.
 
 | Key               | Action                                                                 |
 | ----------------- | ---------------------------------------------------------------------- |
@@ -129,6 +135,23 @@ diagnostics are shown automatically. Everything is controlled from the keyboard:
 | `Backspace`       | Delete the selected profile                                            |
 | `S`               | Save the current config as a profile                                   |
 | `U`               | Undo the last change                                                   |
+
+### Wi-Fi mode _(macOS)_
+
+Entering the mode scans by itself. The list is networks; opening one shows the access points behind
+it; opening an access point shows everything known about it.
+
+| Key           | Action                                                                        |
+| ------------- | ----------------------------------------------------------------------------- |
+| `↑` `↓`       | Move through the list                                                         |
+| `Enter` / `→` | Open the selected network, then the selected access point                     |
+| `Esc` / `←`   | Back up a level; from the top, back to the mode chooser                       |
+| `R` / space   | Scan again now                                                                |
+| `L`           | Start / stop recording — keeps scanning and tracks min/max/avg while you move |
+
+Scanning is passive and read-only: it never associates with anything and never disconnects you.
+The first scan asks macOS for Location access, which is the only way it will reveal access point
+identifiers — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md).
 
 `M`, `U` and applying a profile change real network configuration. On a **dongle** they act on the
 first press — that is the one-handed point. On a **built-in** port they ask first and act on the

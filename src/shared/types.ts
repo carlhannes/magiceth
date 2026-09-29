@@ -189,6 +189,82 @@ export interface ReconfigResult {
 }
 
 // The API that preload exposes on window.api (contract between main and renderer).
+// --- Wi-Fi scanning (WLAN mode) ---
+
+export type WifiBand = '2.4' | '5' | '6' | '?'
+
+/** One access point: a single BSSID heard on one channel. Several of these make up an SSID. */
+export interface WifiBss {
+  bssid: string
+  ssid: string // '' for a hidden network
+  rssi: number // dBm
+  noise?: number // dBm
+  channel: number
+  band: WifiBand
+  widthMhz?: number
+  phy?: string // '802.11ax', '802.11be', …  derived from the capability elements
+  streams?: number // spatial streams, so MIMO 2x2 is streams === 2
+  security: string
+  clients?: number // from the BSS Load element — what the AP says it is serving
+  utilizationPct?: number // from the BSS Load element
+  vendor?: string
+  model?: string
+  /**
+   * True when the BSSID has the locally-administered bit set, which modern APs use for virtual
+   * SSIDs. No OUI lookup is possible for one, so the UI must say that rather than show "unknown".
+   */
+  locallyAdministered: boolean
+  countryCode?: string
+}
+
+/** Every AP broadcasting the same network name, which is what you actually pick in the list. */
+export interface WifiNetwork {
+  ssid: string
+  bestRssi: number
+  bands: WifiBand[]
+  security: string
+  bssids: WifiBss[]
+}
+
+/** How a value moved across a recording. `avg` is over the sightings, not over wall-clock time. */
+export interface WifiRange {
+  min: number
+  max: number
+  avg: number
+  last: number
+}
+
+/**
+ * One BSSID across a whole recording. Kept even after the AP stops being heard — walking out of
+ * range is a result, not a reason to forget the AP was there.
+ */
+export interface WifiTrack {
+  bssid: string
+  ssid: string
+  channel: number
+  band: WifiBand
+  sightings: number
+  firstSeenSec: number
+  lastSeenSec: number
+  rssi: WifiRange
+  clients?: WifiRange
+  utilizationPct?: WifiRange
+}
+
+export type WifiScanStatus = 'ok' | 'unsupported' | 'no-helper' | 'needs-permission' | 'error'
+
+export interface WifiScanResult {
+  status: WifiScanStatus
+  /** True while the continuous recording loop is running. */
+  running: boolean
+  device: string
+  networks: WifiNetwork[]
+  tracks: WifiTrack[]
+  scans: number
+  elapsedSec: number
+  message?: string
+}
+
 export interface MagicethApi {
   listAdapters(): Promise<Adapter[]>
   onAdaptersChanged(cb: (adapters: Adapter[]) => void): () => void
@@ -204,6 +280,11 @@ export interface MagicethApi {
   rollMac(device: string): Promise<ReconfigResult>
   applyProfile(device: string, profileId: string): Promise<ReconfigResult>
   undo(device: string): Promise<ReconfigResult>
+  /** `mode: 'record'` clears the accumulator and keeps scanning; `'once'` adds a single sample. */
+  startWifiScan(device: string, mode: 'once' | 'record'): Promise<WifiScanResult>
+  /** Resolves with everything the scan collected, or null when none was running. */
+  stopWifiScan(): Promise<WifiScanResult | null>
+  onWifiUpdate(cb: (result: WifiScanResult) => void): () => void
   listProfiles(): Promise<Profile[]>
   saveCurrentAsProfile(device: string, name: string): Promise<Profile[]>
   saveProfile(profile: Profile): Promise<Profile[]>
