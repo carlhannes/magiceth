@@ -249,6 +249,51 @@ export interface WifiTrack {
   rssi: WifiRange
   clients?: WifiRange
   utilizationPct?: WifiRange
+  // The descriptive attributes, carried from the newest sighting so a track describes itself.
+  // A saved recording is nothing but tracks, and an exported row has to say which access point it
+  // came from — "MIMO 4x4, WPA3, Ubiquiti" is most of why the export is worth having.
+  security: string
+  phy?: string
+  streams?: number
+  widthMhz?: number
+  vendor?: string
+  model?: string
+  locallyAdministered: boolean
+  countryCode?: string
+}
+
+/** One channel's worth of congestion, for answering "where is the interference". */
+export interface ChannelLoad {
+  channel: number
+  band: WifiBand
+  accessPoints: number
+  /** Strongest signal heard on the channel — how much of this load is actually near you. */
+  bestRssi: number
+  /** Highest utilization any access point on the channel advertised, where any of them did. */
+  maxUtilizationPct?: number
+}
+
+/** A recording on disk, described well enough to list without reading the whole file. */
+export interface RecordingSummary {
+  id: string
+  startedAt: string
+  durationSec: number
+  accessPoints: number
+  networks: number
+  /** Absolute path of the aggregate file, which is what "show in folder" reveals. */
+  path: string
+}
+
+export interface SavedRecording {
+  summary: RecordingSummary
+  tracks: WifiTrack[]
+  /**
+   * The same derived views a live scan carries, computed in main. The renderer must never import
+   * from main/, so anything derived is derived on that side of the IPC boundary — the same reason
+   * sortAdapters and validateProfileDraft live in shared/.
+   */
+  networks: WifiNetwork[]
+  channels: ChannelLoad[]
 }
 
 export type WifiScanStatus = 'ok' | 'unsupported' | 'no-helper' | 'needs-permission' | 'error'
@@ -260,8 +305,16 @@ export interface WifiScanResult {
   device: string
   networks: WifiNetwork[]
   tracks: WifiTrack[]
+  /** Congestion per channel, derived in main so the renderer stays a view. */
+  channels: ChannelLoad[]
   scans: number
   elapsedSec: number
+  /**
+   * Where this recording is being written. Absent while merely scanning, and absent during a
+   * recording that could not open a file — which is how the UI can say so rather than quietly
+   * dropping the walk.
+   */
+  savedTo?: string
   message?: string
 }
 
@@ -285,6 +338,10 @@ export interface MagicethApi {
   /** Resolves with everything the scan collected, or null when none was running. */
   stopWifiScan(): Promise<WifiScanResult | null>
   onWifiUpdate(cb: (result: WifiScanResult) => void): () => void
+  listRecordings(): Promise<RecordingSummary[]>
+  readRecording(id: string): Promise<SavedRecording | null>
+  /** Opens the platform file manager with the recording selected. */
+  revealRecording(id: string): Promise<void>
   listProfiles(): Promise<Profile[]>
   saveCurrentAsProfile(device: string, name: string): Promise<Profile[]>
   saveProfile(profile: Profile): Promise<Profile[]>

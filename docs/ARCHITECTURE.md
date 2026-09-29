@@ -45,8 +45,10 @@ src/
       profiles.ts          # fs/electron glue for profile storage
       profiles-core.ts     # pure profile operations (upsert/remove/…)
       wifiscan.ts          # WLAN mode: drives the Wi-Fi helper, holds the active scan
-      wifi-model.ts        # pure: group APs by SSID, fold sightings into min/max/avg tracks
+      wifi-model.ts        # pure: group APs by SSID, fold sightings into tracks, channel load
       ie80211.ts           # pure: decode 802.11 beacon information elements
+      recordings.ts        # fs/electron glue for saved recordings (+ reveal in the file manager)
+      recordings-core.ts   # pure: the recording CSV, written and read back
   preload/index.ts
   renderer/
     index.html
@@ -84,6 +86,7 @@ timeout and `windowsHide`.
 | `reconfig`                   | Root/admin | Rolls MAC, applies DHCP/static profile, undoes.                                                               |
 | `profiles` / `profiles-core` | None       | Reads/writes profile JSON; pure CRUD operations.                                                              |
 | `wifiscan` → `ie80211`       | Location   | WLAN mode. Runs the Wi-Fi helper, decodes beacons, accumulates a recording. macOS only.                       |
+| `recordings` / `-core`       | None       | Writes a recording to CSV in Documents, reads it back, reveals it in the file manager.                        |
 
 ## Platform layer (`PlatformOps`)
 
@@ -122,6 +125,7 @@ The preload exposes `window.api` per `MagicethApi` (`src/shared/types.ts`). Chan
 - **Long-running (privileged):** `survey:start`, `survey:stop`
 - **Long-running (unprivileged):** `speedtest:start`, `speedtest:stop`
 - **Long-running (unprivileged):** `wifi:start`, `wifi:stop`
+- **Saved recordings:** `recordings:list`, `recordings:read`, `recordings:reveal`
 - **Push events (main → renderer):** `adapters:changed`, `survey:update`, `speedtest:update`, `wifi:update`
 
 Every channel has a consumer in the renderer — if a capability stops being used, its channel,
@@ -211,6 +215,28 @@ The helper stays deliberately stupid: it emits raw information elements as hex a
 Every parser lives in `ie80211.ts` as a pure function tested against real captured beacons, which
 keeps the untestable Swift surface to about a hundred lines. Build it with
 `scripts/build-wifi-helper.sh`; `npm run package` does so first.
+
+## Saved recordings
+
+A WLAN recording writes two CSVs into `~/Documents/magiceth` — a time log appended while it runs,
+and an aggregate written when it stops. They go in Documents rather than `userData` because the
+point of saving them is that you can find, open and send them, and Application Support is somewhere
+nobody looks.
+
+**The CSV is the only artifact.** The app reads its own aggregate back to list and display past
+recordings, so there is no second format to drift out of sync with the one you open in a
+spreadsheet. The start time lives in the filename and everything else — duration, access points,
+networks — is derived from the rows, which is what keeps the file free of metadata lines.
+
+`recordings-core.ts` holds all of it as pure functions (RFC 4180 quoting, because SSIDs contain
+commas and quotes), and `recordings.ts` is the fs/electron glue, on exactly the pattern
+`profiles-core.ts`/`profiles.ts` already set. `recordings.ts` is the only module that touches
+`shell`, and it validates every id against the filename pattern before building a path — the id
+arrives from the renderer, and that check is what keeps it inside the folder.
+
+A run of fewer than three snapshots deletes itself, so a stray keypress leaves nothing behind.
+Writes are synchronous because `before-quit` does not await, which is what lets quitting
+mid-recording still finalise the file.
 
 ## Test philosophy
 

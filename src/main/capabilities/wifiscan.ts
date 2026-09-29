@@ -12,8 +12,10 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { run } from '../util/run-command'
 import { readBeacon } from './ie80211'
-import { foldSighting, groupBySsid, toTracks } from './wifi-model'
+import { channelSummary, foldSighting, groupBySsid, toTracks } from './wifi-model'
 import type { TrackStore } from './wifi-model'
+import { appendSnapshot, beginRecording, finishRecording } from './recordings'
+import type { RecordingPaths } from './recordings'
 import type { WifiBand, WifiBss, WifiScanResult } from '../../shared/types'
 
 /**
@@ -24,6 +26,17 @@ const SCAN_GAP_MS = 750
 
 /** A recording left running is still moving the radio off-channel, so it does not run forever. */
 const MAX_SECONDS = 1800
+
+/**
+ * Shortest gap between snapshots of everything the radio can hear. A row per access point per
+ * scan would be a large file describing a walk at a resolution nobody reads; at walking pace two
+ * seconds is roughly one reading every three metres.
+ *
+ * A floor, not a cadence. Snapshots can only be taken when a scan returns, and a full sweep of
+ * every channel sometimes takes six seconds, so gaps in a real log vary between two and about
+ * seven seconds. Re-emitting the previous reading to fill those gaps would only invent data.
+ */
+const SNAPSHOT_MS = 2000
 
 const HELPER_TIMEOUT_MS = 30_000
 
@@ -122,6 +135,10 @@ interface ActiveScan {
   recording: boolean
   /** Once a recording has run, the list stays cumulative — that is the result you walked for. */
   hasRecorded: boolean
+  /** Where this recording is being written, when one could be opened. */
+  paths?: RecordingPaths
+  snapshots: number
+  lastSnapshotAt: number
   timer?: NodeJS.Timeout
   onUpdate: (result: WifiScanResult) => void
 }
@@ -144,14 +161,17 @@ function snapshot(s: ActiveScan, running: boolean): WifiScanResult {
   // A plain one-off scan answers "what is here now", so it shows only what it just heard. A
   // recording answers "what did I pass", so it shows everything since it started.
   const shown = s.hasRecorded ? [...s.seen.values()] : s.latest
+  const tracks = toTracks(s.store)
   return {
     status: 'ok',
     running,
     device: s.device,
     networks: groupBySsid(shown),
-    tracks: toTracks(s.store),
+    tracks,
+    channels: channelSummary(tracks),
     scans: s.scans,
-    elapsedSec: elapsed(s)
+    elapsedSec: elapsed(s),
+    savedTo: s.paths?.aggregate
   }
 }
 
@@ -162,6 +182,7 @@ function fail(device: string, status: WifiScanResult['status'], message: string)
     device,
     networks: [],
     tracks: [],
+    channels: [],
     scans: 0,
     elapsedSec: 0,
     message
@@ -209,6 +230,14 @@ function ingest(s: ActiveScan, output: HelperOutput): void {
   for (const bss of seen) {
     s.seen.set(bss.bssid, bss)
     foldSighting(s.store, bss, at)
+  }
+  // Write as we go rather than at the end, so a crash, a quit or a flat battery still leaves the
+  // walk on disk. The aggregate is the only thing that waits for the stop.
+  const now = Date.now()
+  if (s.paths && now - s.lastSnapshotAt >= SNAPSHOT_MS) {
+    s.lastSnapshotAt = now
+    s.snapshots++
+    appendSnapshot(s.paths, at, new Date(now).toISOString(), seen)
   }
 }
 
@@ -281,6 +310,9 @@ export async function startWifiScan(
     store: keep?.device === device ? keep.store : new Map(),
     recording: mode === 'record',
     hasRecorded: mode === 'record' || (keep?.device === device && keep.hasRecorded === true),
+    paths: mode === 'record' ? beginRecording(new Date()) : undefined,
+    snapshots: 0,
+    lastSnapshotAt: 0,
     onUpdate
   }
   active = s
@@ -293,8 +325,14 @@ export async function startWifiScan(
 export function stopWifiScan(): WifiScanResult | null {
   const s = active
   if (!s) return null
+  const wasRecording = s.recording
   s.recording = false
   if (s.timer) clearTimeout(s.timer)
   s.timer = undefined
+  if (wasRecording && s.paths) {
+    const written = finishRecording(s.paths, toTracks(s.store), s.snapshots)
+    // A run too short to be worth keeping deletes itself, so stop claiming it was saved.
+    if (!written) s.paths = undefined
+  }
   return snapshot(s, false)
 }

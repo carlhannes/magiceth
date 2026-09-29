@@ -24,10 +24,21 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   holding a Location grant, and root does not substitute — the measurements behind that claim are
   in [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md).
 
+- **Recordings are saved** to `~/Documents/magiceth` as two CSVs: a time log appended while the
+  recording runs, and an aggregate written when it stops carrying min/max/average signal, clients
+  and channel load per access point, grouped so every access point of one network sits together.
+  The app reads those same files back — `S` lists past recordings, opening one shows it through the
+  ordinary screens, and `F` reveals it in the file manager. A run of fewer than three snapshots
+  deletes itself, and quitting mid-recording still finalises the file.
+- **Channel view** (`C`) — how many access points share each channel, the strongest signal there,
+  and the highest load any of them advertises. The question that follows "who else is on channel 6".
+
 ### Changed
 
 - The renderer is split into `main` (entry and dispatch), `shell` (mode, notice bar, confirmations),
   `view` (pure formatters), `ethernet` and `wlan`. Ethernet mode behaves exactly as before.
+- `WifiTrack` carries the descriptive attributes of its access point (security, PHY, MIMO streams,
+  vendor, width, country), so a track describes itself and a saved recording needs nothing else.
 
 ## [0.4.0] – 2026-08-26
 

@@ -4,7 +4,14 @@
 // Kept apart from wifiscan.ts so the accumulate-over-time logic can be unit-tested without a
 // radio, which is the same split survey.ts uses for its VLAN tally.
 
-import type { WifiBand, WifiBss, WifiNetwork, WifiRange, WifiTrack } from '../../shared/types'
+import type {
+  ChannelLoad,
+  WifiBand,
+  WifiBss,
+  WifiNetwork,
+  WifiRange,
+  WifiTrack
+} from '../../shared/types'
 
 /**
  * Upper bound on tracked access points. A recording taken while walking through an office block
@@ -21,10 +28,13 @@ interface Accumulator {
 }
 
 interface TrackState {
-  bssid: string
   ssid: string
-  channel: number
-  band: WifiBand
+  /**
+   * The newest complete sighting. Everything that describes rather than measures — security, PHY,
+   * streams, vendor, channel — is read back off this, so a new field on WifiBss reaches the track
+   * without another place to update.
+   */
+  last: WifiBss
   sightings: number
   firstSeenSec: number
   lastSeenSec: number
@@ -76,10 +86,8 @@ export function foldSighting(store: TrackStore, bss: WifiBss, atSec: number): vo
   if (!existing) {
     if (store.size >= MAX_TRACKS) return
     store.set(bss.bssid, {
-      bssid: bss.bssid,
       ssid: bss.ssid,
-      channel: bss.channel,
-      band: bss.band,
+      last: bss,
       sightings: 1,
       firstSeenSec: atSec,
       lastSeenSec: atSec,
@@ -91,9 +99,10 @@ export function foldSighting(store: TrackStore, bss: WifiBss, atSec: number): vo
   }
   existing.sightings++
   existing.lastSeenSec = atSec
+  existing.last = bss
+  // A hidden network answers with an empty name on some scans and its real one on others, so a
+  // name once learned is kept rather than being blanked by the next quiet beacon.
   existing.ssid = bss.ssid || existing.ssid
-  existing.channel = bss.channel
-  existing.band = bss.band
   push(existing.rssi, bss.rssi)
   fold(existing, 'clients', bss.clients)
   fold(existing, 'utilizationPct', bss.utilizationPct)
@@ -103,16 +112,24 @@ export function foldSighting(store: TrackStore, bss: WifiBss, atSec: number): vo
 export function toTracks(store: TrackStore): WifiTrack[] {
   return [...store.values()]
     .map((t) => ({
-      bssid: t.bssid,
+      bssid: t.last.bssid,
       ssid: t.ssid,
-      channel: t.channel,
-      band: t.band,
+      channel: t.last.channel,
+      band: t.last.band,
       sightings: t.sightings,
       firstSeenSec: t.firstSeenSec,
       lastSeenSec: t.lastSeenSec,
       rssi: project(t.rssi),
       clients: t.clients ? project(t.clients) : undefined,
-      utilizationPct: t.utilizationPct ? project(t.utilizationPct) : undefined
+      utilizationPct: t.utilizationPct ? project(t.utilizationPct) : undefined,
+      security: t.last.security,
+      phy: t.last.phy,
+      streams: t.last.streams,
+      widthMhz: t.last.widthMhz,
+      vendor: t.last.vendor,
+      model: t.last.model,
+      locallyAdministered: t.last.locallyAdministered,
+      countryCode: t.last.countryCode
     }))
     .sort((a, b) => b.rssi.last - a.rssi.last)
 }
@@ -153,4 +170,67 @@ export function groupBySsid(bssids: WifiBss[]): WifiNetwork[] {
       }
     })
     .sort((a, b) => b.bestRssi - a.bestRssi)
+}
+
+/**
+ * A track as a single reading, using its most recent values.
+ *
+ * This is what lets a recording read back off disk go through exactly the same grouping and the
+ * same screens as a live scan: there is one `groupBySsid`, not one per source.
+ */
+export function trackToBss(t: WifiTrack): WifiBss {
+  return {
+    bssid: t.bssid,
+    ssid: t.ssid,
+    rssi: t.rssi.last,
+    channel: t.channel,
+    band: t.band,
+    widthMhz: t.widthMhz,
+    phy: t.phy,
+    streams: t.streams,
+    security: t.security,
+    clients: t.clients?.last,
+    utilizationPct: t.utilizationPct?.last,
+    vendor: t.vendor,
+    model: t.model,
+    locallyAdministered: t.locallyAdministered,
+    countryCode: t.countryCode
+  }
+}
+
+/**
+ * Congestion per channel: how many access points share it, how close the nearest one is, and the
+ * worst load any of them admits to.
+ *
+ * Takes tracks rather than a live scan so the same function answers the question for a recording
+ * read back off disk. Ordered by band then channel, which is how a spectrum is read.
+ */
+export function channelSummary(tracks: WifiTrack[]): ChannelLoad[] {
+  const byKey = new Map<string, ChannelLoad>()
+  for (const t of tracks) {
+    const key = `${t.band}/${t.channel}`
+    const existing = byKey.get(key)
+    const util = t.utilizationPct?.max
+    if (!existing) {
+      byKey.set(key, {
+        channel: t.channel,
+        band: t.band,
+        accessPoints: 1,
+        bestRssi: t.rssi.max,
+        maxUtilizationPct: util
+      })
+      continue
+    }
+    existing.accessPoints++
+    existing.bestRssi = Math.max(existing.bestRssi, t.rssi.max)
+    // An access point that never advertised a BSS Load must not read as 0% load.
+    if (util !== undefined) {
+      existing.maxUtilizationPct =
+        existing.maxUtilizationPct === undefined ? util : Math.max(existing.maxUtilizationPct, util)
+    }
+  }
+  const bandOrder: WifiBand[] = ['2.4', '5', '6', '?']
+  return [...byKey.values()].sort(
+    (a, b) => bandOrder.indexOf(a.band) - bandOrder.indexOf(b.band) || a.channel - b.channel
+  )
 }

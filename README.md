@@ -148,6 +148,17 @@ it; opening an access point shows everything known about it.
 | `Esc` / `←`   | Back up a level; from the top, back to the mode chooser                       |
 | `R` / space   | Scan again now                                                                |
 | `L`           | Start / stop recording — keeps scanning and tracks min/max/avg while you move |
+| `C`           | Channel view — how many access points share each channel, and how loaded      |
+| `S`           | Saved recordings — open one to view it; `F` reveals it in the file manager    |
+
+**Recordings are saved to `~/Documents/magiceth`** as two CSVs you can open in any spreadsheet: a
+time log written as you walk (one row per access point per snapshot, at least two seconds apart)
+and an aggregate written when you stop (one row per access point with min/max/average signal,
+clients and channel load, grouped so every access point of one network sits together). A run
+shorter than three snapshots deletes itself, and quitting mid-recording still finalises the file.
+The app reads those same files back, so nothing is stored anywhere else. Two things worth knowing:
+macOS may ask once for permission to write to Documents, and if that folder syncs to iCloud your
+recordings will sync with it.
 
 Scanning is passive and read-only: it never associates with anything and never disconnects you.
 The first scan asks macOS for Location access, which is the only way it will reveal access point

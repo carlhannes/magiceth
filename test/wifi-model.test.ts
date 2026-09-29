@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_TRACKS, accumulate, groupBySsid } from '../src/main/capabilities/wifi-model'
+import {
+  MAX_TRACKS,
+  accumulate,
+  channelSummary,
+  groupBySsid,
+  trackToBss
+} from '../src/main/capabilities/wifi-model'
 import type { WifiBss } from '../src/shared/types'
 
 function bss(over: Partial<WifiBss> & Pick<WifiBss, 'bssid'>): WifiBss {
@@ -96,5 +102,114 @@ describe('accumulate', () => {
 
   it('returns nothing for no scans', () => {
     expect(accumulate([])).toEqual([])
+  })
+})
+
+describe('track attributes', () => {
+  it('carries the descriptive fields from the newest sighting, so a track describes itself', () => {
+    const tracks = accumulate([
+      { atSec: 0, bssids: [bss({ bssid: 'aa', phy: '802.11ac', streams: 2 })] },
+      {
+        atSec: 4,
+        bssids: [
+          bss({
+            bssid: 'aa',
+            phy: '802.11be',
+            streams: 4,
+            widthMhz: 160,
+            vendor: 'Ubiquiti',
+            security: 'WPA3-Personal',
+            countryCode: 'SE'
+          })
+        ]
+      }
+    ])
+    expect(tracks[0]).toMatchObject({
+      phy: '802.11be',
+      streams: 4,
+      widthMhz: 160,
+      vendor: 'Ubiquiti',
+      security: 'WPA3-Personal',
+      countryCode: 'SE'
+    })
+  })
+
+  it('keeps a name once learned when a later beacon comes back hidden', () => {
+    const tracks = accumulate([
+      { atSec: 0, bssids: [bss({ bssid: 'aa', ssid: 'office' })] },
+      { atSec: 4, bssids: [bss({ bssid: 'aa', ssid: '' })] }
+    ])
+    expect(tracks[0].ssid).toBe('office')
+  })
+})
+
+describe('channelSummary', () => {
+  it('counts the access points sharing a channel and keeps the nearest and the busiest', () => {
+    const tracks = accumulate([
+      {
+        atSec: 0,
+        bssids: [
+          bss({ bssid: 'a', channel: 6, rssi: -70, utilizationPct: 10 }),
+          bss({ bssid: 'b', channel: 6, rssi: -40, utilizationPct: 55 }),
+          bss({ bssid: 'c', channel: 1, rssi: -60 })
+        ]
+      }
+    ])
+    expect(channelSummary(tracks)).toEqual([
+      { channel: 1, band: '2.4', accessPoints: 1, bestRssi: -60, maxUtilizationPct: undefined },
+      { channel: 6, band: '2.4', accessPoints: 2, bestRssi: -40, maxUtilizationPct: 55 }
+    ])
+  })
+
+  it('does not let an access point that never advertised a load read as 0%', () => {
+    const tracks = accumulate([
+      {
+        atSec: 0,
+        bssids: [
+          bss({ bssid: 'a', channel: 11, utilizationPct: 40 }),
+          bss({ bssid: 'b', channel: 11 })
+        ]
+      }
+    ])
+    expect(channelSummary(tracks)[0].maxUtilizationPct).toBe(40)
+  })
+
+  it('orders by band then channel, the way a spectrum is read', () => {
+    const tracks = accumulate([
+      {
+        atSec: 0,
+        bssids: [
+          bss({ bssid: 'a', channel: 36, band: '5' }),
+          bss({ bssid: 'b', channel: 11, band: '2.4' }),
+          bss({ bssid: 'c', channel: 37, band: '6' }),
+          bss({ bssid: 'd', channel: 1, band: '2.4' })
+        ]
+      }
+    ])
+    expect(channelSummary(tracks).map((c) => `${c.band}/${c.channel}`)).toEqual([
+      '2.4/1',
+      '2.4/11',
+      '5/36',
+      '6/37'
+    ])
+  })
+
+  it('returns nothing for no tracks', () => {
+    expect(channelSummary([])).toEqual([])
+  })
+})
+
+describe('trackToBss', () => {
+  it('flattens a track to its latest reading so saved recordings reuse the live grouping', () => {
+    const [t] = accumulate([
+      { atSec: 0, bssids: [bss({ bssid: 'aa', ssid: 'office', rssi: -80, clients: 1 })] },
+      { atSec: 4, bssids: [bss({ bssid: 'aa', ssid: 'office', rssi: -50, clients: 9 })] }
+    ])
+    expect(trackToBss(t)).toMatchObject({ bssid: 'aa', ssid: 'office', rssi: -50, clients: 9 })
+  })
+
+  it('leaves a never-advertised value absent', () => {
+    const [t] = accumulate([{ atSec: 0, bssids: [bss({ bssid: 'aa' })] }])
+    expect(trackToBss(t).clients).toBeUndefined()
   })
 })

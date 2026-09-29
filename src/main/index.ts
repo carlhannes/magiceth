@@ -6,6 +6,7 @@ import { runDiagnostics } from './capabilities/diagnostics'
 import { startSurvey, stopSurvey } from './capabilities/survey'
 import { startSpeedTest, stopSpeedTest } from './capabilities/speedtest'
 import { startWifiScan, stopWifiScan } from './capabilities/wifiscan'
+import { listRecordings, readRecording, revealRecording } from './capabilities/recordings'
 import { applyProfile, rollMac, undo } from './capabilities/reconfig'
 import {
   deleteProfile,
@@ -142,6 +143,12 @@ app.whenReady().then(() => {
     })
   )
   ipcMain.handle('wifi:stop', () => stopWifiScan())
+
+  // Recordings the scanner has written to ~/Documents/magiceth. Reads are cheap and the ids are
+  // validated against the filename pattern in the capability, so a bad id cannot escape the folder.
+  ipcMain.handle('recordings:list', () => listRecordings())
+  ipcMain.handle('recordings:read', (_event, id: string) => readRecording(id))
+  ipcMain.handle('recordings:reveal', (_event, id: string) => revealRecording(id))
 
   // Profiles
   ipcMain.handle('profiles:list', () => loadProfiles())

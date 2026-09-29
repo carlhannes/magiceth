@@ -52,6 +52,16 @@ is still open:
   The AKM parser handles 802.1X suites but has never met one.
 - **A TCC grant is keyed to a code signature.** The helper is ad-hoc signed, so a rebuild may
   re-prompt for Location access. This has not been measured across a version bump.
+- **Recordings are never pruned or deleted from the app.** They accumulate in
+  `~/Documents/magiceth` until removed by hand. Each is small — a ten-minute walk with twenty
+  access points is well under a megabyte — so this is untidiness rather than a problem, but a
+  delete key in the saved list is the obvious fix.
+- **The snapshot interval is a floor, not a cadence.** Snapshots can only be taken when a scan
+  returns, and a full channel sweep sometimes takes six seconds, so real gaps vary between two and
+  about seven. Measured on 2026-09-29: `0 6 8 10 13 19 22 25 27 33`. Filling them would mean
+  re-emitting a reading the radio never took.
+- **Nothing ties a recording to where you were standing.** The obvious next step for a site survey
+  is a position, whether a label typed per room or taken from Core Location.
 - **The scan cadence is not adaptive.** A recording scans as fast as the radio allows, which moves
   it off-channel continuously and will cost throughput on the machine's own connection.
 

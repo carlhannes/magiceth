@@ -7,7 +7,9 @@ import type {
   ReconfigResult,
   SpeedTestResult,
   SurveyResult,
-  WifiScanResult
+  WifiScanResult,
+  RecordingSummary,
+  SavedRecording
 } from '../shared/types'
 
 // Exposes a small, typed API on window.api. contextIsolation is on and the renderer
@@ -50,6 +52,10 @@ const api: MagicethApi = {
     ipcRenderer.on('wifi:update', listener)
     return () => ipcRenderer.removeListener('wifi:update', listener)
   },
+  listRecordings: (): Promise<RecordingSummary[]> => ipcRenderer.invoke('recordings:list'),
+  readRecording: (id: string): Promise<SavedRecording | null> =>
+    ipcRenderer.invoke('recordings:read', id),
+  revealRecording: (id: string): Promise<void> => ipcRenderer.invoke('recordings:reveal', id),
   listProfiles: (): Promise<Profile[]> => ipcRenderer.invoke('profiles:list'),
   saveCurrentAsProfile: (device: string, name: string): Promise<Profile[]> =>
     ipcRenderer.invoke('profiles:saveCurrent', device, name),
