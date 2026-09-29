@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { run } from '../util/run-command'
 import { readBeacon } from './ie80211'
+import { resolveVendor } from './oui'
 import { channelSummary, foldSighting, groupBySsid, toTracks } from './wifi-model'
 import type { TrackStore } from './wifi-model'
 import { appendSnapshot, beginRecording, finishRecording } from './recordings'
@@ -112,7 +113,10 @@ export function toBss(n: HelperNetwork): WifiBss | undefined {
     security: beacon.security ?? 'Open',
     clients: beacon.clients,
     utilizationPct: beacon.utilizationPct,
-    vendor: beacon.manufacturer,
+    // A model name broadcast in a WPS element is self-declared and beats any lookup; otherwise
+    // the address, or the beacon's vendor elements when the address is randomised.
+    vendor:
+      beacon.manufacturer ?? resolveVendor(bssid, isLocallyAdministered(bssid), beacon.vendorOuis),
     model: beacon.model,
     locallyAdministered: isLocallyAdministered(bssid),
     countryCode: n.countryCode

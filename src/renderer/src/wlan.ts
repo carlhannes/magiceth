@@ -152,6 +152,16 @@ function renderApList(): string {
     <ul class="profiles">${items}</ul>`
 }
 
+/**
+ * A vendor read off the address is a fact; one inferred from a beacon element on a randomised
+ * BSSID is weaker, so the two are not shown as though they were the same thing.
+ */
+function vendorText(b: WifiBss): string {
+  if (b.vendor && b.locallyAdministered) return `${b.vendor} · from beacon, BSSID randomised`
+  if (b.vendor) return b.vendor
+  return b.locallyAdministered ? 'randomised BSSID — nothing to look up' : '—'
+}
+
 function renderApDetail(): string {
   const b = currentAp()
   if (!b) return `<p class="status-msg">That access point is gone.</p>`
@@ -163,7 +173,7 @@ function renderApDetail(): string {
   return `<div class="section-title">Access point</div>
     ${row('SSID', ssidText(b.ssid))}
     ${row('BSSID', b.bssid)}
-    ${row('Vendor', b.vendor ?? (b.locallyAdministered ? 'randomised BSSID — no vendor to look up' : '—'), b.vendor ? '' : 'warn')}
+    ${row('Vendor', vendorText(b), b.vendor ? '' : 'warn')}
     ${b.model ? row('Model', b.model) : ''}
     ${row('Security', b.security, b.security === 'Open' ? 'warn' : 'ok')}
     ${row('PHY mode', mimo)}
