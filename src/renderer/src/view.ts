@@ -16,6 +16,11 @@ export function row(label: string, value: string, cls = ''): string {
   return `<div class="row"><span class="dot ${cls}"></span><span class="label">${label}</span><span class="val">${escapeHtml(value)}</span></div>`
 }
 
+/** A row carrying a second, muted line under its value — the shape the lists already use. */
+export function rowWithSub(label: string, value: string, sub: string, cls = ''): string {
+  return `<div class="row"><span class="dot ${cls}"></span><span class="label">${label}</span><span class="val">${escapeHtml(value)}<br><span class="sub-line">${escapeHtml(sub)}</span></span></div>`
+}
+
 export function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`
 }

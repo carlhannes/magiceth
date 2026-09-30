@@ -6,6 +6,7 @@
 
 import type {
   Adapter,
+  ChannelBucket,
   ChannelLoad,
   RecordingSummary,
   SavedRecording,
@@ -15,14 +16,14 @@ import type {
   WifiScanResult,
   WifiTrack
 } from '../../shared/types'
-import { clock, escapeHtml, plural, row } from './view'
+import { clock, escapeHtml, plural, row, rowWithSub } from './view'
 import { renderNotice, renderTopbar, requestRender, setMode, setNotice } from './shell'
 
 let device = ''
 let result: WifiScanResult | null = null
 let scanning = false
 let recording = false
-let level: 'networks' | 'aps' | 'detail' | 'channels' | 'saved' = 'networks'
+let level: 'networks' | 'aps' | 'detail' | 'channels' | 'buckets' | 'saved' = 'networks'
 let netSel = 0
 let apSel = 0
 let savedList: RecordingSummary[] = []
@@ -47,6 +48,40 @@ function tracks(): WifiTrack[] {
 
 function channels(): ChannelLoad[] {
   return loaded ? loaded.channels : (result?.channels ?? [])
+}
+
+function buckets(): ChannelBucket[] {
+  return loaded ? loaded.buckets : (result?.buckets ?? [])
+}
+
+function bandTitle(band: string): string {
+  return band === '?' ? 'Unknown band' : `${band} GHz`
+}
+
+/**
+ * Stations on a channel, counted once per radio.
+ *
+ * Says so plainly when nothing advertised a count, because no access point reporting is a
+ * different thing from nobody being connected. When only some of them report, the total is a
+ * floor rather than a figure — written `≥` rather than spelled out, which would wrap the line.
+ */
+function clientsText(clients: number | undefined, fromAps: number, accessPoints: number): string {
+  if (clients === undefined) return 'clients not advertised'
+  // "at least zero" says nothing, so the qualifier is only worth showing on a real figure.
+  const atLeast = clients > 0 && fromAps < accessPoints ? '≥' : ''
+  return `${atLeast}${plural(clients, 'client')}`
+}
+
+/**
+ * The dot reflects what the access points say about their own load, which is a measurement.
+ * Overlap is shown as a number but deliberately does not drive the colour: wide channels overlap
+ * a great deal by design, so colouring on it turns every 5 GHz row amber and says nothing.
+ */
+function loadClass(utilizationPct?: number): string {
+  if (utilizationPct === undefined) return ''
+  if (utilizationPct > 50) return 'bad'
+  if (utilizationPct > 25) return 'warn'
+  return 'ok'
 }
 
 function currentNetwork(): WifiNetwork | undefined {
@@ -215,20 +250,60 @@ function renderChannels(): string {
   for (const c of list) {
     if (c.band !== band) {
       band = c.band
-      out.push(`<div class="section-title">${band === '?' ? 'Unknown band' : `${band} GHz`}</div>`)
+      out.push(`<div class="section-title">${bandTitle(band)}</div>`)
     }
     // Capped at five so the busiest row still fits on one line in a 480px window.
     const bars = '▋'.repeat(Math.max(1, Math.round((c.accessPoints / busiest) * 5)))
-    const load = c.maxUtilizationPct != null ? ` · load ${c.maxUtilizationPct}%` : ''
+    const detail = [
+      clientsText(c.clients, c.clientsFromAps, c.accessPoints),
+      c.maxUtilizationPct != null ? `load ${c.maxUtilizationPct}%` : undefined,
+      // Only worth saying when something beyond this channel's own access points reaches it.
+      c.overlappingAps > c.accessPoints ? `${c.overlappingAps} overlapping` : undefined
+    ]
+      .filter(Boolean)
+      .join(' · ')
     out.push(
-      row(
+      rowWithSub(
         `Ch ${c.channel}`,
-        `${bars} ${plural(c.accessPoints, 'AP')} · ${c.bestRssi} dBm${load}`,
-        c.maxUtilizationPct != null && c.maxUtilizationPct > 50
-          ? 'bad'
-          : c.accessPoints > 3
-            ? 'warn'
-            : 'ok'
+        `${bars} ${plural(c.accessPoints, 'AP')} · ${c.bestRssi} dBm`,
+        detail,
+        loadClass(c.maxUtilizationPct)
+      )
+    )
+  }
+  return out.join('')
+}
+
+/**
+ * The same picture rolled up into the blocks channels are planned in: the non-overlapping thirds
+ * on 2.4 GHz, and the named regulatory blocks above it. Answers "which part of the band is busy"
+ * without reading twenty rows.
+ */
+function renderBuckets(): string {
+  const list = buckets()
+  if (list.length === 0) return `<p class="status-msg">Nothing heard yet — press R.</p>`
+  const busiest = Math.max(...list.map((b) => b.accessPoints))
+  let band = ''
+  const out: string[] = []
+  for (const b of list) {
+    if (b.band !== band) {
+      band = b.band
+      out.push(`<div class="section-title">${bandTitle(band)}</div>`)
+    }
+    const bars = '▋'.repeat(Math.max(1, Math.round((b.accessPoints / busiest) * 5)))
+    const detail = [
+      clientsText(b.clients, b.clientsFromAps, b.accessPoints),
+      b.maxUtilizationPct != null ? `load ${b.maxUtilizationPct}%` : undefined,
+      `ch ${b.channels.join(', ')} in use`
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    out.push(
+      rowWithSub(
+        b.label,
+        `${bars} ${plural(b.accessPoints, 'AP')} · ${b.bestRssi} dBm`,
+        detail,
+        loadClass(b.maxUtilizationPct)
       )
     )
   }
@@ -257,6 +332,23 @@ function renderSavedList(): string {
     <p class="hint2"><b>Enter</b> open · <b>F</b> show in folder · <b>S</b> close</p>`
 }
 
+function renderLevel(): string {
+  switch (level) {
+    case 'saved':
+      return renderSavedList()
+    case 'buckets':
+      return renderBuckets()
+    case 'channels':
+      return renderChannels()
+    case 'aps':
+      return renderApList()
+    case 'detail':
+      return renderApDetail()
+    default:
+      return renderNetworkList()
+  }
+}
+
 function renderBody(): string {
   if (result && result.status !== 'ok' && networks().length === 0) {
     return `<section class="panel-card">
@@ -264,28 +356,24 @@ function renderBody(): string {
       <p class="status-msg">${escapeHtml(result.message ?? 'The scan failed.')}</p>
     </section>`
   }
-  const inner =
-    level === 'saved'
-      ? renderSavedList()
-      : level === 'channels'
-        ? renderChannels()
-        : level === 'networks'
-          ? renderNetworkList()
-          : level === 'aps'
-            ? renderApList()
-            : renderApDetail()
-  return `<section class="panel-card">${inner}</section>`
+  return `<section class="panel-card">${renderLevel()}</section>`
 }
 
 export function renderWlan(): string {
   const status = statusLine()
   const record = `<b>L</b> ${recording ? 'stop' : 'record'}`
+  const channelKey =
+    level === 'channels'
+      ? '<b>C</b> groups'
+      : level === 'buckets'
+        ? '<b>C</b> close'
+        : '<b>C</b> channels'
   const footer =
     level === 'saved'
       ? `<b>↑↓</b> select · <b>Enter</b> open · <b>F</b> folder · <b>S</b> close · <b>Tab</b> ethernet`
       : level === 'networks'
-        ? `<b>↑↓</b> select · <b>Enter</b> open · <b>C</b> channels · <b>S</b> saved · <b>R</b> scan · ${record}`
-        : `<b>↑↓</b> select · <b>Enter</b> open · <b>←</b> back · <b>C</b> channels · <b>R</b> scan · ${record}`
+        ? `<b>↑↓</b> select · <b>Enter</b> open · ${channelKey} · <b>S</b> saved · <b>R</b> scan · ${record}`
+        : `<b>↑↓</b> select · <b>Enter</b> open · <b>←</b> back · ${channelKey} · <b>R</b> scan · ${record}`
   return `
     ${renderTopbar(scanning || recording)}
     ${renderNotice()}
@@ -404,7 +492,7 @@ function descend(): void {
     void openSelectedRecording()
     return
   }
-  if (level === 'channels') return
+  if (level === 'channels' || level === 'buckets') return
   if (level === 'networks' && currentNetwork()) level = 'aps'
   else if (level === 'aps' && currentAp()) level = 'detail'
   else return
@@ -414,7 +502,7 @@ function descend(): void {
 function ascend(): void {
   if (level === 'detail') level = 'aps'
   else if (level === 'aps') level = 'networks'
-  else if (level === 'channels') level = 'networks'
+  else if (level === 'channels' || level === 'buckets') level = 'networks'
   else if (level === 'saved') level = 'networks'
   else if (loaded) {
     // Viewing a saved recording: step back to the list it came from, not out of the mode.
@@ -445,7 +533,8 @@ export function handleWlanKey(e: KeyboardEvent): void {
       void scan('record')
     }
   } else if (e.key === 'c' || e.key === 'C') {
-    level = level === 'channels' ? 'networks' : 'channels'
+    // Cycles through the two ways of reading the spectrum, then back out.
+    level = level === 'channels' ? 'buckets' : level === 'buckets' ? 'networks' : 'channels'
     requestRender()
   } else if (e.key === 's' || e.key === 'S') {
     if (level === 'saved') {

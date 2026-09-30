@@ -14,7 +14,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import type { RecordingSummary, SavedRecording, WifiBss, WifiTrack } from '../../shared/types'
-import { channelSummary, groupBySsid, trackToBss } from './wifi-model'
+import { channelBuckets, channelSummary, groupBySsid, trackToBss } from './wifi-model'
 import {
   aggregateCsv,
   isRecordingId,
@@ -147,7 +147,8 @@ export function readRecording(id: string): SavedRecording | null {
       // Flattening each track to its last reading means a saved recording goes through exactly the
       // same grouping the live scan does, rather than a second implementation of it.
       networks: groupBySsid(tracks.map(trackToBss)),
-      channels: channelSummary(tracks)
+      channels: channelSummary(tracks),
+      buckets: channelBuckets(tracks)
     }
   } catch {
     return null

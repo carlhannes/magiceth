@@ -35,6 +35,13 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   point with a randomised BSSID cannot be looked up at all, so those are named from their beacon's
   vendor elements instead and a Ubiquiti radio is identified either way; the UI says which of the
   two it was. Vendor appears in the detail view and in both recording CSVs.
+- **Clients and overlap per channel.** The channel view now shows how many stations each channel
+  is carrying and how many access points bleed onto it from neighbouring channels, and `C` cycles
+  on into a grouped view — the non-overlapping thirds on 2.4 GHz, the named regulatory blocks
+  above it. Client counts are de-duplicated per radio: a radio broadcasting five SSIDs advertises
+  the same station count five times, and summing them naively read 98 clients in an office where
+  there were 37. Overlap is computed from each access point's real occupied spectrum rather than
+  from channel numbers, so 1, 6 and 11 come out clear of each other.
 - **Channel view** (`C`) — how many access points share each channel, the strongest signal there,
   and the highest load any of them advertises. The question that follows "who else is on channel 6".
 

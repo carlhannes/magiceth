@@ -271,6 +271,35 @@ export interface ChannelLoad {
   bestRssi: number
   /** Highest utilization any access point on the channel advertised, where any of them did. */
   maxUtilizationPct?: number
+  /**
+   * Stations on the channel, counted once per radio rather than once per SSID. Undefined when no
+   * access point advertised a count, which is different from none being connected.
+   */
+  clients?: number
+  /** How many access points contributed a count, so the UI can qualify the total honestly. */
+  clientsFromAps: number
+  /**
+   * Access points whose occupied spectrum touches this channel, including those on it. This is
+   * the number that matters on 2.4 GHz, where channels are 5 MHz apart but 20 MHz wide.
+   */
+  overlappingAps: number
+}
+
+/**
+ * A block of adjacent channels treated as one lump — the conventional non-overlapping thirds on
+ * 2.4 GHz, and the named regulatory blocks on 5 and 6 GHz.
+ */
+export interface ChannelBucket {
+  band: WifiBand
+  label: string
+  fromChannel: number
+  toChannel: number
+  channels: number[]
+  accessPoints: number
+  bestRssi: number
+  clients?: number
+  clientsFromAps: number
+  maxUtilizationPct?: number
 }
 
 /** A recording on disk, described well enough to list without reading the whole file. */
@@ -294,6 +323,7 @@ export interface SavedRecording {
    */
   networks: WifiNetwork[]
   channels: ChannelLoad[]
+  buckets: ChannelBucket[]
 }
 
 export type WifiScanStatus = 'ok' | 'unsupported' | 'no-helper' | 'needs-permission' | 'error'
@@ -307,6 +337,8 @@ export interface WifiScanResult {
   tracks: WifiTrack[]
   /** Congestion per channel, derived in main so the renderer stays a view. */
   channels: ChannelLoad[]
+  /** The same thing rolled up into bands' non-overlapping blocks. */
+  buckets: ChannelBucket[]
   scans: number
   elapsedSec: number
   /**

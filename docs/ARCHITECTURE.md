@@ -45,7 +45,7 @@ src/
       profiles.ts          # fs/electron glue for profile storage
       profiles-core.ts     # pure profile operations (upsert/remove/…)
       wifiscan.ts          # WLAN mode: drives the Wi-Fi helper, holds the active scan
-      wifi-model.ts        # pure: group APs by SSID, fold sightings into tracks, channel load
+      wifi-model.ts        # pure: group APs by SSID, fold into tracks, channel load and blocks
       ie80211.ts           # pure: decode 802.11 beacon information elements
       oui.ts               # pure: who made this radio, from the IEEE registries
       recordings.ts        # fs/electron glue for saved recordings (+ reveal in the file manager)
@@ -210,6 +210,23 @@ the whole tool is built around.
 the notice bar, the pending-confirmation gate and the render hook — and imports neither of them,
 so the dependency graph stays a tree. Leaving a mode shuts down whatever it had running, for the
 same reason switching adapter does: a capture or a scan belongs to the screen it was started from.
+
+## Reading the spectrum
+
+The channel view is derived in `wifi-model.ts` and crosses IPC already computed, because the
+renderer must never import from `main/`. Two parts of it are worth knowing about.
+
+**Client counts are de-duplicated per radio.** The station count in a BSS Load element belongs to
+the radio, so a radio broadcasting five SSIDs reports the same number five times; adding them up
+reads 30 clients where there are 6. Two access points on one channel are treated as one radio when
+they advertise the same count _and_ their BSSIDs differ in at most two octets — the count is what
+catches a pair registered to different vendors, the addresses are what stop two genuine neighbours
+being merged. It is a heuristic, and `docs/BACKLOG.md` records where it breaks.
+
+**Overlap is computed from real spectrum**, not from channel numbers: each access point's span is
+its centre frequency plus or minus half its width, and a channel counts every span that touches its
+own 20 MHz. That is why 1, 6 and 11 come out clear of each other while 1 and 3 do not. The centre
+is approximated from the _primary_ channel, which is all CoreWLAN reports — noted in the backlog.
 
 ## The macOS Wi-Fi helper
 

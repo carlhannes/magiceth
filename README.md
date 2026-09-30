@@ -192,7 +192,7 @@ it; opening an access point shows everything known about it.
 | `Esc` / `←`   | Back up a level; from the top, back to the mode chooser                       |
 | `R` / space   | Scan again now                                                                |
 | `L`           | Start / stop recording — keeps scanning and tracks min/max/avg while you move |
-| `C`           | Channel view — how many access points share each channel, and how loaded      |
+| `C`           | Channel view, then the same grouped into bands' blocks, then back             |
 | `S`           | Saved recordings — open one to view it; `F` reveals it in the file manager    |
 
 **Recordings are saved to `~/Documents/magiceth`** as two CSVs you can open in any spreadsheet: a
@@ -209,9 +209,26 @@ recordings will sync with it.
 </p>
 
 <p align="center">
-  <em>Press <code>C</code> for the channel view. Channel 6 is carrying eleven access points at
-  60% utilization and is flagged accordingly — the answer to "why is 2.4 GHz unusable here".</em>
+  <em>Press <code>C</code> for the channel view. Each channel shows the access points on it, the
+  stations they are serving, the load they admit to, and how many more access points bleed onto it
+  from neighbouring channels. The dot follows the advertised load, which is a measurement.</em>
 </p>
+
+<p align="center">
+  <img src="docs/screenshot-wlan-buckets.png" alt="Channels grouped into the blocks they are planned in" width="420">
+</p>
+
+<p align="center">
+  <em>Press <code>C</code> again to group them — the non-overlapping thirds on 2.4 GHz and the
+  named regulatory blocks above it. Here the whole of 2.4 GHz is red at around 53% load while
+  5 GHz carries more access points and more clients at 9%, which is the entire finding in one
+  screen.</em>
+</p>
+
+Client counts are what each access point advertises, de-duplicated per radio: one radio
+broadcasting five SSIDs reports the same station count five times, so adding them up naively would
+have read 30 clients where there were 6. A `≥` means only some of the access points on that
+channel advertised a count, so the figure is a floor.
 
 <p align="center">
   <img src="docs/screenshot-wlan-saved.png" alt="Past recordings listed from the Documents folder" width="420">

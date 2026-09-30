@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { run } from '../util/run-command'
 import { readBeacon } from './ie80211'
 import { resolveVendor } from './oui'
-import { channelSummary, foldSighting, groupBySsid, toTracks } from './wifi-model'
+import { channelBuckets, channelSummary, foldSighting, groupBySsid, toTracks } from './wifi-model'
 import type { TrackStore } from './wifi-model'
 import { appendSnapshot, beginRecording, finishRecording } from './recordings'
 import type { RecordingPaths } from './recordings'
@@ -173,6 +173,7 @@ function snapshot(s: ActiveScan, running: boolean): WifiScanResult {
     networks: groupBySsid(shown),
     tracks,
     channels: channelSummary(tracks),
+    buckets: channelBuckets(tracks),
     scans: s.scans,
     elapsedSec: elapsed(s),
     savedTo: s.paths?.aggregate
@@ -187,6 +188,7 @@ function fail(device: string, status: WifiScanResult['status'], message: string)
     networks: [],
     tracks: [],
     channels: [],
+    buckets: [],
     scans: 0,
     elapsedSec: 0,
     message

@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   MAX_TRACKS,
   accumulate,
+  channelBuckets,
+  channelCentreMhz,
   channelSummary,
+  distinctRadios,
   groupBySsid,
+  occupiedSpan,
+  octetDistance,
   trackToBss
 } from '../src/main/capabilities/wifi-model'
 import type { WifiBss } from '../src/shared/types'
@@ -156,8 +161,26 @@ describe('channelSummary', () => {
       }
     ])
     expect(channelSummary(tracks)).toEqual([
-      { channel: 1, band: '2.4', accessPoints: 1, bestRssi: -60, maxUtilizationPct: undefined },
-      { channel: 6, band: '2.4', accessPoints: 2, bestRssi: -40, maxUtilizationPct: 55 }
+      {
+        channel: 1,
+        band: '2.4',
+        accessPoints: 1,
+        bestRssi: -60,
+        maxUtilizationPct: undefined,
+        clients: undefined,
+        clientsFromAps: 0,
+        overlappingAps: 1
+      },
+      {
+        channel: 6,
+        band: '2.4',
+        accessPoints: 2,
+        bestRssi: -40,
+        maxUtilizationPct: 55,
+        clients: undefined,
+        clientsFromAps: 0,
+        overlappingAps: 2
+      }
     ])
   })
 
@@ -211,5 +234,184 @@ describe('trackToBss', () => {
   it('leaves a never-advertised value absent', () => {
     const [t] = accumulate([{ atSec: 0, bssids: [bss({ bssid: 'aa' })] }])
     expect(trackToBss(t).clients).toBeUndefined()
+  })
+})
+
+/** One scan's worth of access points, as tracks. */
+function scan(bssids: WifiBss[]) {
+  return accumulate([{ atSec: 0, bssids }])
+}
+
+describe('octetDistance', () => {
+  it('counts the octets that differ', () => {
+    expect(octetDistance('3c:51:0e:f7:4a:eb', '3c:51:0e:f7:4a:ec')).toBe(1)
+    expect(octetDistance('ec:75:0c:10:73:aa', 'ee:75:0c:20:73:aa')).toBe(2)
+    expect(octetDistance('3c:51:0e:f7:4a:eb', 'c4:71:fe:5c:7f:17')).toBe(6)
+  })
+
+  it('treats anything that is not a six-octet address as unrelated', () => {
+    expect(octetDistance('nonsense', '3c:51:0e:f7:4a:eb')).toBe(6)
+  })
+})
+
+// The station count in a BSS Load element belongs to the radio, so every SSID on that radio repeats
+// it. All of these are real BSSIDs captured in an office on 2026-09-30.
+describe('distinctRadios', () => {
+  it('folds five SSIDs of one Cisco radio into one', () => {
+    const tracks = scan(
+      ['eb', 'ec', 'ed', 'ee', 'ef'].map((tail) =>
+        bss({ bssid: `3c:51:0e:f7:4a:${tail}`, channel: 140, band: '5', clients: 6 })
+      )
+    )
+    expect(distinctRadios(tracks)).toHaveLength(1)
+  })
+
+  it('folds a pair whose addresses are registered to different vendors', () => {
+    // ec:75:0c… is TP-Link and ee:75:0c… is MediaTek, yet both report 24 — one access point.
+    // No address-pattern rule would catch this; the matching station count is what does.
+    const tracks = scan([
+      bss({ bssid: 'ec:75:0c:10:73:aa', channel: 2, clients: 24 }),
+      bss({ bssid: 'ee:75:0c:20:73:aa', channel: 2, clients: 24 })
+    ])
+    expect(distinctRadios(tracks)).toHaveLength(1)
+  })
+
+  it('keeps unrelated access points apart even when they report the same count', () => {
+    const tracks = scan([
+      bss({ bssid: '3c:51:0e:f7:4a:e0', clients: 1 }),
+      bss({ bssid: 'c4:71:fe:5c:7f:17', clients: 1 })
+    ])
+    expect(distinctRadios(tracks)).toHaveLength(2)
+  })
+
+  it('keeps access points apart when neither advertises a count, since nothing can be compared', () => {
+    const tracks = scan([bss({ bssid: '3c:51:0e:f7:4a:e0' }), bss({ bssid: '3c:51:0e:f7:4a:e1' })])
+    expect(distinctRadios(tracks)).toHaveLength(2)
+  })
+})
+
+describe('channelSummary clients', () => {
+  it('reports six clients on the Cisco radio, not thirty', () => {
+    const tracks = scan(
+      ['eb', 'ec', 'ed', 'ee', 'ef'].map((tail) =>
+        bss({ bssid: `3c:51:0e:f7:4a:${tail}`, channel: 140, band: '5', clients: 6 })
+      )
+    )
+    const [ch] = channelSummary(tracks)
+    expect(ch.clients).toBe(6)
+    expect(ch.accessPoints).toBe(5)
+    expect(ch.clientsFromAps).toBe(5)
+  })
+
+  it('adds up genuinely separate access points', () => {
+    const tracks = scan([
+      bss({ bssid: '3c:51:0e:f7:4a:e0', channel: 1, clients: 4 }),
+      bss({ bssid: 'c4:71:fe:5c:7f:17', channel: 1, clients: 7 })
+    ])
+    expect(channelSummary(tracks)[0].clients).toBe(11)
+  })
+
+  it('leaves the total undefined when nothing advertised one, rather than calling it zero', () => {
+    const [ch] = channelSummary(scan([bss({ bssid: 'aa:bb:cc:dd:ee:ff', channel: 1 })]))
+    expect(ch.clients).toBeUndefined()
+    expect(ch.clientsFromAps).toBe(0)
+  })
+
+  it('counts only the access points that actually advertised', () => {
+    const [ch] = channelSummary(
+      scan([
+        bss({ bssid: '3c:51:0e:f7:4a:e0', channel: 1, clients: 4 }),
+        bss({ bssid: 'c4:71:fe:5c:7f:17', channel: 1 })
+      ])
+    )
+    expect(ch.clients).toBe(4)
+    expect(ch.clientsFromAps).toBe(1)
+    expect(ch.accessPoints).toBe(2)
+  })
+})
+
+describe('spectrum overlap', () => {
+  it('knows where each band sits', () => {
+    expect(channelCentreMhz(1, '2.4')).toBe(2412)
+    expect(channelCentreMhz(14, '2.4')).toBe(2484) // the one that breaks the arithmetic
+    expect(channelCentreMhz(36, '5')).toBe(5180)
+    expect(channelCentreMhz(37, '6')).toBe(6135)
+    expect(channelCentreMhz(1, '?')).toBeUndefined()
+  })
+
+  it('widens the span with the channel width', () => {
+    const [narrow] = scan([bss({ bssid: 'a', channel: 1, widthMhz: 20 })])
+    const [wide] = scan([bss({ bssid: 'a', channel: 1, widthMhz: 40 })])
+    expect(occupiedSpan(narrow)).toEqual({ loMhz: 2402, hiMhz: 2422 })
+    expect(occupiedSpan(wide)).toEqual({ loMhz: 2392, hiMhz: 2432 })
+  })
+
+  it('leaves 1, 6 and 11 clear of each other, which is why they are the plan', () => {
+    const tracks = scan([
+      bss({ bssid: 'a', channel: 1 }),
+      bss({ bssid: 'b', channel: 6 }),
+      bss({ bssid: 'c', channel: 11 })
+    ])
+    expect(channelSummary(tracks).map((c) => c.overlappingAps)).toEqual([1, 1, 1])
+  })
+
+  it('counts neighbours that do bleed across', () => {
+    // Channel 3 covers 2412–2432 and channel 1 covers 2402–2422, so each sees the other.
+    const tracks = scan([bss({ bssid: 'a', channel: 1 }), bss({ bssid: 'b', channel: 3 })])
+    expect(channelSummary(tracks).map((c) => c.overlappingAps)).toEqual([2, 2])
+  })
+
+  it('counts a wide access point against a channel a narrow one would not reach', () => {
+    const narrow = scan([bss({ bssid: 'a', channel: 1 }), bss({ bssid: 'b', channel: 6 })])
+    const wide = scan([
+      bss({ bssid: 'a', channel: 1, widthMhz: 40 }),
+      bss({ bssid: 'b', channel: 6 })
+    ])
+    // At 20 MHz channel 1 stops at 2422 and channel 6 starts at 2427; at 40 MHz it reaches 2432.
+    expect(channelSummary(narrow)[1].overlappingAps).toBe(1)
+    expect(channelSummary(wide)[1].overlappingAps).toBe(2)
+  })
+})
+
+describe('channelBuckets', () => {
+  it('rolls channels up into the blocks they are planned in', () => {
+    const tracks = scan([
+      bss({ bssid: 'a1', channel: 1, clients: 2 }),
+      bss({ bssid: 'a2', channel: 6 }),
+      bss({ bssid: 'a3', channel: 11 }),
+      bss({ bssid: 'a4', channel: 36, band: '5' }),
+      bss({ bssid: 'a5', channel: 140, band: '5' })
+    ])
+    expect(channelBuckets(tracks).map((b) => [b.band, b.label, b.accessPoints])).toEqual([
+      ['2.4', 'ch 1–5', 1],
+      ['2.4', 'ch 6–10', 1],
+      ['2.4', 'ch 11–14', 1],
+      ['5', 'UNII-1', 1],
+      ['5', 'UNII-2C', 1]
+    ])
+    expect(channelBuckets(tracks)[0].clients).toBe(2)
+  })
+
+  it('de-duplicates radios inside a block, not just inside a channel', () => {
+    // The same radio on two channels of one block must still only be counted once.
+    const tracks = scan([
+      bss({ bssid: '3c:51:0e:f7:4a:eb', channel: 1, clients: 6 }),
+      bss({ bssid: '3c:51:0e:f7:4a:ec', channel: 1, clients: 6 })
+    ])
+    expect(channelBuckets(tracks)[0].clients).toBe(6)
+  })
+
+  it('leaves out blocks with nothing in them', () => {
+    expect(channelBuckets(scan([bss({ bssid: 'a', channel: 1 })]))).toHaveLength(1)
+    expect(channelBuckets([])).toEqual([])
+  })
+
+  it('lists which channels of the block are actually in use', () => {
+    const tracks = scan([
+      bss({ bssid: 'a', channel: 1 }),
+      bss({ bssid: 'b', channel: 5 }),
+      bss({ bssid: 'c', channel: 1 })
+    ])
+    expect(channelBuckets(tracks)[0].channels).toEqual([1, 5])
   })
 })
