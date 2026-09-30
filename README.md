@@ -26,29 +26,31 @@ you walk a site, writing CSVs you can open in a spreadsheet.
 The app opens on a chooser between the two; `Tab` switches at any time.
 
 <p align="center">
-  <img src="docs/screenshot-modes.png" alt="The mode chooser shown on startup" width="420">
+  <img src="docs/shots/screenshot-modes.png" alt="The mode chooser shown on startup" width="420">
 </p>
 
 Works on **Windows, macOS, and Linux** (arm64 + amd64). The tool is a thin Electron GUI that
 orchestrates the OS's own network commands — no custom drivers, no background service.
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="magiceth diagnosing a network port" width="420">
+  <img src="docs/figure-ethernet.png" alt="A port with no DHCP server, and the port survey listing the VLANs on a trunk" width="840">
 </p>
 
 <p align="center">
-  <em>A port with no DHCP server: link is up at 1 Gbit/s full duplex, but the address is a
-  self-assigned 169.254 one and nothing answers — diagnosed without typing a command.</em>
+  <em>Left: a port with no DHCP server — link up at 1 Gbit/s full duplex, but the address is a
+  self-assigned 169.254 one and nothing answers, diagnosed without typing a command. Right: the
+  port survey (<code>C</code>) listing every VLAN carried on a trunk.</em>
 </p>
 
 <p align="center">
-  <img src="docs/screenshot-wlan.png" alt="Wi-Fi mode listing nearby networks and their access points" width="420">
+  <img src="docs/figure-wlan-scan.png" alt="Nearby networks, and every access point behind one of them" width="840">
 </p>
 
 <p align="center">
-  <em>Wi-Fi mode in an office: dozens of access points grouped under the network names you would
-  actually recognise them by. The highlighted one is a single network spread over thirteen access
-  points. The key legend stays put however long the list gets.</em>
+  <em>Wi-Fi mode in an office. Left: dozens of access points grouped under the network names you
+  would actually recognise them by. Right: opening one shows every access point serving it — here
+  thirteen, across both bands at 20, 40 and 160 MHz, with more than one sharing channel 6. The key
+  legend stays put however long the list gets.</em>
 </p>
 
 ---
@@ -90,10 +92,6 @@ a profile act on the first press on a **dongle** — one-handed operation at a r
 but ask first on a **built-in** port, because that is the machine's own connection and a stray
 keystroke should not be able to take it down.
 
-<p align="center">
-  <img src="docs/screenshot-vlan.png" alt="The port survey listing every VLAN on a trunk, opened with C" width="420">
-</p>
-
 ## Hardware support
 
 Most USB-ethernet dongles are built on a handful of chipsets. `magiceth` recognizes them via
@@ -103,7 +101,12 @@ usually work anyway via the OS's own driver — press `I` for their raw USB IDs,
 what a "please add this chipset" issue or PR needs.
 
 <p align="center">
-  <img src="docs/screenshot-chipset.png" alt="The chipset sub-view, opened with I" width="420">
+  <img src="docs/figure-ethernet-panels.png" alt="The chipset sub-view and the profile panel" width="840">
+</p>
+
+<p align="center">
+  <em>The two Ethernet sub-views: the chipset readout (<code>I</code>) with capabilities and raw
+  USB IDs, and the profile panel (<code>P</code>).</em>
 </p>
 
 ## Platform status
@@ -166,23 +169,13 @@ Entering the mode scans by itself. The list is networks; opening one shows the a
 it; opening an access point shows everything known about it.
 
 <p align="center">
-  <img src="docs/screenshot-wlan-aps.png" alt="Every access point behind one network name" width="420">
+  <img src="docs/figure-wlan-detail.png" alt="One access point in full, and the list of saved recordings" width="840">
 </p>
 
 <p align="center">
-  <em>Opening a network shows every access point serving it — here thirteen, across both bands at
-  20, 40 and 160 MHz, with more than one sharing channel 6. That is the kind of thing you came to
-  find out.</em>
-</p>
-
-<p align="center">
-  <img src="docs/screenshot-wlan-ap.png" alt="Everything known about one access point" width="420">
-</p>
-
-<p align="center">
-  <em>One access point in full. The manufacturer comes from the IEEE registry, security is read
-  from the actual AKM suites, and the min/max/average figures are what the recording saw while
-  walking around.</em>
+  <em>Left: one access point in full — the manufacturer comes from the IEEE registry, security is
+  read from the actual AKM suites, and the min/max/average figures are what the recording saw while
+  walking around. Right: past recordings (<code>S</code>), which open through these same screens.</em>
 </p>
 
 | Key           | Action                                                                        |
@@ -205,39 +198,22 @@ macOS may ask once for permission to write to Documents, and if that folder sync
 recordings will sync with it.
 
 <p align="center">
-  <img src="docs/screenshot-wlan-channels.png" alt="Channel view showing how crowded each channel is" width="420">
+  <img src="docs/figure-wlan-spectrum.png" alt="Per-channel congestion, and the same grouped into band blocks" width="840">
 </p>
 
 <p align="center">
-  <em>Press <code>C</code> for the channel view. Each channel shows the access points on it, the
-  stations they are serving, the load they admit to, and how many more access points bleed onto it
-  from neighbouring channels. The dot follows the advertised load, which is a measurement.</em>
-</p>
-
-<p align="center">
-  <img src="docs/screenshot-wlan-buckets.png" alt="Channels grouped into the blocks they are planned in" width="420">
-</p>
-
-<p align="center">
-  <em>Press <code>C</code> again to group them — the non-overlapping thirds on 2.4 GHz and the
-  named regulatory blocks above it. Here the upper two thirds of 2.4 GHz sit near 50% load while
-  5 GHz carries more access points and more clients at a fraction of that, which is the entire
-  finding in one screen.</em>
+  <em><code>C</code> cycles through both. Left: each channel with the access points on it, the
+  stations they are serving, the load they admit to, and how many more bleed onto it from
+  neighbouring channels — the dot follows the advertised load, which is a measurement. Right: the
+  same grouped into the non-overlapping thirds on 2.4 GHz and the named regulatory blocks above
+  it, where the upper two thirds of 2.4 GHz sit near 50% load while 5 GHz carries more access
+  points and more clients at a fraction of that.</em>
 </p>
 
 Client counts are what each access point advertises, de-duplicated per radio: one radio
 broadcasting five SSIDs reports the same station count five times, so adding them up naively would
 have read 30 clients where there were 6. A `≥` means only some of the access points on that
 channel advertised a count, so the figure is a floor.
-
-<p align="center">
-  <img src="docs/screenshot-wlan-saved.png" alt="Past recordings listed from the Documents folder" width="420">
-</p>
-
-<p align="center">
-  <em>Press <code>S</code> for past recordings, <code>Enter</code> to view one through the same
-  screens, and <code>F</code> to reveal it in Finder.</em>
-</p>
 
 Scanning is passive and read-only: it never associates with anything and never disconnects you.
 The first scan asks macOS for Location access, which is the only way it will reveal access point
@@ -246,10 +222,6 @@ identifiers — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md).
 `M`, `U` and applying a profile change real network configuration. On a **dongle** they act on the
 first press — that is the one-handed point. On a **built-in** port they ask first and act on the
 second press of the same key, because that is the machine's own connection; any other key cancels.
-
-<p align="center">
-  <img src="docs/screenshot-profiles.png" alt="The profile panel, opened with P" width="420">
-</p>
 
 ### Privileged actions
 

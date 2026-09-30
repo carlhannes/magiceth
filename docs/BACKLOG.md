@@ -38,6 +38,12 @@ is still open:
   `unsupported` off macOS. Linux would use monitor mode via `tcpdump -I` (richer: real client counts
   from data frames, and no permission needed) plus channel hopping; Windows would need
   `netsh wlan show networks` for a thin version, or Npcap for a real one.
+- **Two Ethernet screenshots are from v0.2.0.** `docs/shots/screenshot.png` and
+  `screenshot-vlan.png` predate the mode chooser, the speed test and the current footer, so they
+  show keys and hints that no longer exist. Reproducing them needs hardware: a dongle with link
+  into a port with no DHCP server for the first, and a trunk plus an admin capture for the second.
+  The chipset and profile shots have the same problem _and_ the chipset one was captured
+  mid-scroll, so its heading is cut off — those two only need a dongle plugged into USB, no cable.
 - **Radio de-duplication is a heuristic.** Per-channel client totals treat two access points as
   one radio when they advertise the same station count and their BSSIDs differ in at most two
   octets. It is right on every case in the captures taken so far, but it will merge two genuine

@@ -17,16 +17,17 @@ npm run dev
 
 ## Scripts
 
-| Command                | Does                                                       |
-| ---------------------- | ---------------------------------------------------------- |
-| `npm run dev`          | Starts the app in development mode (hot reload)            |
-| `npm run build:helper` | Builds the macOS Wi-Fi helper (macOS only, needs `swiftc`) |
-| `npm run typecheck`    | `tsc --noEmit` for main + renderer + tests                 |
-| `npm run lint`         | ESLint                                                     |
-| `npm run format`       | Prettier                                                   |
-| `npm test`             | Vitest (pure parsers/functions)                            |
-| `npm run build`        | Compiles to `out/`                                         |
-| `npm run package`      | Builds an installable app (electron-builder)               |
+| Command                           | Does                                                              |
+| --------------------------------- | ----------------------------------------------------------------- |
+| `npm run dev`                     | Starts the app in development mode (hot reload)                   |
+| `npm run build:helper`            | Builds the macOS Wi-Fi helper (macOS only, needs `swiftc`)        |
+| `sh scripts/build-screenshots.sh` | Rebuilds the README figures from `docs/shots` (needs ImageMagick) |
+| `npm run typecheck`               | `tsc --noEmit` for main + renderer + tests                        |
+| `npm run lint`                    | ESLint                                                            |
+| `npm run format`                  | Prettier                                                          |
+| `npm test`                        | Vitest (pure parsers/functions)                                   |
+| `npm run build`                   | Compiles to `out/`                                                |
+| `npm run package`                 | Builds an installable app (electron-builder)                      |
 
 **Run `npm run format && npm run typecheck && npm run lint && npm test` before submitting a PR.**
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same checks — plus
@@ -66,6 +67,10 @@ not covered by the automated tests — verify them manually per
 ## Common contributions
 
 - **New chipset:** add a `"vid:pid"` entry in [`resources/chipsets.json`](resources/chipsets.json). No code needed.
+- **Screenshots:** the individual captures live in `docs/shots`, and
+  `sh scripts/build-screenshots.sh` composites them into the side-by-side `docs/figure-*.png` the
+  README embeds. Replace a shot and re-run it; the pairs are like with like, because the older
+  Ethernet captures still carry a window title bar and the newer ones do not.
 - **Refreshing the manufacturer database:** `node scripts/fetch-oui.mjs` regenerates
   `resources/oui.json` from the IEEE registries. It is committed so builds need no network, which
   also means it goes stale until somebody re-runs it.
