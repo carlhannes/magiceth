@@ -47,6 +47,12 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ### Changed
 
+- **The key legend no longer scrolls away.** The window is a fixed frame now — topbar, notice and
+  status line pinned at the top, the legend pinned at the bottom, and only the middle scrolling —
+  so on a list of 28 networks or 19 channels you can still see what the keys do. Arrow keys carry
+  the scroll with the selection, and your place in a list survives the push updates that arrive
+  while a scan or recording is running.
+
 - The renderer is split into `main` (entry and dispatch), `shell` (mode, notice bar, confirmations),
   `view` (pure formatters), `ethernet` and `wlan`. Ethernet mode behaves exactly as before.
 - `WifiTrack` carries the descriptive attributes of its access point (security, PHY, MIMO streams,

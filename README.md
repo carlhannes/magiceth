@@ -46,9 +46,9 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 </p>
 
 <p align="center">
-  <em>Wi-Fi mode in an office: 83 access points across 31 networks, each grouped under the name
-  you would actually recognise it by — the highlighted one is a single network spread over 17
-  access points.</em>
+  <em>Wi-Fi mode in an office: dozens of access points grouped under the network names you would
+  actually recognise them by. The highlighted one is a single network spread over thirteen access
+  points. The key legend stays put however long the list gets.</em>
 </p>
 
 ---
@@ -170,9 +170,9 @@ it; opening an access point shows everything known about it.
 </p>
 
 <p align="center">
-  <em>Opening a network shows every access point serving it — here seventeen, spread across
-  channels 5, 6, 7, 12, 13, 36 and 40 at three different widths. Three of them share channel 6,
-  which is the kind of thing you came to find out.</em>
+  <em>Opening a network shows every access point serving it — here thirteen, across both bands at
+  20, 40 and 160 MHz, with more than one sharing channel 6. That is the kind of thing you came to
+  find out.</em>
 </p>
 
 <p align="center">
@@ -220,9 +220,9 @@ recordings will sync with it.
 
 <p align="center">
   <em>Press <code>C</code> again to group them — the non-overlapping thirds on 2.4 GHz and the
-  named regulatory blocks above it. Here the whole of 2.4 GHz is red at around 53% load while
-  5 GHz carries more access points and more clients at 9%, which is the entire finding in one
-  screen.</em>
+  named regulatory blocks above it. Here the upper two thirds of 2.4 GHz sit near 50% load while
+  5 GHz carries more access points and more clients at a fraction of that, which is the entire
+  finding in one screen.</em>
 </p>
 
 Client counts are what each access point advertises, de-duplicated per radio: one radio

@@ -18,8 +18,7 @@ import {
   confirmStep,
   consumePending,
   getPending,
-  renderNotice,
-  renderTopbar,
+  renderShell,
   requestRender,
   setMode,
   setNotice,
@@ -390,8 +389,10 @@ function renderEditor(): void {
   const p = editorProfile
   const isStatic = p?.mode === 'static'
   const v = (s?: string): string => escapeHtml(s ?? '')
-  app.innerHTML = `
-    ${renderTopbar()}
+  app.innerHTML = renderShell({
+    key: 'ethernet:editor',
+    footer: 'Fill in with the mouse · <b>Esc</b> cancels',
+    body: `
     <section class="editor">
       <div class="section-title">${p ? 'Edit profile' : 'New profile'}</div>
       <label class="fld">Name<input id="f-name" type="text" value="${v(p?.name)}" /></label>
@@ -413,8 +414,8 @@ function renderEditor(): void {
         <button id="f-save" class="btn primary">Save</button>
         <button id="f-cancel" class="btn">Cancel</button>
       </div>
-    </section>
-    <footer class="hint">Fill in with the mouse · <b>Esc</b> cancels</footer>`
+    </section>`
+  })
 
   const modeSel = document.getElementById('f-mode') as HTMLSelectElement
   const staticFields = document.getElementById('static-fields') as HTMLElement
@@ -465,24 +466,30 @@ async function submitEditor(): Promise<void> {
 
 export function renderEthernet(): string {
   if (adapters.length === 0) {
-    return `
-      ${renderTopbar()}
-      ${renderNotice()}
+    return renderShell({
+      key: 'ethernet:empty',
+      footer: 'waiting for a port… · <b>Tab</b> wi-fi · <b>Esc</b> back',
+      body: `
       <div class="empty">
         <p class="big">No network ports found</p>
         <p class="sub">Plug in a USB ethernet dongle — it is detected automatically.</p>
-      </div>
-      <footer class="hint">waiting for a port… · <b>Tab</b> wi-fi · <b>Esc</b> back</footer>`
+      </div>`
+    })
   }
   const d = adapters[selected]
-  return `
-    ${renderTopbar(running || surveying || measuring || busy)}
-    ${renderNotice()}
-    ${renderSelector()}
+  return renderShell({
+    // Keyed on the adapter, so switching port starts at the top while a re-run of the same one
+    // keeps your place.
+    key: `ethernet:${d.device}`,
+    busy: running || surveying || measuring || busy,
+    // The selector says which port everything below belongs to, so it stays put.
+    status: renderSelector(),
+    footer: `<b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>I</b> chipset · <b>S</b> save · <b>U</b> undo · <b>C</b> ${surveying ? 'stop' : 'survey'} · <b>T</b> ${measuring ? 'stop' : 'speed'} · <b>Tab</b> wi-fi`,
+    body: `
     ${renderDiagnostics(d)}
     ${renderInfo(d)}
-    ${renderPanel()}
-    <footer class="hint"><b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>I</b> chipset · <b>S</b> save · <b>U</b> undo · <b>C</b> ${surveying ? 'stop' : 'survey'} · <b>T</b> ${measuring ? 'stop' : 'speed'} · <b>Tab</b> wi-fi</footer>`
+    ${renderPanel()}`
+  })
 }
 
 async function runDiag(device: string): Promise<void> {

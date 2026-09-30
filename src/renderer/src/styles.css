@@ -30,16 +30,32 @@
   margin: 0;
 }
 
+html,
 body {
+  height: 100%;
   background: var(--bg);
   color: var(--text);
 }
 
+/* A fixed frame with one scrolling region inside it, so the key legend at the bottom and the
+   notice at the top are on screen whatever the content does. */
 #app {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
   padding: 16px;
+  gap: 16px;
+  overflow: hidden;
+}
+
+/* The only part that moves. `min-height: 0` is what allows a flex child to shrink below its own
+   content; without it this grows to fit and nothing scrolls at all. */
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   gap: 16px;
 }
 
@@ -137,8 +153,8 @@ body {
   font-size: 14px;
 }
 
+/* No margin-top: auto — the scrolling region above takes the slack and holds this at the bottom. */
 .hint {
-  margin-top: auto;
   color: var(--muted);
   font-size: 12px;
   text-align: center;
@@ -255,10 +271,8 @@ body {
    user is usually scrolled past it. A confirmation prompt you cannot see is worse than none at
    all: the first press looks like it did nothing, so you press again — and that is the press that
    acts. Applies to every notice, not only confirmations. */
+/* Outside the scrolling region, so it is always visible without needing position: sticky. */
 .notice {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   background: color-mix(in srgb, var(--accent) 16%, var(--bg));
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--text);

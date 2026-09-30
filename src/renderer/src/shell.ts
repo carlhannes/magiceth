@@ -110,6 +110,34 @@ export function confirmStep(
   return false
 }
 
+/**
+ * One screen, in the parts the shell puts in fixed places.
+ *
+ * Only `body` scrolls. The topbar, the notice and the status line stay at the top and the key
+ * legend stays at the bottom, because a legend nobody can see is a legend nobody reads.
+ */
+export interface ModeView {
+  /**
+   * Identifies the screen. The scroll position is carried across renders of the same one — push
+   * updates arrive about once a second while scanning — and reset when it changes, so opening a
+   * different screen starts at the top rather than halfway down.
+   */
+  key: string
+  busy?: boolean
+  status?: string
+  body: string
+  footer: string
+}
+
+export function renderShell(view: ModeView): string {
+  return `
+    ${renderTopbar(view.busy)}
+    ${renderNotice()}
+    ${view.status ?? ''}
+    <div class="scroll" data-view="${escapeHtml(view.key)}">${view.body}</div>
+    <footer class="hint">${view.footer}</footer>`
+}
+
 export function renderTopbar(busy = false): string {
   const spinner = busy ? '<span class="spin">⟳</span>' : ''
   const where = mode === 'ethernet' ? 'Ethernet' : mode === 'wlan' ? 'Wi-Fi' : ''
@@ -127,8 +155,10 @@ export function renderNotice(): string {
  * screen would cost the glanceability the whole thing is built around.
  */
 export function renderChooser(): string {
-  return `
-    ${renderTopbar()}
+  return renderShell({
+    key: 'chooser',
+    footer: '<b>1</b>/<b>E</b> ethernet · <b>2</b>/<b>W</b> wi-fi · <b>Tab</b> switches anytime',
+    body: `
     <section class="chooser">
       <div class="mode-card">
         <span class="mode-key">1</span>
@@ -140,6 +170,6 @@ export function renderChooser(): string {
         <h2>Wi-Fi</h2>
         <p>The air around you — every network, the access points behind it, their channels, width, load and signal.</p>
       </div>
-    </section>
-    <footer class="hint"><b>1</b>/<b>E</b> ethernet · <b>2</b>/<b>W</b> wi-fi · <b>Tab</b> switches anytime</footer>`
+    </section>`
+  })
 }

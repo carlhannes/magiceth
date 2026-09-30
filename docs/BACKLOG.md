@@ -186,12 +186,3 @@ Deliberately left alone for now because the fix is a design choice, not a bug fi
 a timer, clear on the next successful action, or clear on any keypress. Note that `runDiag` must
 _not_ clear it on success — `runReconfig` calls `runDiag` immediately after setting its own result
 message, and clearing there would wipe it.
-
-## The window scrolls when a sub-view is open
-
-At the default 480×820, opening the profile panel (`P`) or the chipset view (`I`) pushes the
-content past the bottom of the window. Both sub-views append below the diagnostics card rather than
-replacing it, which keeps the port readout visible but costs a scroll.
-
-Alternative would be to have a sub-view replace the diagnostics body while open. Worth deciding
-deliberately rather than drifting into it.

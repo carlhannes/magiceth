@@ -17,7 +17,7 @@ import type {
   WifiTrack
 } from '../../shared/types'
 import { clock, escapeHtml, plural, row, rowWithSub } from './view'
-import { renderNotice, renderTopbar, requestRender, setMode, setNotice } from './shell'
+import { renderShell, requestRender, setMode, setNotice } from './shell'
 
 let device = ''
 let result: WifiScanResult | null = null
@@ -374,12 +374,19 @@ export function renderWlan(): string {
       : level === 'networks'
         ? `<b>↑↓</b> select · <b>Enter</b> open · ${channelKey} · <b>S</b> saved · <b>R</b> scan · ${record}`
         : `<b>↑↓</b> select · <b>Enter</b> open · <b>←</b> back · ${channelKey} · <b>R</b> scan · ${record}`
-  return `
-    ${renderTopbar(scanning || recording)}
-    ${renderNotice()}
-    ${status ? `<div class="selector"><span class="selector-hint">${escapeHtml(status)}</span></div>` : ''}
-    ${renderBody()}
-    <footer class="hint">${footer}</footer>`
+  return renderShell({
+    // Which list you are on, and which row you opened — so moving the selection keeps your place
+    // while descending into something else starts at the top.
+    key: `wlan:${level}:${level === 'detail' ? `${netSel}:${apSel}` : level === 'aps' ? netSel : ''}`,
+    busy: scanning || recording,
+    // Live while recording: elapsed time, scans, and the file being written. Worth keeping on
+    // screen while scrolling a long list.
+    status: status
+      ? `<div class="selector"><span class="selector-hint">${escapeHtml(status)}</span></div>`
+      : '',
+    footer,
+    body: renderBody()
+  })
 }
 
 async function resolveDevice(): Promise<string> {

@@ -298,9 +298,32 @@ config-changing key needs confirming. `sortAdapters` and `pickSelected` are pure
 and must never import from `main/`.
 
 A key that changes real configuration (`M`, `U`, applying a profile) acts on the first press for a
-dongle and asks first on a built-in. The prompt goes in the notice bar, which is `position: sticky`
-on purpose — the window scrolls past it, and a confirmation you cannot see is worse than none: the
-first press looks like it did nothing, so you press again, and that is the press that acts.
+dongle and asks first on a built-in. The prompt goes in the notice bar, which sits outside the
+scrolling region and so is always on screen: a confirmation you cannot see is worse than none,
+because the first press looks like it did nothing, so you press again — and that is the press that
+acts.
+
+## One shell, one scrolling region
+
+Every screen is assembled by `renderShell()` in `src/renderer/src/shell.ts` from a `ModeView`: a
+topbar, the notice, an optional pinned status line, the body, and the key legend. Only the body
+scrolls. The frame is fixed because the legend is how anyone discovers what the app does, and a
+legend that scrolls away on any list longer than the window is a legend nobody reads.
+
+Having one function assemble it is what keeps the five screens that need it — both Ethernet states,
+the profile editor, WLAN and the chooser — from drifting apart. `shell.ts` imports neither mode, so
+the graph stays a tree.
+
+Two details in `main.ts` that are easy to lose and hard to notice:
+
+- **The scroll offset is carried across renders of the same screen.** Replacing the markup destroys
+  the scrolling element, and push updates arrive about once a second while scanning, so without
+  this a long list would snap back to the top continuously. `ModeView.key` identifies the screen;
+  a different key starts at the top. The offset is applied _after_ reading a layout property, or
+  the browser clamps it against the previous, shorter height and the list creeps upward.
+- **The selection is scrolled into view only when it moves.** Arrow keys walk a selection through a
+  list taller than the window. Doing this on every render instead would drag the reader back to the
+  selection each time a scan landed.
 
 ## Measuring throughput
 
