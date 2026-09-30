@@ -86,6 +86,27 @@ Two consequences worth stating plainly:
   the first octet, which makes an OUI lookup meaningless. The UI says so rather than reporting an
   unknown vendor.
 
+## The grant is scoped to the copy, not just the bundle id
+
+Worth knowing before shipping. A packaged build at a new path does **not** inherit the grant the
+development copy holds, even though both carry the same `CFBundleIdentifier` and the same ad-hoc
+signature. Measured on the packaged app: `CLLocationManager` reported `authorizedAlways` while
+CoreWLAN still returned nil BSSIDs — so the authorization status is not a reliable indicator on its
+own, which is why the helper reports `needs-permission` when a scan comes back with no BSSIDs
+rather than trusting what the status claims.
+
+Launching the packaged copy once through LaunchServices registers it and everything works from then
+on, including ordinary direct execution:
+
+| Packaged helper, launched by                  | Result                         |
+| --------------------------------------------- | ------------------------------ |
+| direct exec, before it had ever been launched | `needs-permission`, 0 BSSIDs   |
+| `open` (LaunchServices)                       | `ok`, 12 of 12 with BSSID + IE |
+| direct exec, afterwards                       | `ok`, 12 of 12                 |
+
+That is exactly the sequence the app performs by itself: a scan that comes back without BSSIDs
+triggers an `open` of the helper bundle, and the next scan succeeds.
+
 ## Verified end to end
 
 On the rig above, in the app: entering WLAN mode scans automatically; networks group by SSID with

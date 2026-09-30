@@ -17,15 +17,16 @@ npm run dev
 
 ## Scripts
 
-| Command             | Does                                            |
-| ------------------- | ----------------------------------------------- |
-| `npm run dev`       | Starts the app in development mode (hot reload) |
-| `npm run typecheck` | `tsc --noEmit` for main + renderer + tests      |
-| `npm run lint`      | ESLint                                          |
-| `npm run format`    | Prettier                                        |
-| `npm test`          | Vitest (pure parsers/functions)                 |
-| `npm run build`     | Compiles to `out/`                              |
-| `npm run package`   | Builds an installable app (electron-builder)    |
+| Command                | Does                                                       |
+| ---------------------- | ---------------------------------------------------------- |
+| `npm run dev`          | Starts the app in development mode (hot reload)            |
+| `npm run build:helper` | Builds the macOS Wi-Fi helper (macOS only, needs `swiftc`) |
+| `npm run typecheck`    | `tsc --noEmit` for main + renderer + tests                 |
+| `npm run lint`         | ESLint                                                     |
+| `npm run format`       | Prettier                                                   |
+| `npm test`             | Vitest (pure parsers/functions)                            |
+| `npm run build`        | Compiles to `out/`                                         |
+| `npm run package`      | Builds an installable app (electron-builder)               |
 
 **Run `npm run format && npm run typecheck && npm run lint && npm test` before submitting a PR.**
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same checks — plus
@@ -65,6 +66,12 @@ not covered by the automated tests — verify them manually per
 ## Common contributions
 
 - **New chipset:** add a `"vid:pid"` entry in [`resources/chipsets.json`](resources/chipsets.json). No code needed.
+- **Refreshing the manufacturer database:** `node scripts/fetch-oui.mjs` regenerates
+  `resources/oui.json` from the IEEE registries. It is committed so builds need no network, which
+  also means it goes stale until somebody re-runs it.
+- **WLAN mode on macOS** needs `npm run build:helper` once before `npm run dev`, or scanning
+  reports `no-helper`. Read [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) before assuming anything
+  about what macOS will hand over — in particular, `sudo` does not help.
 - **Platform logic:** adjust `src/main/platform/<os>.ts`, keep the parsing pure + tested, verify on hardware.
 - **New IPC:** handler in `src/main/index.ts`, method in `MagicethApi` (`src/shared/types.ts`), expose it in `src/preload/index.ts`.
 

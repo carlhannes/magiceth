@@ -15,6 +15,23 @@ The load-bearing test surface is the pure parsers in `test/`. If you change a pa
 2026-08-04 were both invisible to hand-written fixtures because they came from a driver quirk
 nobody would have guessed. Real captures live in the test files as string constants; add to them.
 
+## WLAN mode needs the Wi-Fi helper built first
+
+`npm run dev` does **not** build it. Without it, WLAN mode reports `no-helper` and looks broken:
+
+```sh
+npm run build:helper   # macOS only; needs swiftc from the Xcode command line tools
+```
+
+It is a separate `.app` bundle because macOS hands out BSSIDs and beacon information elements only
+to a process with a bundle identity holding a Location Services grant — and **root does not
+substitute**, which is verified three ways in [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md). Do not
+spend time trying `sudo` on it. `npm run package` builds the helper first; `npm run dev` does not.
+
+The first scan raises a Location prompt. It only appears when the helper is launched through
+LaunchServices, because TCC attributes a shell-spawned child to the terminal — so a scan run
+straight from a shell will silently return nil BSSIDs rather than prompting.
+
 ## Running the app: kill every Electron instance, not just Vite
 
 **This is the one that will waste your time.** `npm run dev` starts Vite _and_ an Electron app as a

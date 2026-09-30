@@ -1,6 +1,6 @@
 # magiceth
 
-> One-handed network port diagnostics via a USB-to-ethernet dongle.
+> One-handed network diagnostics: a wired port through a USB dongle, or the Wi-Fi around you.
 
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![arch](https://img.shields.io/badge/arch-arm64%20%7C%20amd64-lightgrey)
@@ -17,6 +17,18 @@ The machine's **own Wi-Fi and built-in Ethernet** are listed too, so there is so
 diagnose with no dongle attached. Dongles always sort first, and one you plug in takes the
 selection by itself.
 
+**Wi-Fi mode** _(macOS)_ points the same idea at the air: every network in earshot, the access
+points behind each one, and for each of them channel, width, band, PHY generation with MIMO stream
+count, security, channel utilization, client count and manufacturer — all read out of the raw
+beacon, so nothing needs monitor mode and your connection stays up. Press `L` and it records while
+you walk a site, writing CSVs you can open in a spreadsheet.
+
+The app opens on a chooser between the two; `Tab` switches at any time.
+
+<p align="center">
+  <img src="docs/screenshot-modes.png" alt="The mode chooser shown on startup" width="420">
+</p>
+
 Works on **Windows, macOS, and Linux** (arm64 + amd64). The tool is a thin Electron GUI that
 orchestrates the OS's own network commands — no custom drivers, no background service.
 
@@ -27,6 +39,16 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 <p align="center">
   <em>A port with no DHCP server: link is up at 1 Gbit/s full duplex, but the address is a
   self-assigned 169.254 one and nothing answers — diagnosed without typing a command.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshot-wlan.png" alt="Wi-Fi mode listing nearby networks and their access points" width="420">
+</p>
+
+<p align="center">
+  <em>Wi-Fi mode in an office: 83 access points across 31 networks, each grouped under the name
+  you would actually recognise it by — the highlighted one is a single network spread over 17
+  access points.</em>
 </p>
 
 ---
@@ -143,6 +165,26 @@ With a dongle plugged in, identification and diagnostics are shown automatically
 Entering the mode scans by itself. The list is networks; opening one shows the access points behind
 it; opening an access point shows everything known about it.
 
+<p align="center">
+  <img src="docs/screenshot-wlan-aps.png" alt="Every access point behind one network name" width="420">
+</p>
+
+<p align="center">
+  <em>Opening a network shows every access point serving it — here seventeen, spread across
+  channels 5, 6, 7, 12, 13, 36 and 40 at three different widths. Three of them share channel 6,
+  which is the kind of thing you came to find out.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshot-wlan-ap.png" alt="Everything known about one access point" width="420">
+</p>
+
+<p align="center">
+  <em>One access point in full. The manufacturer comes from the IEEE registry, security is read
+  from the actual AKM suites, and the min/max/average figures are what the recording saw while
+  walking around.</em>
+</p>
+
 | Key           | Action                                                                        |
 | ------------- | ----------------------------------------------------------------------------- |
 | `↑` `↓`       | Move through the list                                                         |
@@ -161,6 +203,24 @@ shorter than three snapshots deletes itself, and quitting mid-recording still fi
 The app reads those same files back, so nothing is stored anywhere else. Two things worth knowing:
 macOS may ask once for permission to write to Documents, and if that folder syncs to iCloud your
 recordings will sync with it.
+
+<p align="center">
+  <img src="docs/screenshot-wlan-channels.png" alt="Channel view showing how crowded each channel is" width="420">
+</p>
+
+<p align="center">
+  <em>Press <code>C</code> for the channel view. Channel 6 is carrying eleven access points at
+  60% utilization and is flagged accordingly — the answer to "why is 2.4 GHz unusable here".</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshot-wlan-saved.png" alt="Past recordings listed from the Documents folder" width="420">
+</p>
+
+<p align="center">
+  <em>Press <code>S</code> for past recordings, <code>Enter</code> to view one through the same
+  screens, and <code>F</code> to reveal it in Finder.</em>
+</p>
 
 Scanning is passive and read-only: it never associates with anything and never disconnects you.
 The first scan asks macOS for Location access, which is the only way it will reveal access point
