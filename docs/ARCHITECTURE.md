@@ -35,6 +35,8 @@ src/
       darwin.ts            # macOS implementation (+ pure parsers)
       linux.ts             # Linux implementation (+ pure parsers)
       win32.ts             # Windows implementation (+ pure parsers)
+      iw.ts                # pure: `iw scan dump` text → beacon facts (Linux), the elevated scan loop
+      wifi-helper.ts       # pure: the JSON both Wi-Fi helpers (macOS, Windows) print
     capabilities/
       adapters.ts          # dongle list + chipset lookup
       diagnostics.ts       # orchestrates netinfo + probes
@@ -44,12 +46,23 @@ src/
       reconfig.ts          # MAC rolling + profile application + undo
       profiles.ts          # fs/electron glue for profile storage
       profiles-core.ts     # pure profile operations (upsert/remove/…)
+      wifiscan.ts          # WLAN mode: the active scan + recording loop; the OS half is in platform/
+      wifi-model.ts        # pure: group APs by SSID, fold into tracks, channel load and blocks
+      ie80211.ts           # pure: decode 802.11 beacon information elements
+      oui.ts               # pure: who made this radio, from the IEEE registries
+      recordings.ts        # fs/electron glue for saved recordings (+ reveal in the file manager)
+      recordings-core.ts   # pure: the recording CSV, written and read back
   preload/index.ts
   renderer/
     index.html
-    src/main.ts            # dashboard + keyboard logic + profile editor
+    src/main.ts            # entry: mounts, dispatches render + keys by mode
+    src/shell.ts           # mode chooser, notice bar, pending confirmations, render hook
+    src/view.ts            # pure formatters shared by both modes (row, clock, escapeHtml…)
+    src/ethernet.ts        # Ethernet mode: the port dashboard + profile editor
+    src/wlan.ts            # WLAN mode: network list, AP list, AP detail, recording
     src/styles.css
     src/env.d.ts
+resources/wifi-helper/     # the macOS helper .app (Swift + Info.plist) and the Windows helper (.ps1)
   shared/
     types.ts               # shared types + the MagicethApi contract
     mac.ts                 # MAC helpers (normalize, randomize locally-administered)
@@ -75,6 +88,11 @@ timeout and `windowsHide`.
 | `speedtest`                  | None       | Throughput both ways, bound to the dongle. Manual only — it moves real traffic. Degrades gracefully.          |
 | `reconfig`                   | Root/admin | Rolls MAC, applies DHCP/static profile, undoes.                                                               |
 | `profiles` / `profiles-core` | None       | Reads/writes profile JSON; pure CRUD operations.                                                              |
+| `wifiscan` → `ie80211`       | Location\* | WLAN mode. Asks the platform for a sweep, decodes beacons, accumulates a recording. All three OSes.           |
+| `recordings` / `-core`       | None       | Writes a recording to CSV in Documents, reads it back, reveals it in the file manager.                        |
+
+\* Location consent on macOS and Windows; nothing on Linux with NetworkManager, one `pkexec`
+prompt without it. See [reading the air](#reading-the-air-on-each-os).
 
 ## Platform layer (`PlatformOps`)
 
@@ -89,6 +107,9 @@ interface PlatformOps {
   speedTestBind(device, srcIp): string | undefined // curl --interface: name, or address on Windows
   buildSetMacPlan(device, mac): Promise<ElevatedPlan>
   buildProfilePlan(device, profile): Promise<ElevatedPlan>
+  scanWifi(device): Promise<WifiScanOutcome> // one sweep of the air, decoded to beacon facts
+  requestWifiAccess(): void // raise the OS's consent dialog/page; no-op on Linux
+  endWifiSession(): void // stop anything long-lived (the Linux elevated loop)
 }
 ```
 
@@ -98,10 +119,10 @@ run the command and call the parser. Example (macOS): `parseIfconfig`, `parseIpc
 `parseIoregUsbMacs`, `joinDarwinAdapters`. This is the load-bearing test surface — see
 [test philosophy](#test-philosophy).
 
-Examples of commands per OS: macOS `ioreg`/`networksetup`/`ifconfig`/`ipconfig getsummary`;
-Linux `ip -j`/`udevadm`/sysfs/`resolvectl`; Windows `Get-NetAdapter`/`Get-NetIPAddress`/`netsh`
-(via `powershell ... | ConvertTo-Json`). JSON output is preferred where available to avoid
-brittle text parsing.
+Examples of commands per OS: macOS `ioreg`/`networksetup`/`ifconfig`/`ipconfig getsummary` and
+the Wi-Fi helper `.app`; Linux `ip -j`/`udevadm`/sysfs/`resolvectl` and `iw`/`nmcli`; Windows
+`Get-NetAdapter`/`Get-NetIPAddress`/`netsh` (via `powershell ... | ConvertTo-Json`) and the Wi-Fi
+helper `.ps1`. JSON output is preferred where available to avoid brittle text parsing.
 
 ## IPC contract
 
@@ -112,7 +133,9 @@ The preload exposes `window.api` per `MagicethApi` (`src/shared/types.ts`). Chan
 - **Privileged:** `reconfig:rollMac`, `reconfig:applyProfile`, `reconfig:undo`
 - **Long-running (privileged):** `survey:start`, `survey:stop`
 - **Long-running (unprivileged):** `speedtest:start`, `speedtest:stop`
-- **Push events (main → renderer):** `adapters:changed`, `survey:update`, `speedtest:update`
+- **Long-running (unprivileged):** `wifi:start`, `wifi:stop`
+- **Saved recordings:** `recordings:list`, `recordings:read`, `recordings:reveal`
+- **Push events (main → renderer):** `adapters:changed`, `survey:update`, `speedtest:update`, `wifi:update`
 
 Every channel has a consumer in the renderer — if a capability stops being used, its channel,
 its `MagicethApi` method and its preload wiring go with it.
@@ -137,10 +160,28 @@ Least privilege: the app and all read-only diagnostics run unprivileged. Only `s
 - **Linux:** `pkexec`
 - **Windows:** `Start-Process -Verb RunAs` (UAC), with `-EncodedCommand` (base64/UTF-16LE) to avoid quoting issues
 
+Wi-Fi scanning is the one read-only feature that can need elevation, and only on a Linux without
+NetworkManager: triggering a sweep needs `CAP_NET_ADMIN`, so one `pkexec` prompt starts a scan loop
+(`iw.ts`) that ends on a stop file, a hard cap, or five idle minutes — the port survey's pattern.
+Windows has the opposite problem: Location is sometimes pinned off by a policy key, so `O` offers
+to remove it — `PlatformOps.enableWifiAccess`, an elevated PowerShell plan verified by re-reading
+the consent switch, offered only where the platform implements it and only after a confirming press.
+
 Changes are verified by re-reading netinfo afterwards (e.g. that the MAC was actually changed).
 `reconfig` saves the previous state so `Undo` (`U`) can restore it.
 
 ## Chipset database
+
+`resources/oui.json` is the same idea for radios rather than dongles: every IEEE OUI assignment,
+generated by `scripts/fetch-oui.mjs` and committed so a build needs no network. All three registry
+tiers are included, because an MA-M or MA-S address looked up against MA-L alone resolves to "IEEE
+Registration Authority" — true and useless — so `oui.ts` matches longest-prefix. It is the one
+file `.prettierignore` covers, being 1.8 MB on a single line.
+
+A globally administered BSSID names its maker directly. A randomised one does not, so the beacon's
+own vendor elements are used instead, minus a documented list of elements that ride in nearly every
+beacon: reading the WPS element as the manufacturer would report most of the world's Wi-Fi as
+Microsoft. The UI distinguishes the two, because one is a fact and the other is an inference.
 
 `resources/chipsets.json` is the single source of truth: `{ vendors, chipsets }` keyed by
 `"vid:pid"` (hex). It is `import`-ed into the main bundle at build time (no runtime file path).
@@ -173,6 +214,88 @@ which is where `chipsets.json`'s capabilities and the raw USB IDs are shown). Ea
 `render*()` that returns `''` when closed, they share the `.panel-card` shell, and opening one
 closes the other so the single screen never grows past a glance.
 
+## Two modes
+
+The app opens on a chooser: **Ethernet**, the wired port dashboard, and **WLAN**, the Wi-Fi
+scanner. `Tab` switches between them and `Esc` steps back out. They are separate because they
+answer different questions, and mixing them on one screen would cost the at-a-glance readability
+the whole tool is built around.
+
+`main.ts` is the only module that knows both exist. `shell.ts` holds what they share — the mode,
+the notice bar, the pending-confirmation gate and the render hook — and imports neither of them,
+so the dependency graph stays a tree. Leaving a mode shuts down whatever it had running, for the
+same reason switching adapter does: a capture or a scan belongs to the screen it was started from.
+
+## Reading the spectrum
+
+The channel view is derived in `wifi-model.ts` and crosses IPC already computed, because the
+renderer must never import from `main/`. Two parts of it are worth knowing about.
+
+**Client counts are de-duplicated per radio.** The station count in a BSS Load element belongs to
+the radio, so a radio broadcasting five SSIDs reports the same number five times; adding them up
+reads 30 clients where there are 6. Two access points on one channel are treated as one radio when
+they advertise the same count _and_ their BSSIDs differ in at most two octets — the count is what
+catches a pair registered to different vendors, the addresses are what stop two genuine neighbours
+being merged. It is a heuristic, and `docs/BACKLOG.md` records where it breaks.
+
+**Overlap is computed from real spectrum**, not from channel numbers: each access point's span is
+its centre frequency plus or minus half its width, and a channel counts every span that touches its
+own 20 MHz. That is why 1, 6 and 11 come out clear of each other while 1 and 3 do not. The centre
+is approximated from the _primary_ channel, which is all CoreWLAN reports — noted in the backlog.
+
+## Reading the air on each OS
+
+Every OS answers "what is around me" differently, and only macOS and Windows will hand over the
+beacon bytes. So the seam is one level up: `PlatformOps.scanWifi()` returns **sightings whose
+beacon facts are already decoded** (`BeaconFacts` from `ie80211.ts`), and `wifiscan.ts`, the
+model, the recordings and the screens never learn which OS they are on. The vendor lookup is the
+one thing added after the seam, in `toBss()`, so it happens in exactly one place.
+
+| OS      | Sweep                                                                                                                                                                                                                                                                             | Decoded by                                                                        | Gate                                                                                                                                                                                                                     |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| macOS   | The Swift helper `.app` scans through CoreWLAN and prints JSON with the raw elements as hex.                                                                                                                                                                                      | `readBeacon()` on the bytes                                                       | Location Services, held by the helper's bundle identity; `open -a` raises the prompt.                                                                                                                                    |
+| Linux   | `nmcli device wifi rescan` asks NetworkManager for a sweep (rejected within 10 s of the last one, so calls are spaced), then `iw dev <if> scan dump` reads the kernel cache unprivileged. Without NetworkManager, one `pkexec` prompt starts a loop that runs `iw … scan` itself. | `parseIwScan()` on `iw`'s text — the kernel keeps no raw bytes for known elements | None for reading; `pkexec` once on the fallback path.                                                                                                                                                                    |
+| Windows | A PowerShell helper calls `WlanScan` / `WlanGetNetworkBssList` through P/Invoke and prints the same JSON as the macOS helper, with the raw element blob.                                                                                                                          | `readBeacon()` on the bytes                                                       | Location consent since Windows 11 24H2. The one-time prompt is only raised for a process outside `System32`, which `powershell.exe` is not, so a refusal opens `ms-settings:privacy-location` with instructions instead. |
+
+**The helpers stay deliberately stupid.** Both print what the OS handed them and decode nothing, so
+the untestable Swift and PowerShell surfaces stay small and every parser is a pure function tested
+against real captured beacons. The macOS one is a **real `.app` bundle** because macOS reveals a
+scanned network's BSSID and its beacon elements only to a process holding a Location grant, and
+only ever offers that grant to something with a bundle identity — elevation does not substitute,
+because TCC and root are independent gates. Build it with `scripts/build-wifi-helper.sh`; `npm run
+package` does so first, and skips it off macOS. The Windows one is a script shipped as-is.
+
+**Three label rules are shared**, not duplicated: `securityLabel()` names a suite from AKM flags,
+`phyLabel()` the generation from which capability elements exist, and `vhtWidth()` tells 80 from
+160 MHz by the distance between the VHT centre segments — which matters because `iw` prints the
+width field's label and that label is wrong for the newer 160 MHz encoding. The byte decoder and
+the `iw` text parser both call them, so the two cannot disagree about the same access point.
+
+The evidence for the macOS claims, and what each other OS has been checked against, is in
+[WIFI-FINDINGS.md](WIFI-FINDINGS.md).
+
+## Saved recordings
+
+A WLAN recording writes two CSVs into `~/Documents/magiceth` — a time log appended while it runs,
+and an aggregate written when it stops. They go in Documents rather than `userData` because the
+point of saving them is that you can find, open and send them, and Application Support is somewhere
+nobody looks.
+
+**The CSV is the only artifact.** The app reads its own aggregate back to list and display past
+recordings, so there is no second format to drift out of sync with the one you open in a
+spreadsheet. The start time lives in the filename and everything else — duration, access points,
+networks — is derived from the rows, which is what keeps the file free of metadata lines.
+
+`recordings-core.ts` holds all of it as pure functions (RFC 4180 quoting, because SSIDs contain
+commas and quotes), and `recordings.ts` is the fs/electron glue, on exactly the pattern
+`profiles-core.ts`/`profiles.ts` already set. `recordings.ts` is the only module that touches
+`shell`, and it validates every id against the filename pattern before building a path — the id
+arrives from the renderer, and that check is what keeps it inside the folder.
+
+A run of fewer than three snapshots deletes itself, so a stray keypress leaves nothing behind.
+Writes are synchronous because `before-quit` does not await, which is what lets quitting
+mid-recording still finalise the file.
+
 ## Test philosophy
 
 - **Pure functions are unit-tested** (`test/`, vitest) — parsers are fed _real_ captured
@@ -204,9 +327,32 @@ config-changing key needs confirming. `sortAdapters` and `pickSelected` are pure
 and must never import from `main/`.
 
 A key that changes real configuration (`M`, `U`, applying a profile) acts on the first press for a
-dongle and asks first on a built-in. The prompt goes in the notice bar, which is `position: sticky`
-on purpose — the window scrolls past it, and a confirmation you cannot see is worse than none: the
-first press looks like it did nothing, so you press again, and that is the press that acts.
+dongle and asks first on a built-in. The prompt goes in the notice bar, which sits outside the
+scrolling region and so is always on screen: a confirmation you cannot see is worse than none,
+because the first press looks like it did nothing, so you press again — and that is the press that
+acts.
+
+## One shell, one scrolling region
+
+Every screen is assembled by `renderShell()` in `src/renderer/src/shell.ts` from a `ModeView`: a
+topbar, the notice, an optional pinned status line, the body, and the key legend. Only the body
+scrolls. The frame is fixed because the legend is how anyone discovers what the app does, and a
+legend that scrolls away on any list longer than the window is a legend nobody reads.
+
+Having one function assemble it is what keeps the five screens that need it — both Ethernet states,
+the profile editor, WLAN and the chooser — from drifting apart. `shell.ts` imports neither mode, so
+the graph stays a tree.
+
+Two details in `main.ts` that are easy to lose and hard to notice:
+
+- **The scroll offset is carried across renders of the same screen.** Replacing the markup destroys
+  the scrolling element, and push updates arrive about once a second while scanning, so without
+  this a long list would snap back to the top continuously. `ModeView.key` identifies the screen;
+  a different key starts at the top. The offset is applied _after_ reading a layout property, or
+  the browser clamps it against the previous, shorter height and the list creeps upward.
+- **The selection is scrolled into view only when it moves.** Arrow keys walk a selection through a
+  list taller than the window. Doing this on every render instead would drag the reader back to the
+  selection each time a scan landed.
 
 ## Measuring throughput
 

@@ -6,7 +6,11 @@ import type {
   Profile,
   ReconfigResult,
   SpeedTestResult,
-  SurveyResult
+  SurveyResult,
+  WifiAccessResult,
+  WifiScanResult,
+  RecordingSummary,
+  SavedRecording
 } from '../shared/types'
 
 // Exposes a small, typed API on window.api. contextIsolation is on and the renderer
@@ -41,6 +45,19 @@ const api: MagicethApi = {
   applyProfile: (device: string, profileId: string): Promise<ReconfigResult> =>
     ipcRenderer.invoke('reconfig:applyProfile', device, profileId),
   undo: (device: string): Promise<ReconfigResult> => ipcRenderer.invoke('reconfig:undo', device),
+  startWifiScan: (device: string, mode: 'once' | 'record'): Promise<WifiScanResult> =>
+    ipcRenderer.invoke('wifi:start', device, mode),
+  stopWifiScan: (): Promise<WifiScanResult | null> => ipcRenderer.invoke('wifi:stop'),
+  enableWifiAccess: (): Promise<WifiAccessResult> => ipcRenderer.invoke('wifi:enableAccess'),
+  onWifiUpdate: (cb: (result: WifiScanResult) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: WifiScanResult): void => cb(data)
+    ipcRenderer.on('wifi:update', listener)
+    return () => ipcRenderer.removeListener('wifi:update', listener)
+  },
+  listRecordings: (): Promise<RecordingSummary[]> => ipcRenderer.invoke('recordings:list'),
+  readRecording: (id: string): Promise<SavedRecording | null> =>
+    ipcRenderer.invoke('recordings:read', id),
+  revealRecording: (id: string): Promise<void> => ipcRenderer.invoke('recordings:reveal', id),
   listProfiles: (): Promise<Profile[]> => ipcRenderer.invoke('profiles:list'),
   saveCurrentAsProfile: (device: string, name: string): Promise<Profile[]> =>
     ipcRenderer.invoke('profiles:saveCurrent', device, name),

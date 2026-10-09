@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>magiceth-wifi</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.carlhannes.magiceth.wifi</string>
+	<key>CFBundleName</key>
+	<string>magiceth Wi-Fi Scan</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<!-- An agent, so scanning never bounces an icon into the Dock. Agents can still present the
+	     Location Services dialog, which LSBackgroundOnly would prevent. -->
+	<key>LSUIElement</key>
+	<true/>
+	<!-- The text macOS shows in the permission dialog. macOS ties BSSIDs and beacon information
+	     elements to Location Services because a list of nearby access points can locate you. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>magiceth needs Location access to read details of nearby Wi-Fi networks. macOS treats access point identifiers (BSSIDs) as location data, so without this permission it hides them and the scan cannot tell one access point from another. Your location is never stored or sent anywhere.</string>
+</dict>
+</plist>

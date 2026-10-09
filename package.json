@@ -1,7 +1,7 @@
 {
   "name": "magiceth",
   "version": "0.4.0",
-  "description": "One-handed network port diagnostics via a USB ethernet dongle",
+  "description": "One-handed network diagnostics: a wired port through a USB dongle, or the Wi-Fi around you",
   "author": "magiceth",
   "license": "WTFPL",
   "private": true,
@@ -16,7 +16,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "package": "npm run build && electron-builder"
+    "build:helper": "node scripts/build-wifi-helper.mjs",
+    "package": "npm run build:helper && npm run build && electron-builder"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",

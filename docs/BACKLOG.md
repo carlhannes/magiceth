@@ -29,6 +29,98 @@ focus; extend the confirm keypress to dongles as well; or leave it and document 
 The confirmation is cleared by any other keypress and never by a timer, because self-clearing
 notices are their own open question further down this file.
 
+## WLAN mode: what is missing
+
+The scanner works on macOS and is verified end to end ([WIFI-FINDINGS.md](WIFI-FINDINGS.md)). What
+is still open:
+
+- **Linux is implemented but has not been run on hardware; Windows has run on one machine.** Every
+  claim they rest on, and what to measure first, is listed in [WIFI-FINDINGS.md](WIFI-FINDINGS.md).
+  Until then the `iw` fixture in `test/iw.test.ts` and the Windows entries in
+  `test/wifi-helper.test.ts` are documented format rather than captures. Monitor mode (`tcpdump -I`) was considered and
+  rejected for Linux: it needs root, drops the association the machine is using, hears one channel
+  at a time, and adds nothing the screens show — client counts and load come from BSS Load, which
+  `iw` already prints. Per-client visibility would be a different feature.
+- **Linux without NetworkManager asks for a password.** Triggering a sweep needs `CAP_NET_ADMIN`, so
+  the fallback is one `pkexec` prompt for a loop that scans every few seconds until a stop file, a
+  3600 s cap, or five idle minutes. Those two numbers are guesses at what feels right: too short and
+  a once-scan a minute after the last one prompts again, too long and the radio stays off-channel
+  for nothing. `iwctl` (iwd) and `wpa_cli` could trigger without root on some systems and were left
+  out to keep one fallback. NetworkManager is detected by `nmcli --version` alone, so a machine
+  with `nmcli` installed but the service stopped takes the NetworkManager path and only ever sees
+  what the kernel cache happens to hold.
+- **Linux cadence is one sweep per ~10 s**, because NetworkManager rejects a rescan inside ten
+  seconds of the last one. A recording on Linux therefore has coarser snapshots than on macOS.
+- **The Windows helper cannot raise the consent prompt.** Windows only shows it for a process
+  outside `System32`, and the helper is hosted by `powershell.exe`. A compiled helper `.exe` shipped
+  in the app's resources would get the prompt; it needs a .NET toolchain at build time and an
+  unsigned binary SmartScreen may flag, so for now a refusal opens the Location settings page.
+- **The `O` Location fix edits HKCU as whoever answered the UAC prompt.** On a machine where the
+  user is not an administrator and a different account approves the elevation, the user-level
+  consent switches land in that administrator's hive, and the user still has to flip them in
+  Settings. The machine-wide switch and the policy keys are fixed either way.
+- **`Add-Type` fails under Constrained Language Mode** (AppLocker/WDAC policies), which the Windows
+  helper reports as an error rather than working around.
+- **No noise figure off macOS.** `iw` reports noise per channel (`iw dev <if> survey dump`), not per
+  access point, and the Windows API reports none; the Noise row is simply absent there.
+- **No 6 GHz width on Linux.** The HE Operation element's 6 GHz information is decoded from bytes
+  (macOS, Windows) but not yet from `iw`'s text, whose format for it has not been seen.
+- **Only Linux can tell WEP from open.** The elements alone cannot; `iw` prints the Privacy
+  capability bit, the other two helpers do not pass it on.
+- **Two Ethernet screenshots are from v0.2.0.** `docs/shots/screenshot.png` and
+  `screenshot-vlan.png` predate the mode chooser, the speed test and the current footer, so they
+  show keys and hints that no longer exist. Reproducing them needs hardware: a dongle with link
+  into a port with no DHCP server for the first, and a trunk plus an admin capture for the second.
+  The chipset and profile shots have the same problem _and_ the chipset one was captured
+  mid-scroll, so its heading is cut off — those two only need a dongle plugged into USB, no cable.
+- **Radio de-duplication is a heuristic.** Per-channel client totals treat two access points as
+  one radio when they advertise the same station count and their BSSIDs differ in at most two
+  octets. It is right on every case in the captures taken so far, but it will merge two genuine
+  neighbours that happen to serve the same number of clients from similar hardware, and it will
+  fail to merge a multi-SSID radio whose addresses differ more widely. The alternative — trusting
+  the raw sum — was measured reporting 98 clients where there were 37.
+- **Channel overlap assumes a wide access point is centred on its primary channel.** Every source
+  reports the primary, so a 40/80/160 MHz span is placed symmetrically around it; at 160 MHz that
+  can be out by up to 70 MHz. `ie80211.ts` now decodes the VHT/HE Operation elements for the width,
+  and the centre segments are read in the same place — carrying one more field through the track
+  and the CSV is all that is left.
+- **320 MHz (802.11be) is not decoded.** It lives in the EHT Operation element, which nothing here
+  reads yet; such an access point shows the width its VHT/HE elements claim.
+- **The OUI database goes stale.** `resources/oui.json` is generated by `scripts/fetch-oui.mjs`
+  from the IEEE registries and committed; nothing reminds anyone to regenerate it, and a block
+  assigned after the last run resolves to nothing. Re-running the script is the whole fix.
+- **`UNINFORMATIVE_OUIS` is a judgement call.** Vendor elements from Microsoft (WPS/WMM), the
+  Wi-Fi Alliance, Qualcomm, Broadcom and MediaTek are filtered out when naming the maker of an
+  access point with a randomised BSSID, because they answer "whose protocol" or "whose chipset"
+  rather than "whose product". The list is hand-picked and will be wrong for some vendor that
+  genuinely builds access points under one of those OUIs.
+- **AP model is still almost never available.** Only a WPS element carries a self-declared model
+  name, and none of the access points seen so far broadcast one. Some vendors put model
+  information in their own elements — Ubiquiti's `00:15:6d` payload is the obvious one to decode
+  next — but that is per-vendor reverse engineering, not a general solution.
+- **No card selection.** The interface is whichever port enumerates as Wi-Fi, or the OS's default
+  when none does. Every platform half accepts a name and reports the interfaces it can see, so the
+  plumbing exists. A USB Wi-Fi stick enumerates as a dongle, not as Wi-Fi, so on a machine with
+  both the built-in card is the one scanned.
+- **No channel-overlap view.** The next question after "who else is on channel 6" is the spectrum
+  picture, which needs the channel/width pairs drawn rather than listed.
+- **Unverified against enterprise networks, captive portals, or WPS-broadcasting access points.**
+  The AKM parser handles 802.1X suites but has never met one.
+- **A TCC grant is keyed to a code signature.** The helper is ad-hoc signed, so a rebuild may
+  re-prompt for Location access. This has not been measured across a version bump.
+- **Recordings are never pruned or deleted from the app.** They accumulate in
+  `~/Documents/magiceth` until removed by hand. Each is small — a ten-minute walk with twenty
+  access points is well under a megabyte — so this is untidiness rather than a problem, but a
+  delete key in the saved list is the obvious fix.
+- **The snapshot interval is a floor, not a cadence.** Snapshots can only be taken when a scan
+  returns, and a full channel sweep sometimes takes six seconds, so real gaps vary between two and
+  about seven. Measured on 2026-09-29: `0 6 8 10 13 19 22 25 27 33`. Filling them would mean
+  re-emitting a reading the radio never took.
+- **Nothing ties a recording to where you were standing.** The obvious next step for a site survey
+  is a position, whether a label typed per room or taken from Core Location.
+- **The scan cadence is not adaptive.** A recording scans as fast as the radio allows, which moves
+  it off-channel continuously and will cost throughput on the machine's own connection.
+
 ## Port survey: gaps left after the rebuild
 
 The survey works and is verified against a synthetic trunk
@@ -134,12 +226,3 @@ Deliberately left alone for now because the fix is a design choice, not a bug fi
 a timer, clear on the next successful action, or clear on any keypress. Note that `runDiag` must
 _not_ clear it on success — `runReconfig` calls `runDiag` immediately after setting its own result
 message, and clearing there would wipe it.
-
-## The window scrolls when a sub-view is open
-
-At the default 480×820, opening the profile panel (`P`) or the chipset view (`I`) pushes the
-content past the bottom of the window. Both sub-views append below the diagnostics card rather than
-replacing it, which keeps the port readout visible but costs a scroll.
-
-Alternative would be to have a sub-view replace the diagnostics body while open. Worth deciding
-deliberately rather than drifting into it.

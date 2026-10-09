@@ -5,7 +5,15 @@ import { darwin } from './darwin'
 import { linux } from './linux'
 import { win32 } from './win32'
 import type { ElevatedPlan } from '../privilege'
-import type { AdapterKind, NetInfo, Profile, UsbInfo } from '../../shared/types'
+import type { BeaconFacts } from '../capabilities/ie80211'
+import type {
+  AdapterKind,
+  NetInfo,
+  Profile,
+  UsbInfo,
+  WifiAccessResult,
+  WifiBand
+} from '../../shared/types'
 
 export interface PingSpec {
   file: string
@@ -29,6 +37,33 @@ export interface RawAdapter {
   usb?: UsbInfo
 }
 
+/**
+ * One access point as the OS reported it, before vendor lookup. The beacon facts are decoded by
+ * whichever side had the elements: macOS and Windows hand over the raw bytes, Linux hands over
+ * `iw`'s already-decoded text, and both end up as the same BeaconFacts so everything downstream
+ * — tracks, recordings, the screens — never learns which OS it is on.
+ */
+export interface WifiSighting {
+  bssid: string // lowercase
+  ssid: string // '' when hidden
+  rssi: number // dBm
+  noise?: number // dBm; macOS is the only OS that reports one per access point
+  channel: number // 0 when unknown
+  band: WifiBand
+  /** The OS's own claim (CoreWLAN). Absent, the beacon's operation elements decide. */
+  widthMhz?: number
+  countryCode?: string
+  beacon: BeaconFacts
+}
+
+export type WifiScanOutcome =
+  | { status: 'ok'; sightings: WifiSighting[] }
+  | {
+      status: 'needs-permission' | 'needs-privilege' | 'no-tool' | 'no-helper' | 'error'
+      /** Written for the OS it happened on; the renderer shows it as-is. */
+      message: string
+    }
+
 export interface PlatformOps {
   readonly id: NodeJS.Platform
   /** List connected USB ethernet adapters with device, port name, MAC and (if possible) VID:PID. */
@@ -48,6 +83,22 @@ export interface PlatformOps {
   buildSetMacPlan(device: string, mac: string): Promise<ElevatedPlan>
   /** Build an elevation plan that applies a profile (DHCP/static + optional MAC) (M4, privileged). */
   buildProfilePlan(device: string, profile: Profile): Promise<ElevatedPlan>
+  /**
+   * One fresh sweep of the air on `device` ('' = the default wireless interface). Resolves only
+   * once the OS has *new* results — the recording loop assumes one call takes about one sweep.
+   * Never throws: every degraded path is a status plus a message written for that OS.
+   */
+  scanWifi(device: string): Promise<WifiScanOutcome>
+  /** Raise whatever the OS gates Wi-Fi behind. Fire and forget; a no-op where nothing is gated. */
+  requestWifiAccess(): void
+  /** Tear down anything long-lived the scanner started. Called when the app quits. */
+  endWifiSession(): void
+  /**
+   * Where the OS can be told to allow Wi-Fi access rather than merely asked — Windows, whose
+   * Location switches are often pinned off by a policy key. Elevated, opt-in, verified by
+   * re-reading. Absent on an OS where the user has to answer a prompt themselves.
+   */
+  enableWifiAccess?(): Promise<WifiAccessResult>
 }
 
 export function getPlatform(): PlatformOps {

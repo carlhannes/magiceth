@@ -189,6 +189,179 @@ export interface ReconfigResult {
 }
 
 // The API that preload exposes on window.api (contract between main and renderer).
+// --- Wi-Fi scanning (WLAN mode) ---
+
+export type WifiBand = '2.4' | '5' | '6' | '?'
+
+/** One access point: a single BSSID heard on one channel. Several of these make up an SSID. */
+export interface WifiBss {
+  bssid: string
+  ssid: string // '' for a hidden network
+  rssi: number // dBm
+  noise?: number // dBm
+  channel: number
+  band: WifiBand
+  widthMhz?: number
+  phy?: string // '802.11ax', '802.11be', …  derived from the capability elements
+  streams?: number // spatial streams, so MIMO 2x2 is streams === 2
+  security: string
+  clients?: number // from the BSS Load element — what the AP says it is serving
+  utilizationPct?: number // from the BSS Load element
+  vendor?: string
+  model?: string
+  /**
+   * True when the BSSID has the locally-administered bit set, which modern APs use for virtual
+   * SSIDs. No OUI lookup is possible for one, so the UI must say that rather than show "unknown".
+   */
+  locallyAdministered: boolean
+  countryCode?: string
+}
+
+/** Every AP broadcasting the same network name, which is what you actually pick in the list. */
+export interface WifiNetwork {
+  ssid: string
+  bestRssi: number
+  bands: WifiBand[]
+  security: string
+  bssids: WifiBss[]
+}
+
+/** How a value moved across a recording. `avg` is over the sightings, not over wall-clock time. */
+export interface WifiRange {
+  min: number
+  max: number
+  avg: number
+  last: number
+}
+
+/**
+ * One BSSID across a whole recording. Kept even after the AP stops being heard — walking out of
+ * range is a result, not a reason to forget the AP was there.
+ */
+export interface WifiTrack {
+  bssid: string
+  ssid: string
+  channel: number
+  band: WifiBand
+  sightings: number
+  firstSeenSec: number
+  lastSeenSec: number
+  rssi: WifiRange
+  clients?: WifiRange
+  utilizationPct?: WifiRange
+  // The descriptive attributes, carried from the newest sighting so a track describes itself.
+  // A saved recording is nothing but tracks, and an exported row has to say which access point it
+  // came from — "MIMO 4x4, WPA3, Ubiquiti" is most of why the export is worth having.
+  security: string
+  phy?: string
+  streams?: number
+  widthMhz?: number
+  vendor?: string
+  model?: string
+  locallyAdministered: boolean
+  countryCode?: string
+}
+
+/** One channel's worth of congestion, for answering "where is the interference". */
+export interface ChannelLoad {
+  channel: number
+  band: WifiBand
+  accessPoints: number
+  /** Strongest signal heard on the channel — how much of this load is actually near you. */
+  bestRssi: number
+  /** Highest utilization any access point on the channel advertised, where any of them did. */
+  maxUtilizationPct?: number
+  /**
+   * Stations on the channel, counted once per radio rather than once per SSID. Undefined when no
+   * access point advertised a count, which is different from none being connected.
+   */
+  clients?: number
+  /** How many access points contributed a count, so the UI can qualify the total honestly. */
+  clientsFromAps: number
+  /**
+   * Access points whose occupied spectrum touches this channel, including those on it. This is
+   * the number that matters on 2.4 GHz, where channels are 5 MHz apart but 20 MHz wide.
+   */
+  overlappingAps: number
+}
+
+/**
+ * A block of adjacent channels treated as one lump — the conventional non-overlapping thirds on
+ * 2.4 GHz, and the named regulatory blocks on 5 and 6 GHz.
+ */
+export interface ChannelBucket {
+  band: WifiBand
+  label: string
+  fromChannel: number
+  toChannel: number
+  channels: number[]
+  accessPoints: number
+  bestRssi: number
+  clients?: number
+  clientsFromAps: number
+  maxUtilizationPct?: number
+}
+
+/** A recording on disk, described well enough to list without reading the whole file. */
+export interface RecordingSummary {
+  id: string
+  startedAt: string
+  durationSec: number
+  accessPoints: number
+  networks: number
+  /** Absolute path of the aggregate file, which is what "show in folder" reveals. */
+  path: string
+}
+
+export interface SavedRecording {
+  summary: RecordingSummary
+  tracks: WifiTrack[]
+  /**
+   * The same derived views a live scan carries, computed in main. The renderer must never import
+   * from main/, so anything derived is derived on that side of the IPC boundary — the same reason
+   * sortAdapters and validateProfileDraft live in shared/.
+   */
+  networks: WifiNetwork[]
+  channels: ChannelLoad[]
+  buckets: ChannelBucket[]
+}
+
+export type WifiScanStatus =
+  'ok' | 'unsupported' | 'no-helper' | 'no-tool' | 'needs-permission' | 'needs-privilege' | 'error'
+
+/** Outcome of the one-key Location fix on Windows. Never thrown: a refusal is a message. */
+export interface WifiAccessResult {
+  ok: boolean
+  message: string
+}
+
+export interface WifiScanResult {
+  status: WifiScanStatus
+  /** True while the continuous recording loop is running. */
+  running: boolean
+  device: string
+  networks: WifiNetwork[]
+  tracks: WifiTrack[]
+  /** Congestion per channel, derived in main so the renderer stays a view. */
+  channels: ChannelLoad[]
+  /** The same thing rolled up into bands' non-overlapping blocks. */
+  buckets: ChannelBucket[]
+  scans: number
+  elapsedSec: number
+  /**
+   * Where this recording is being written. Absent while merely scanning, and absent during a
+   * recording that could not open a file — which is how the UI can say so rather than quietly
+   * dropping the walk.
+   */
+  savedTo?: string
+  message?: string
+  /**
+   * True when a refused scan can be fixed from inside the app — Windows, where the usual cause is
+   * a policy key left by a privacy tool. The renderer offers the key only when this is set.
+   */
+  canEnableAccess?: boolean
+}
+
 export interface MagicethApi {
   listAdapters(): Promise<Adapter[]>
   onAdaptersChanged(cb: (adapters: Adapter[]) => void): () => void
@@ -204,6 +377,17 @@ export interface MagicethApi {
   rollMac(device: string): Promise<ReconfigResult>
   applyProfile(device: string, profileId: string): Promise<ReconfigResult>
   undo(device: string): Promise<ReconfigResult>
+  /** `mode: 'record'` clears the accumulator and keeps scanning; `'once'` adds a single sample. */
+  startWifiScan(device: string, mode: 'once' | 'record'): Promise<WifiScanResult>
+  /** Resolves with everything the scan collected, or null when none was running. */
+  stopWifiScan(): Promise<WifiScanResult | null>
+  onWifiUpdate(cb: (result: WifiScanResult) => void): () => void
+  /** Windows only: remove the policies that block Location and turn it on, after a UAC prompt. */
+  enableWifiAccess(): Promise<WifiAccessResult>
+  listRecordings(): Promise<RecordingSummary[]>
+  readRecording(id: string): Promise<SavedRecording | null>
+  /** Opens the platform file manager with the recording selected. */
+  revealRecording(id: string): Promise<void>
   listProfiles(): Promise<Profile[]>
   saveCurrentAsProfile(device: string, name: string): Promise<Profile[]>
   saveProfile(profile: Profile): Promise<Profile[]>

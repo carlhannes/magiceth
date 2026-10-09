@@ -1,6 +1,6 @@
 # magiceth
 
-> One-handed network port diagnostics via a USB-to-ethernet dongle.
+> One-handed network diagnostics: a wired port through a USB dongle, or the Wi-Fi around you.
 
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![arch](https://img.shields.io/badge/arch-arm64%20%7C%20amd64-lightgrey)
@@ -17,16 +17,40 @@ The machine's **own Wi-Fi and built-in Ethernet** are listed too, so there is so
 diagnose with no dongle attached. Dongles always sort first, and one you plug in takes the
 selection by itself.
 
+**Wi-Fi mode** points the same idea at the air: every network in earshot, the access
+points behind each one, and for each of them channel, width, band, PHY generation with MIMO stream
+count, security, channel utilization, client count and manufacturer — all read out of the raw
+beacon, so nothing needs monitor mode and your connection stays up. Press `L` and it records while
+you walk a site, writing CSVs you can open in a spreadsheet.
+
+The app opens on a chooser between the two; `Tab` switches at any time.
+
+<p align="center">
+  <img src="docs/shots/screenshot-modes.png" alt="The mode chooser shown on startup" width="420">
+</p>
+
 Works on **Windows, macOS, and Linux** (arm64 + amd64). The tool is a thin Electron GUI that
 orchestrates the OS's own network commands — no custom drivers, no background service.
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="magiceth diagnosing a network port" width="420">
+  <img src="docs/figure-ethernet.png" alt="A port with no DHCP server, and the port survey listing the VLANs on a trunk" width="840">
 </p>
 
 <p align="center">
-  <em>A port with no DHCP server: link is up at 1 Gbit/s full duplex, but the address is a
-  self-assigned 169.254 one and nothing answers — diagnosed without typing a command.</em>
+  <em>Left: a port with no DHCP server — link up at 1 Gbit/s full duplex, but the address is a
+  self-assigned 169.254 one and nothing answers, diagnosed without typing a command. Right: the
+  port survey (<code>C</code>) listing every VLAN carried on a trunk.</em>
+</p>
+
+<p align="center">
+  <img src="docs/figure-wlan-scan.png" alt="Nearby networks, and every access point behind one of them" width="840">
+</p>
+
+<p align="center">
+  <em>Wi-Fi mode in an office. Left: dozens of access points grouped under the network names you
+  would actually recognise them by. Right: opening one shows every access point serving it — here
+  thirteen, across both bands at 20, 40 and 160 MHz, with more than one sharing channel 6. The key
+  legend stays put however long the list gets.</em>
 </p>
 
 ---
@@ -40,6 +64,9 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 - **Speed test** _(manual, `T`)_ — measures what the uplink behind the port actually delivers, in both directions, bound to the dongle. Numbers appear within a second and update as it runs, so a 1 Mbit uplink is obvious long before the test ends. It transfers real data to `speed.cloudflare.com` — up to ~200 MB each way, about 20 s — and **never runs on its own**; `T` starts it and `T` stops it early.
 - **Port survey / VLAN discovery** _(optional, macOS/Linux)_ — press `C` on an uplink and every 802.1Q VLAN carried on it is listed as it is discovered, with a frame count and the addressing seen inside each one. It reads the tags straight off the wire, so it works on **any** switch, managed or not — no LLDP required. When the switch does advertise, LLDP/CDP adds its name, port and management IP on top. Runs until you stop it. Not implemented on Windows (it would need tshark + Npcap); the app says so instead of failing. Measured behaviour and the evidence behind it: [docs/VLAN-FINDINGS.md](docs/VLAN-FINDINGS.md).
 - **Active control** — roll a new (locally-administered) MAC, switch between DHCP and static profiles, create/edit profiles inline, and undo the last change.
+- **WLAN mode** — the same idea pointed at the air. Every network in earshot, the access points behind each one, and per access point: channel, band, width, PHY generation with MIMO stream count (`802.11be, MIMO 4×4`), security read from the actual AKM suites, channel utilization, client count, country, and the
+  manufacturer looked up from the IEEE OUI registries — including for the randomised BSSIDs modern
+  access points use, where the maker is recovered from the beacon's own vendor elements instead. All of it is decoded from the raw beacon, so **no monitor mode and no disconnection** — your Wi-Fi keeps working while you scan. Press `L` to record: it keeps scanning while you walk a site and gives min/max/average for signal, clients and channel load, keeping access points you have moved away from. macOS and Windows hand out this detail only to an app allowed to use your location, which magiceth asks for once on macOS and points you to in Settings on Windows; Linux reads it straight from `iw`. Verified live on macOS and Windows 11; implemented but not yet run on Linux — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for exactly what is and is not obtainable on each.
 
 ### Cheap things happen by themselves; expensive things need intent
 
@@ -65,10 +92,6 @@ a profile act on the first press on a **dongle** — one-handed operation at a r
 but ask first on a **built-in** port, because that is the machine's own connection and a stray
 keystroke should not be able to take it down.
 
-<p align="center">
-  <img src="docs/screenshot-vlan.png" alt="The port survey listing every VLAN on a trunk, opened with C" width="420">
-</p>
-
 ## Hardware support
 
 Most USB-ethernet dongles are built on a handful of chipsets. `magiceth` recognizes them via
@@ -78,16 +101,21 @@ usually work anyway via the OS's own driver — press `I` for their raw USB IDs,
 what a "please add this chipset" issue or PR needs.
 
 <p align="center">
-  <img src="docs/screenshot-chipset.png" alt="The chipset sub-view, opened with I" width="420">
+  <img src="docs/figure-ethernet-panels.png" alt="The chipset sub-view and the profile panel" width="840">
+</p>
+
+<p align="center">
+  <em>The two Ethernet sub-views: the chipset readout (<code>I</code>) with capabilities and raw
+  USB IDs, and the profile panel (<code>P</code>).</em>
 </p>
 
 ## Platform status
 
-| Platform                | Status                                                                                                         |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified                                      |
-| **Windows 11** (x64)    | Identification, diagnostics, ping, DHCP/static profile switching and MAC rolling all verified on real hardware |
-| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**              |
+| Platform                | Status                                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified; **Wi-Fi mode live-verified**                        |
+| **Windows 11** (x64)    | Identification, diagnostics, ping, DHCP/static profile switching, MAC rolling and **Wi-Fi mode** all verified on real hardware |
+| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**, Wi-Fi mode included         |
 
 On Linux the DHCP-vs-static readout is inferred from the address lifetime that `ip -j addr`
 reports, which is the one part of the port readout that has not been checked against a live
@@ -112,8 +140,13 @@ npm run dev        # starts the app in development mode
 
 ## Usage
 
-Launch the app (does **not** require admin). With a dongle plugged in, identification and
-diagnostics are shown automatically. Everything is controlled from the keyboard:
+Launch the app (does **not** require admin). It opens on a chooser with two modes — press `1`/`E`
+for **Ethernet** or `2`/`W` for **Wi-Fi**. `Tab` switches between them at any time and `Esc` steps
+back out. Everything is controlled from the keyboard.
+
+### Ethernet mode
+
+With a dongle plugged in, identification and diagnostics are shown automatically.
 
 | Key               | Action                                                                 |
 | ----------------- | ---------------------------------------------------------------------- |
@@ -130,13 +163,72 @@ diagnostics are shown automatically. Everything is controlled from the keyboard:
 | `S`               | Save the current config as a profile                                   |
 | `U`               | Undo the last change                                                   |
 
+### Wi-Fi mode
+
+Entering the mode scans by itself. The list is networks; opening one shows the access points behind
+it; opening an access point shows everything known about it.
+
+<p align="center">
+  <img src="docs/figure-wlan-detail.png" alt="One access point in full, and the list of saved recordings" width="840">
+</p>
+
+<p align="center">
+  <em>Left: one access point in full — the manufacturer comes from the IEEE registry, security is
+  read from the actual AKM suites, and the min/max/average figures are what the recording saw while
+  walking around. Right: past recordings (<code>S</code>), which open through these same screens.</em>
+</p>
+
+| Key           | Action                                                                        |
+| ------------- | ----------------------------------------------------------------------------- |
+| `↑` `↓`       | Move through the list                                                         |
+| `Enter` / `→` | Open the selected network, then the selected access point                     |
+| `Esc` / `←`   | Back up a level; from the top, back to the mode chooser                       |
+| `R` / space   | Scan again now                                                                |
+| `L`           | Start / stop recording — keeps scanning and tracks min/max/avg while you move |
+| `C`           | Channel view, then the same grouped into bands' blocks, then back             |
+| `S`           | Saved recordings — open one to view it; `F` reveals it in the file manager    |
+| `O`           | Windows only, after a refused scan: turn Location on (asks for admin)         |
+
+**Recordings are saved to `Documents/magiceth`** as two CSVs you can open in any spreadsheet: a
+time log written as you walk (one row per access point per snapshot, at least two seconds apart)
+and an aggregate written when you stop (one row per access point with min/max/average signal,
+clients and channel load, grouped so every access point of one network sits together). A run
+shorter than three snapshots deletes itself, and quitting mid-recording still finalises the file.
+The app reads those same files back, so nothing is stored anywhere else. Two things worth knowing:
+macOS may ask once for permission to write to Documents, and if that folder syncs to iCloud your
+recordings will sync with it.
+
+<p align="center">
+  <img src="docs/figure-wlan-spectrum.png" alt="Per-channel congestion, and the same grouped into band blocks" width="840">
+</p>
+
+<p align="center">
+  <em><code>C</code> cycles through both. Left: each channel with the access points on it, the
+  stations they are serving, the load they admit to, and how many more bleed onto it from
+  neighbouring channels — the dot follows the advertised load, which is a measurement. Right: the
+  same grouped into the non-overlapping thirds on 2.4 GHz and the named regulatory blocks above
+  it, where the upper two thirds of 2.4 GHz sit near 50% load while 5 GHz carries more access
+  points and more clients at a fraction of that.</em>
+</p>
+
+Client counts are what each access point advertises, de-duplicated per radio: one radio
+broadcasting five SSIDs reports the same station count five times, so adding them up naively would
+have read 30 clients where there were 6. A `≥` means only some of the access points on that
+channel advertised a count, so the figure is a floor.
+
+Scanning is passive and read-only: it never associates with anything and never disconnects you.
+On macOS the first scan asks for Location access, and on Windows 11 a refused scan opens the
+Location settings page and says which two switches to turn on — on both, that consent is the only
+way the system will reveal access point identifiers. If Windows says those settings are "managed
+by your organization" on a machine that has no organization, a privacy tool has pinned Location
+off with a policy key; `O` offers to undo that for you, after a confirming press and a UAC prompt. On Linux the results are read from `iw`
+without any privilege; NetworkManager triggers the sweep, and on a machine without it one `pkexec`
+prompt does. See [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for what each OS has been checked
+against.
+
 `M`, `U` and applying a profile change real network configuration. On a **dongle** they act on the
 first press — that is the one-handed point. On a **built-in** port they ask first and act on the
 second press of the same key, because that is the machine's own connection; any other key cancels.
-
-<p align="center">
-  <img src="docs/screenshot-profiles.png" alt="The profile panel, opened with P" width="420">
-</p>
 
 ### Privileged actions
 
@@ -165,15 +257,18 @@ npm test           # vitest (pure parsers/functions)
 Everything is unsigned — no macOS notarization, no Windows certificate — so macOS needs
 right-click → Open and Windows shows SmartScreen → More info → Run anyway.
 
-A full release is four files, and all four build from macOS with no Wine involved (electron-builder
-fetches its own NSIS toolchain):
+A full release is four files, and all four build from macOS. The Windows ones need Rosetta on an
+Apple Silicon Mac, because electron-builder stamps the version into the `.exe` through an x86 Wine
+it fetches itself (`softwareupdate --install-rosetta`). Both Windows targets are listed in
+`electron-builder.yml`, so one command always builds the installer **and** the portable `.exe` —
+never build just one of them, a release is both:
 
-| Artifact                    | Built by                                    | For                              |
-| --------------------------- | ------------------------------------------- | -------------------------------- |
-| `magiceth-<v>-arm64.dmg`    | `npm run package -- --mac`                  | macOS, Apple Silicon             |
-| `magiceth-<v>.dmg`          | `npm run package -- --mac`                  | macOS, Intel                     |
-| `magiceth Setup <v>.exe`    | `npx electron-builder --win nsis`           | Windows installer, x64 + arm64   |
-| `magiceth-<v>-portable.exe` | `npx electron-builder --win portable --x64` | Windows, runs without installing |
+| Artifact                    | Built by                   | For                              |
+| --------------------------- | -------------------------- | -------------------------------- |
+| `magiceth-<v>-arm64.dmg`    | `npm run package -- --mac` | macOS, Apple Silicon             |
+| `magiceth-<v>.dmg`          | `npm run package -- --mac` | macOS, Intel                     |
+| `magiceth Setup <v>.exe`    | `npm run package -- --win` | Windows installer, x64 + arm64   |
+| `magiceth-<v>-portable.exe` | `npm run package -- --win` | Windows, runs without installing |
 
 The Linux AppImage target exists in `electron-builder.yml` but needs a Linux host (or Docker), and
 **no part of the Linux path has been run on real hardware** — see [docs/BACKLOG.md](docs/BACKLOG.md)

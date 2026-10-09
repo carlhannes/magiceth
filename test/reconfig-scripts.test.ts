@@ -5,7 +5,11 @@ import {
   parseNetworkServiceName
 } from '../src/main/platform/darwin'
 import { linuxSetMacScript, linuxProfileScript } from '../src/main/platform/linux'
-import { winSetMacScript, winProfileScript } from '../src/main/platform/win32'
+import {
+  winEnableLocationScript,
+  winProfileScript,
+  winSetMacScript
+} from '../src/main/platform/win32'
 import { psEscapeDouble } from '../src/main/privilege'
 import type { Profile } from '../src/shared/types'
 
@@ -101,5 +105,29 @@ describe('Windows reconfig scripts', () => {
 
     const profile = winProfileScript('$(whoami)', dhcpProfile)
     expect(profile).toContain('netsh interface ip set address name="`$(whoami)" source=dhcp')
+  })
+})
+
+describe('winEnableLocationScript', () => {
+  const s = winEnableLocationScript()
+
+  it('removes the policy values that pin Location off, under both hives', () => {
+    expect(s).toContain(
+      "Remove-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\LocationAndSensors' -Name DisableLocation,"
+    )
+    expect(s).toContain(
+      "Remove-ItemProperty 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\LocationAndSensors'"
+    )
+    expect(s).toContain("AppPrivacy' -Name LetAppsAccessLocation,")
+  })
+
+  it('sets the three consent switches Settings would set, and lets the service start', () => {
+    expect(s).toContain("ConsentStore\\location' -Name Value -Value Allow")
+    expect(s).toContain("ConsentStore\\location\\NonPackaged' -Name Value -Value Allow")
+    expect(s).toContain('Set-Service lfsvc -StartupType Manual; Start-Service lfsvc')
+  })
+
+  it('never stops on a value that is not there', () => {
+    expect(s.startsWith("$ErrorActionPreference='SilentlyContinue'")).toBe(true)
   })
 })

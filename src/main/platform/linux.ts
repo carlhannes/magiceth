@@ -1,10 +1,22 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { run } from '../util/run-command'
 import { normalizeMac } from '../../shared/mac'
 import { cidrToDotted, isValidIpv4 } from '../../shared/net'
-import { shQuote } from '../privilege'
+import { runElevatedShell, shQuote } from '../privilege'
+import { channelFromMhz } from '../capabilities/wifi-model'
+import { LOOP_MAX_SECONDS, iwScanLoopScript, parseIwScan } from './iw'
+import type { IwBss } from './iw'
 import type { ElevatedPlan } from '../privilege'
-import type { PingOptions, PingSpec, PlatformOps, RawAdapter } from './index'
+import type {
+  PingOptions,
+  PingSpec,
+  PlatformOps,
+  RawAdapter,
+  WifiScanOutcome,
+  WifiSighting
+} from './index'
 import type { NetInfo, Profile } from '../../shared/types'
 
 // Linux. Format per documentation — verify on real hardware (spike):
@@ -267,6 +279,230 @@ function speedTestBind(device: string): string | undefined {
   return device || undefined
 }
 
+// --- WLAN mode — documented formats, not yet run on hardware (see docs/WIFI-FINDINGS.md). ---
+//
+// Reading the kernel's scan cache needs no privilege: `iw dev <if> scan dump`. Triggering a fresh
+// sweep does. On a NetworkManager desktop the request goes through it — polkit lets an active
+// session ask — and the cache is read afterwards. Without NetworkManager, one password buys an
+// elevated loop that scans continuously (iw.ts) and this side waits for each result to land.
+
+/** NetworkManager rejects a rescan inside ten seconds of the previous one, so calls are spaced out. */
+const NM_RESCAN_INTERVAL_MS = 10_000
+/** A full sweep of every channel; what the Windows API also budgets, with a second to spare. */
+const SWEEP_MS = 5000
+/** Entries older than this came from an earlier sweep, and re-reading them would be inventing data. */
+const MAX_AGE_MS = 15_000
+/** The password dialog can sit unanswered; the macOS helper allows the same. */
+const FIRST_RESULT_MS = 180_000
+const NEXT_RESULT_MS = 15_000
+const POLL_MS = 500
+
+let lastRescanAt = 0
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** The named interface, or the first wireless one sysfs knows about. */
+function wifiInterface(device: string): string | undefined {
+  if (device) return device
+  try {
+    return readdirSync('/sys/class/net').find((i) => existsSync(`/sys/class/net/${i}/wireless`))
+  } catch {
+    return undefined
+  }
+}
+
+async function toolPresent(file: string): Promise<boolean> {
+  return (await run(file, ['--version'], { timeoutMs: 3000 })).code === 0
+}
+
+function toSighting(b: IwBss): WifiSighting | undefined {
+  if (b.rssi === undefined) return undefined
+  const placed = b.freqMhz === undefined ? undefined : channelFromMhz(b.freqMhz)
+  return {
+    bssid: b.bssid,
+    ssid: b.ssid,
+    rssi: b.rssi,
+    channel: placed?.channel ?? 0,
+    band: placed?.band ?? '?',
+    countryCode: b.facts.countryCode,
+    beacon: b.facts
+  }
+}
+
+/**
+ * The cache holds up to thirty seconds of history. Everything heard by the latest sweep is kept;
+ * if nothing is that fresh — the rescan was refused and nothing else scanned — the older entries
+ * are better than a blank screen on a once-scan, and the recording floor already limits the harm.
+ */
+export function dumpToOutcome(text: string): WifiScanOutcome {
+  const all = parseIwScan(text)
+  const fresh = all.filter((b) => b.ageMs === undefined || b.ageMs <= MAX_AGE_MS)
+  const chosen = fresh.length > 0 ? fresh : all
+  return {
+    status: 'ok',
+    sightings: chosen.map(toSighting).filter((s): s is WifiSighting => s !== undefined)
+  }
+}
+
+async function scanViaNetworkManager(iface: string): Promise<WifiScanOutcome> {
+  const wait = NM_RESCAN_INTERVAL_MS - (Date.now() - lastRescanAt)
+  if (wait > 0) await sleep(wait)
+  lastRescanAt = Date.now()
+  // The answer is deliberately ignored: a refusal inside the window, or an interface NetworkManager
+  // does not manage, both leave a cache worth reading. Never `wifi list --rescan yes` — that form
+  // blocks for fifteen seconds when the request is refused.
+  await run('nmcli', ['device', 'wifi', 'rescan', 'ifname', iface], { timeoutMs: 5000 })
+  await sleep(SWEEP_MS)
+  const dump = await run('iw', ['dev', iface, 'scan', 'dump'], { timeoutMs: 8000 })
+  if (dump.code !== 0) {
+    return {
+      status: 'error',
+      message: `iw could not read the scan results: ${dump.stderr.trim() || `exit ${dump.code}`}`
+    }
+  }
+  return dumpToOutcome(dump.stdout)
+}
+
+interface ScanSession {
+  device: string
+  outFile: string
+  stopFile: string
+  keepFile: string
+  lastMtime: number
+  done: boolean
+  /** Set when pkexec refused or the user cancelled the dialog. */
+  refused: boolean
+}
+
+let session: ScanSession | null = null
+
+function touch(file: string): void {
+  try {
+    writeFileSync(file, '', { flag: 'a' })
+    const now = new Date()
+    utimesSync(file, now, now)
+  } catch {
+    // The loop will time out on its own.
+  }
+}
+
+function mtimeOf(file: string): number | undefined {
+  try {
+    return statSync(file).mtimeMs
+  } catch {
+    return undefined
+  }
+}
+
+function endSession(s: ScanSession): void {
+  try {
+    writeFileSync(s.stopFile, '')
+  } catch {
+    // The hard cap in the script is the backstop.
+  }
+  if (session === s) session = null
+}
+
+function startSession(device: string): ScanSession {
+  const stamp = `${process.pid}-${Date.now()}`
+  const base = path.join(os.tmpdir(), `magiceth-wifi-${stamp}`)
+  const s: ScanSession = {
+    device,
+    outFile: `${base}.txt`,
+    stopFile: `${base}.stop`,
+    keepFile: `${base}.keep`,
+    lastMtime: 0,
+    done: false,
+    refused: false
+  }
+  touch(s.keepFile)
+  // Fire and forget: this only returns when the loop ends, and the password prompt is inside it.
+  // pkexec exits 126 when the dialog is dismissed and 127 when authorization fails.
+  runElevatedShell(
+    iwScanLoopScript(device, s.outFile, s.stopFile, s.keepFile),
+    LOOP_MAX_SECONDS * 1000 + 30_000
+  )
+    .then((r) => {
+      s.done = true
+      s.refused = r.code === 126 || r.code === 127
+    })
+    .catch(() => {
+      s.done = true
+      s.refused = true
+    })
+  return s
+}
+
+async function scanElevated(iface: string): Promise<WifiScanOutcome> {
+  let s = session
+  if (s && (s.done || s.device !== iface)) {
+    endSession(s)
+    s = null
+  }
+  const fresh = s === null
+  if (!s) {
+    s = startSession(iface)
+    session = s
+  }
+  touch(s.keepFile)
+  const deadline = Date.now() + (fresh ? FIRST_RESULT_MS : NEXT_RESULT_MS)
+  while (Date.now() < deadline) {
+    if (s.refused) {
+      endSession(s)
+      return {
+        status: 'needs-privilege',
+        message:
+          'Scanning was cancelled. Without NetworkManager, Linux needs admin rights to ask the Wi-Fi card for a sweep — press R to try again.'
+      }
+    }
+    const mtime = mtimeOf(s.outFile)
+    if (mtime !== undefined && mtime > s.lastMtime) {
+      s.lastMtime = mtime
+      let text = ''
+      try {
+        text = readFileSync(s.outFile, 'utf8')
+      } catch {
+        text = ''
+      }
+      // A sweep refused by the driver (busy, down) prints an error and no BSS; the next one is
+      // along in a few seconds, so keep waiting rather than reporting an empty sky.
+      if (!/^BSS /m.test(text) && /command failed/.test(text)) {
+        continue
+      }
+      return dumpToOutcome(text)
+    }
+    if (s.done) break
+    await sleep(POLL_MS)
+  }
+  return { status: 'error', message: 'No scan result arrived from the elevated iw loop.' }
+}
+
+async function scanWifi(device: string): Promise<WifiScanOutcome> {
+  const iface = wifiInterface(device)
+  if (!iface) return { status: 'error', message: 'This machine has no Wi-Fi interface.' }
+  if (!(await toolPresent('iw'))) {
+    return { status: 'no-tool', message: 'Wi-Fi scanning needs `iw` — install the iw package.' }
+  }
+  if (await toolPresent('nmcli')) return scanViaNetworkManager(iface)
+  if (!(await toolPresent('pkexec'))) {
+    return {
+      status: 'no-tool',
+      message:
+        'Triggering a Wi-Fi scan needs NetworkManager (nmcli) or pkexec; neither is installed.'
+    }
+  }
+  return scanElevated(iface)
+}
+
+/** Nothing on Linux gates the scan behind a consent dialog; the privilege path asks by itself. */
+function requestWifiAccess(): void {}
+
+function endWifiSession(): void {
+  if (session) endSession(session)
+}
+
 export const linux: PlatformOps = {
   id: 'linux',
   enumerateAdapters,
@@ -274,5 +510,8 @@ export const linux: PlatformOps = {
   pingCommand,
   speedTestBind,
   buildSetMacPlan,
-  buildProfilePlan
+  buildProfilePlan,
+  scanWifi,
+  requestWifiAccess,
+  endWifiSession
 }

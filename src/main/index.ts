@@ -5,6 +5,13 @@ import { listAdapters } from './capabilities/adapters'
 import { runDiagnostics } from './capabilities/diagnostics'
 import { startSurvey, stopSurvey } from './capabilities/survey'
 import { startSpeedTest, stopSpeedTest } from './capabilities/speedtest'
+import {
+  enableWifiAccess,
+  endWifiSession,
+  startWifiScan,
+  stopWifiScan
+} from './capabilities/wifiscan'
+import { listRecordings, readRecording, revealRecording } from './capabilities/recordings'
 import { applyProfile, rollMac, undo } from './capabilities/reconfig'
 import {
   deleteProfile,
@@ -131,6 +138,25 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('speedtest:stop', () => stopSpeedTest())
 
+  // Scanning moves the radio off-channel, so a recording only ever runs on a keypress. Same push
+  // shape as the survey: partial results arrive while it runs.
+  ipcMain.handle('wifi:start', (_event, device: string, mode: 'once' | 'record') =>
+    startWifiScan(device, mode, (result) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('wifi:update', result)
+      }
+    })
+  )
+  ipcMain.handle('wifi:stop', () => stopWifiScan())
+  // Privileged and opt-in (UAC on Windows): the renderer asks for a confirming second press first.
+  ipcMain.handle('wifi:enableAccess', () => enableWifiAccess())
+
+  // Recordings the scanner has written to ~/Documents/magiceth. Reads are cheap and the ids are
+  // validated against the filename pattern in the capability, so a bad id cannot escape the folder.
+  ipcMain.handle('recordings:list', () => listRecordings())
+  ipcMain.handle('recordings:read', (_event, id: string) => readRecording(id))
+  ipcMain.handle('recordings:reveal', (_event, id: string) => revealRecording(id))
+
   // Profiles
   ipcMain.handle('profiles:list', () => loadProfiles())
   ipcMain.handle('profiles:saveCurrent', async (_event, device: string, name: string) => {
@@ -166,6 +192,8 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   stopSurvey()
   stopSpeedTest()
+  stopWifiScan()
+  endWifiSession()
 })
 
 app.on('window-all-closed', () => {

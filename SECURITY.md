@@ -18,8 +18,10 @@ Only the latest released version receives security updates (the project is in an
 - **Runs OS commands injection-safely.** Everything goes through `execFile` with arguments as an
   array (no shell), so input can't be interpreted as commands. See `src/main/util/run-command.ts`.
 - **Least privilege.** The app and all read-only diagnostics run unprivileged. Only packet capture
-  (LLDP/CDP) and adapter changes (MAC/IP) are elevated, and then **per action** via the OS's own
-  prompt (macOS password / Linux `pkexec` / Windows UAC). The entire app never needs to run as admin.
+  (LLDP/CDP), adapter changes (MAC/IP), the Linux Wi-Fi scan loop on a machine without
+  NetworkManager, and the opt-in Windows Location fix (`O`) are elevated, and then **per action**
+  via the OS's own prompt (macOS password / Linux `pkexec` / Windows UAC). The entire app never
+  needs to run as admin.
 - **No telemetry.** The tool sends no data anywhere. Network traffic happens only when you
   start it yourself: ping (gateway, `1.1.1.1`/`8.8.8.8`), a DNS lookup, and passive
   LLDP/CDP listening. It reads local network configuration; nothing is written outside your machine.

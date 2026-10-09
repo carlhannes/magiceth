@@ -1,10 +1,13 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { run } from '../util/run-command'
 import { normalizeMac } from '../../shared/mac'
 import { cidrToDotted, isValidIpv4 } from '../../shared/net'
-import { psEscapeDouble } from '../privilege'
+import { psEscapeDouble, runElevatedPlan } from '../privilege'
+import { parseWifiHelper } from './wifi-helper'
 import type { ElevatedPlan } from '../privilege'
-import type { PingOptions, PingSpec, PlatformOps, RawAdapter } from './index'
-import type { NetInfo, Profile } from '../../shared/types'
+import type { PingOptions, PingSpec, PlatformOps, RawAdapter, WifiScanOutcome } from './index'
+import type { NetInfo, Profile, WifiAccessResult } from '../../shared/types'
 
 // Windows. Format per documentation — verify on real hardware (spike):
 //  - `Get-NetAdapter | Select ... | ConvertTo-Json` gives adapters; USB dongles have
@@ -235,6 +238,131 @@ function speedTestBind(_device: string, srcIp?: string): string | undefined {
   return srcIp
 }
 
+// --- WLAN mode — documented API, not yet run on hardware (see docs/WIFI-FINDINGS.md). ---
+//
+// A PowerShell helper (resources/wifi-helper/wifi-scan.ps1) calls the native WLAN API, which is
+// the only thing on Windows that reports real dBm and the raw beacon elements, and prints the same
+// JSON the macOS helper does. Since Windows 11 24H2 the API is gated behind Location consent, and
+// a script hosted by powershell.exe — which lives in System32 — can never raise the consent prompt,
+// so a refusal opens the Location settings page instead.
+
+/** Compile of the P/Invoke bindings (~2 s), a four-second sweep, and the marshalling. */
+const HELPER_TIMEOUT_MS = 25_000
+
+const PERMISSION_MESSAGE =
+  'Windows hides access points until magiceth may use your location. In the Settings page that just opened, turn on Location and "Let desktop apps access your location", then scan again.'
+
+/** The development checkout wins when present; a packaged app finds it among its resources. */
+export function helperPath(): string {
+  const script = 'wifi-helper/wifi-scan.ps1'
+  const dev = join(__dirname, '../../resources', script)
+  if (existsSync(dev)) return dev
+  return join(process.resourcesPath ?? '', script)
+}
+
+async function scanWifi(device: string): Promise<WifiScanOutcome> {
+  const helper = helperPath()
+  if (!existsSync(helper)) {
+    return {
+      status: 'no-helper',
+      message: 'The Wi-Fi helper script (wifi-helper/wifi-scan.ps1) is missing from the app.'
+    }
+  }
+  // -File, not -Command, so the adapter name travels as an argument and never through a parser.
+  const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helper]
+  if (device) args.push('-Interface', device)
+  const res = await run('powershell', args, { timeoutMs: HELPER_TIMEOUT_MS })
+  if (!res.stdout.trim()) {
+    const why = res.stderr.trim()
+    return why
+      ? { status: 'error', message: `The Wi-Fi helper failed: ${why}` }
+      : {
+          status: 'no-tool',
+          message: 'Windows PowerShell could not be started, so nothing can scan.'
+        }
+  }
+  return parseWifiHelper(res.stdout, PERMISSION_MESSAGE)
+}
+
+/** Open the Location privacy page; the message tells the user which two switches to turn on. */
+function requestWifiAccess(): void {
+  void run(
+    'powershell',
+    ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process ms-settings:privacy-location'],
+    { timeoutMs: 5000 }
+  )
+}
+
+/** Each scan is one short-lived helper process, so there is nothing to tear down. */
+function endWifiSession(): void {}
+
+/** The machine-wide Location switch; `Allow` here is what Settings calls "Location services". */
+const LOCATION_CONSENT =
+  'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\location'
+
+/**
+ * Turn Location on by force, as an administrator. Seen on the first Windows machine this ran on:
+ * Settings showed "some of these settings are managed by your organization" on a personal PC, and
+ * the cause was `DisableLocation` under the LocationAndSensors policy key — the kind of thing a
+ * privacy or debloat tool leaves behind. gpedit showed nothing, because the key was written
+ * directly. So this removes every policy value that pins Location off, sets the three consent
+ * switches Settings would set (machine, user, and "desktop apps"), and makes sure the location
+ * service can start. Every step tolerates the value not being there.
+ */
+export function winEnableLocationScript(): string {
+  const policies = [
+    'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\LocationAndSensors',
+    'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\LocationAndSensors'
+  ]
+  const consent = [
+    LOCATION_CONSENT,
+    LOCATION_CONSENT.replace('HKLM:', 'HKCU:'),
+    `${LOCATION_CONSENT.replace('HKLM:', 'HKCU:')}\\NonPackaged`
+  ]
+  return [
+    "$ErrorActionPreference='SilentlyContinue'",
+    ...policies.map(
+      (k) =>
+        `Remove-ItemProperty '${k}' -Name DisableLocation,DisableWindowsLocationProvider,DisableLocationScripting`
+    ),
+    "Remove-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\AppPrivacy' -Name LetAppsAccessLocation,LetAppsAccessLocation_UserInControlOfTheseApps,LetAppsAccessLocation_ForceAllowTheseApps,LetAppsAccessLocation_ForceDenyTheseApps",
+    ...consent.map(
+      (k) => `New-Item '${k}' -Force | Out-Null; Set-ItemProperty '${k}' -Name Value -Value Allow`
+    ),
+    'Set-Service lfsvc -StartupType Manual; Start-Service lfsvc'
+  ].join('; ')
+}
+
+/**
+ * Nice to have, never load-bearing: whatever happens here comes back as a message, and the app is
+ * exactly where it was. UAC does not hand stdout back, so the result is read off the registry.
+ */
+async function enableWifiAccess(): Promise<WifiAccessResult> {
+  try {
+    await runElevatedPlan({ interpreter: 'powershell', script: winEnableLocationScript() }, 90_000)
+    const check = await run(
+      'powershell',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `(Get-ItemProperty '${LOCATION_CONSENT}').Value`
+      ],
+      { timeoutMs: 10000 }
+    )
+    if (check.stdout.trim() === 'Allow') {
+      return { ok: true, message: 'Location is on. Scanning again…' }
+    }
+    return {
+      ok: false,
+      message:
+        'Location is still off — the UAC prompt may have been dismissed. You can also turn it on by hand in Settings → Privacy & security → Location.'
+    }
+  } catch (err) {
+    return { ok: false, message: `Could not change the Location settings: ${String(err)}` }
+  }
+}
+
 export const win32: PlatformOps = {
   id: 'win32',
   enumerateAdapters,
@@ -242,5 +370,9 @@ export const win32: PlatformOps = {
   pingCommand,
   speedTestBind,
   buildSetMacPlan,
-  buildProfilePlan
+  buildProfilePlan,
+  scanWifi,
+  requestWifiAccess,
+  endWifiSession,
+  enableWifiAccess
 }

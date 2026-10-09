@@ -60,6 +60,31 @@ nobody has watched it do so on a real machine. That is the thing most worth your
 **Optional/may not work:** VLAN/switch info (**C**) requires Wireshark/Npcap, which isn't
 included — it should then show a clear "not supported" notice, not crash.
 
+## Wi-Fi mode (new, never run on Windows)
+
+The app opens on a chooser now: **2** (or **W**) is Wi-Fi mode, **1** is the port dashboard you
+tested before, **Tab** switches. Wi-Fi mode scans as soon as you enter it.
+
+- **What build is this Windows?** (`winver`). On 24H2 and later Windows hides access points until
+  the app may use your location, so the first thing you may see is a Settings page opening and a
+  message in the app saying which two switches to turn on — **Location**, and **Let desktop apps
+  access your location**. Turn them on, go back to the app, press **R**. That whole dance is
+  expected and worth describing exactly as it happened. If Settings says those switches are
+  "managed by your organization", press **O** in the app: it explains what it will change, a
+  second **O** runs it after a UAC prompt, and it scans again by itself.
+- Once it scans: you should see networks grouped by name with a signal bar, **Enter** opens the
+  access points behind one, **Enter** again shows one in full — BSSID, maker, security, PHY with
+  MIMO, channel and width, clients and channel utilization if the access point advertises them.
+- **C** shows channels, **C** again the band blocks, **C** once more goes back.
+- **L** starts a recording; walk around for a minute; **L** stops it. **S** lists it, **Enter** opens
+  it, **F** shows the CSV files in Explorer (they go to `Documents\magiceth`).
+- Roughly how long does a scan take (the spinner in the top bar)? Expect about five seconds.
+
+If it only ever says something failed, the raw answer helps most: in a terminal, from the folder
+the app was unpacked into,
+`powershell -ExecutionPolicy Bypass -File resources\wifi-helper\wifi-scan.ps1` prints one line of
+JSON (or an error) — paste it.
+
 ## What we want to know
 
 - **Which ports were listed?** Anything missing, and — more importantly — anything listed that is
@@ -70,6 +95,8 @@ included — it should then show a clear "not supported" notice, not crash.
 - Did the speed test (**T**) produce sensible numbers for that connection?
 - If you tested the admin things: did the MAC change work? Could you switch DHCP/static? Did the
   built-in ports ask for a confirming second press first?
+- Wi-Fi mode: did it scan, did it need the Location switches, did clients/channel utilization show
+  values, did the recording produce the two CSV files?
 - Feel free to send a screenshot + anything that was missing or looked off.
 
 Keys: **↑↓** switch port · **R** re-run · **I** chipset info · **T** speed test · **C** VLAN survey
