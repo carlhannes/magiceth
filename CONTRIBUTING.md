@@ -20,7 +20,7 @@ npm run dev
 | Command                           | Does                                                              |
 | --------------------------------- | ----------------------------------------------------------------- |
 | `npm run dev`                     | Starts the app in development mode (hot reload)                   |
-| `npm run build:helper`            | Builds the macOS Wi-Fi helper (macOS only, needs `swiftc`)        |
+| `npm run build:helper`            | Builds the macOS Wi-Fi helper (needs `swiftc`; skips elsewhere)   |
 | `sh scripts/build-screenshots.sh` | Rebuilds the README figures from `docs/shots` (needs ImageMagick) |
 | `npm run typecheck`               | `tsc --noEmit` for main + renderer + tests                        |
 | `npm run lint`                    | ESLint                                                            |
@@ -76,7 +76,10 @@ not covered by the automated tests — verify them manually per
   also means it goes stale until somebody re-runs it.
 - **WLAN mode on macOS** needs `npm run build:helper` once before `npm run dev`, or scanning
   reports `no-helper`. Read [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) before assuming anything
-  about what macOS will hand over — in particular, `sudo` does not help.
+  about what macOS will hand over — in particular, `sudo` does not help. On Windows the helper is
+  `resources/wifi-helper/wifi-scan.ps1` and needs no build; on Linux there is no helper — `iw` and
+  NetworkManager are system tools. Neither has been run on hardware yet; the findings file says
+  which claims depend on it.
 - **Platform logic:** adjust `src/main/platform/<os>.ts`, keep the parsing pure + tested, verify on hardware.
 - **New IPC:** handler in `src/main/index.ts`, method in `MagicethApi` (`src/shared/types.ts`), expose it in `src/preload/index.ts`.
 

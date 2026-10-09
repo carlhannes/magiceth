@@ -15,7 +15,19 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   chooser on startup (`Tab` switches, `Esc` steps back). Lists every network in earshot, the access
   points behind each one, and for each access point its channel, band, width, PHY generation with
   MIMO stream count, security, channel utilization, client count and country — all decoded from the
-  raw beacon, so none of it needs monitor mode. macOS only for now.
+  raw beacon, so none of it needs monitor mode.
+- **Wi-Fi mode on Linux and Windows** — implemented, not yet run on hardware. Linux reads the
+  kernel's scan cache with `iw` after asking NetworkManager for a sweep, and without NetworkManager
+  one `pkexec` prompt starts a scan loop that stops by itself. Windows runs a PowerShell helper
+  against the native WLAN API, which since Windows 11 24H2 needs Location consent; a refused scan
+  opens the Location settings page and says what to turn on. The OS-specific half now sits behind
+  `PlatformOps.scanWifi`, so the model, the recordings and the screens are the same code on all
+  three — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for what each OS has been checked
+  against and what is still waiting for a machine.
+- **Channel width is read from the beacon's own operation elements** (HT, VHT, HE), which is what
+  gives Windows a width at all and cross-checks CoreWLAN on macOS: both say 160 MHz for the same
+  radios. The country code is read from the beacon too, and an access point still sending only the
+  old WPA element is called WPA rather than Open.
 - **Recording** (`L`) — keeps scanning and tracks every access point over time, giving min/max/avg
   for signal, clients and channel load. Access points met along the way are kept even once they
   stop being heard, which is the point of walking a site with it.
@@ -57,6 +69,9 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   `view` (pure formatters), `ethernet` and `wlan`. Ethernet mode behaves exactly as before.
 - `WifiTrack` carries the descriptive attributes of its access point (security, PHY, MIMO streams,
   vendor, width, country), so a track describes itself and a saved recording needs nothing else.
+- Each platform's build ships only its own Wi-Fi helper — the macOS `.app` under `mac`, the Windows
+  `.ps1` under `win`, nothing on Linux — where a top-level `extraResources` used to put the macOS
+  bundle into every build. `npm run package` no longer needs `sh` to exist.
 
 ## [0.4.0] – 2026-08-26
 

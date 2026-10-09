@@ -17,7 +17,7 @@ The machine's **own Wi-Fi and built-in Ethernet** are listed too, so there is so
 diagnose with no dongle attached. Dongles always sort first, and one you plug in takes the
 selection by itself.
 
-**Wi-Fi mode** _(macOS)_ points the same idea at the air: every network in earshot, the access
+**Wi-Fi mode** points the same idea at the air: every network in earshot, the access
 points behind each one, and for each of them channel, width, band, PHY generation with MIMO stream
 count, security, channel utilization, client count and manufacturer — all read out of the raw
 beacon, so nothing needs monitor mode and your connection stays up. Press `L` and it records while
@@ -64,9 +64,9 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 - **Speed test** _(manual, `T`)_ — measures what the uplink behind the port actually delivers, in both directions, bound to the dongle. Numbers appear within a second and update as it runs, so a 1 Mbit uplink is obvious long before the test ends. It transfers real data to `speed.cloudflare.com` — up to ~200 MB each way, about 20 s — and **never runs on its own**; `T` starts it and `T` stops it early.
 - **Port survey / VLAN discovery** _(optional, macOS/Linux)_ — press `C` on an uplink and every 802.1Q VLAN carried on it is listed as it is discovered, with a frame count and the addressing seen inside each one. It reads the tags straight off the wire, so it works on **any** switch, managed or not — no LLDP required. When the switch does advertise, LLDP/CDP adds its name, port and management IP on top. Runs until you stop it. Not implemented on Windows (it would need tshark + Npcap); the app says so instead of failing. Measured behaviour and the evidence behind it: [docs/VLAN-FINDINGS.md](docs/VLAN-FINDINGS.md).
 - **Active control** — roll a new (locally-administered) MAC, switch between DHCP and static profiles, create/edit profiles inline, and undo the last change.
-- **WLAN mode** _(macOS)_ — the same idea pointed at the air. Every network in earshot, the access points behind each one, and per access point: channel, band, width, PHY generation with MIMO stream count (`802.11be, MIMO 4×4`), security read from the actual AKM suites, channel utilization, client count, country, and the
+- **WLAN mode** — the same idea pointed at the air. Every network in earshot, the access points behind each one, and per access point: channel, band, width, PHY generation with MIMO stream count (`802.11be, MIMO 4×4`), security read from the actual AKM suites, channel utilization, client count, country, and the
   manufacturer looked up from the IEEE OUI registries — including for the randomised BSSIDs modern
-  access points use, where the maker is recovered from the beacon's own vendor elements instead. All of it is decoded from the raw beacon, so **no monitor mode and no disconnection** — your Wi-Fi keeps working while you scan. Press `L` to record: it keeps scanning while you walk a site and gives min/max/average for signal, clients and channel load, keeping access points you have moved away from. macOS hands out this detail only to an app with Location access, which magiceth asks for once — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for exactly what is and is not obtainable.
+  access points use, where the maker is recovered from the beacon's own vendor elements instead. All of it is decoded from the raw beacon, so **no monitor mode and no disconnection** — your Wi-Fi keeps working while you scan. Press `L` to record: it keeps scanning while you walk a site and gives min/max/average for signal, clients and channel load, keeping access points you have moved away from. macOS and Windows hand out this detail only to an app allowed to use your location, which magiceth asks for once on macOS and points you to in Settings on Windows; Linux reads it straight from `iw`. Verified live on macOS; implemented but not yet run on Linux or Windows — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for exactly what is and is not obtainable on each.
 
 ### Cheap things happen by themselves; expensive things need intent
 
@@ -111,11 +111,11 @@ what a "please add this chipset" issue or PR needs.
 
 ## Platform status
 
-| Platform                | Status                                                                                                         |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified; **Wi-Fi mode live-verified**        |
-| **Windows 11** (x64)    | Identification, diagnostics, ping, DHCP/static profile switching and MAC rolling all verified on real hardware |
-| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**              |
+| Platform                | Status                                                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified; **Wi-Fi mode live-verified**                                                             |
+| **Windows 11** (x64)    | Identification, diagnostics, ping, DHCP/static profile switching and MAC rolling all verified on real hardware; **Wi-Fi mode implemented, not yet run on hardware** |
+| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**, Wi-Fi mode included                                              |
 
 On Linux the DHCP-vs-static readout is inferred from the address lifetime that `ip -j addr`
 reports, which is the one part of the port readout that has not been checked against a live
@@ -163,7 +163,7 @@ With a dongle plugged in, identification and diagnostics are shown automatically
 | `S`               | Save the current config as a profile                                   |
 | `U`               | Undo the last change                                                   |
 
-### Wi-Fi mode _(macOS)_
+### Wi-Fi mode
 
 Entering the mode scans by itself. The list is networks; opening one shows the access points behind
 it; opening an access point shows everything known about it.
@@ -188,7 +188,7 @@ it; opening an access point shows everything known about it.
 | `C`           | Channel view, then the same grouped into bands' blocks, then back             |
 | `S`           | Saved recordings — open one to view it; `F` reveals it in the file manager    |
 
-**Recordings are saved to `~/Documents/magiceth`** as two CSVs you can open in any spreadsheet: a
+**Recordings are saved to `Documents/magiceth`** as two CSVs you can open in any spreadsheet: a
 time log written as you walk (one row per access point per snapshot, at least two seconds apart)
 and an aggregate written when you stop (one row per access point with min/max/average signal,
 clients and channel load, grouped so every access point of one network sits together). A run
@@ -216,8 +216,12 @@ have read 30 clients where there were 6. A `≥` means only some of the access p
 channel advertised a count, so the figure is a floor.
 
 Scanning is passive and read-only: it never associates with anything and never disconnects you.
-The first scan asks macOS for Location access, which is the only way it will reveal access point
-identifiers — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md).
+On macOS the first scan asks for Location access, and on Windows 11 a refused scan opens the
+Location settings page and says which two switches to turn on — on both, that consent is the only
+way the system will reveal access point identifiers. On Linux the results are read from `iw`
+without any privilege; NetworkManager triggers the sweep, and on a machine without it one `pkexec`
+prompt does. See [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for what each OS has been checked
+against.
 
 `M`, `U` and applying a profile change real network configuration. On a **dongle** they act on the
 first press — that is the one-handed point. On a **built-in** port they ask first and act on the

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  dumpToOutcome,
   parseUdevProperties,
   udevToRawAdapter,
   parseIpAddr,
@@ -161,5 +162,38 @@ describe('parseDnsServers', () => {
       '192.168.70.1',
       '8.8.8.8'
     ])
+  })
+})
+
+// --- WLAN: what the scan cache is allowed to say (documented format, not live-verified) ---
+
+function iwBlock(bssid: string, ageMs: number, freq = 2412): string {
+  return `BSS ${bssid}(on wlan0)\n\tfreq: ${freq}\n\tsignal: -60.00 dBm\n\tlast seen: ${ageMs} ms ago\n\tSSID: x\n`
+}
+
+describe('dumpToOutcome', () => {
+  it('keeps what the latest sweep heard and drops what only the cache remembers', () => {
+    const out = dumpToOutcome(
+      iwBlock('aa:aa:aa:aa:aa:aa', 500) + iwBlock('bb:bb:bb:bb:bb:bb', 25000)
+    )
+    expect(out.status).toBe('ok')
+    if (out.status !== 'ok') return
+    expect(out.sightings.map((s) => s.bssid)).toEqual(['aa:aa:aa:aa:aa:aa'])
+    expect(out.sightings[0]).toMatchObject({ channel: 1, band: '2.4', rssi: -60 })
+  })
+
+  it('falls back to the whole cache rather than a blank sky when nothing is fresh', () => {
+    const out = dumpToOutcome(
+      iwBlock('aa:aa:aa:aa:aa:aa', 20000) + iwBlock('bb:bb:bb:bb:bb:bb', 25000, 5180)
+    )
+    if (out.status !== 'ok') throw new Error(out.message)
+    expect(out.sightings).toHaveLength(2)
+    expect(out.sightings[1]).toMatchObject({ channel: 36, band: '5' })
+  })
+
+  it('places an entry without a frequency on an unknown band instead of dropping it', () => {
+    const out = dumpToOutcome('BSS cc:cc:cc:cc:cc:cc(on wlan0)\n\tsignal: -70.00 dBm\n\tSSID: y\n')
+    if (out.status !== 'ok') throw new Error(out.message)
+    expect(out.sightings[0]).toMatchObject({ channel: 0, band: '?' })
   })
 })

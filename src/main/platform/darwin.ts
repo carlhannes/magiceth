@@ -1,9 +1,12 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { run } from '../util/run-command'
 import { normalizeMac } from '../../shared/mac'
 import { cidrToDotted, isValidIpv4 } from '../../shared/net'
 import { shQuote } from '../privilege'
+import { parseWifiHelper } from './wifi-helper'
 import type { ElevatedPlan } from '../privilege'
-import type { PingOptions, PingSpec, PlatformOps, RawAdapter } from './index'
+import type { PingOptions, PingSpec, PlatformOps, RawAdapter, WifiScanOutcome } from './index'
 import type { NetInfo, Profile } from '../../shared/types'
 
 // macOS. Verified against real output (ASIX AX88179A dongle):
@@ -386,6 +389,64 @@ function speedTestBind(device: string): string | undefined {
   return device || undefined
 }
 
+// --- WLAN mode: the Wi-Fi helper .app ---
+//
+// The scan itself is done by a small Swift helper shipped as a .app bundle, because macOS reveals
+// BSSIDs and beacon information elements only to a process holding a Location Services grant, and
+// only ever offers that grant to a real bundle. See docs/WIFI-FINDINGS.md for the evidence.
+
+const HELPER_TIMEOUT_MS = 30_000
+
+const PERMISSION_MESSAGE =
+  'macOS hides access point details until magiceth has Location access. Approve the prompt, then scan again.'
+
+/**
+ * Where the helper bundle lives. The development copy wins when it is present, which is exactly
+ * right: it only exists in a checkout, never inside a packaged app.
+ */
+export function helperPath(): string {
+  const executable = 'magiceth-wifi.app/Contents/MacOS/magiceth-wifi'
+  const dev = join(__dirname, '../../resources/wifi-helper/build', executable)
+  if (existsSync(dev)) return dev
+  return join(process.resourcesPath ?? '', 'wifi-helper', executable)
+}
+
+async function scanWifi(device: string): Promise<WifiScanOutcome> {
+  const helper = helperPath()
+  if (!existsSync(helper)) {
+    return {
+      status: 'no-helper',
+      message: 'The Wi-Fi helper is missing — run scripts/build-wifi-helper.sh.'
+    }
+  }
+  // A named interface wins; without one the helper picks the default Wi-Fi card itself.
+  const args = device ? ['--interface', device] : []
+  const result = await run(helper, args, { timeoutMs: HELPER_TIMEOUT_MS })
+  if (!result.stdout.trim()) {
+    return {
+      status: 'error',
+      message: result.stderr.trim() || 'The Wi-Fi helper produced no output.'
+    }
+  }
+  return parseWifiHelper(result.stdout, PERMISSION_MESSAGE)
+}
+
+/**
+ * Raise the Location Services dialog.
+ *
+ * It has to go through LaunchServices: a binary started as a child of another process is
+ * attributed to that parent by TCC, so asking from there is a silent no-op — no dialog, no error.
+ * Launched this way the helper is responsible for itself and macOS prompts properly. Fire and
+ * forget; the next scan picks up the answer.
+ */
+function requestWifiAccess(): void {
+  const bundle = helperPath().replace(/\/Contents\/MacOS\/.*$/, '')
+  void run('open', ['-a', bundle], { timeoutMs: 5000 })
+}
+
+/** Each scan is one short-lived helper process, so there is nothing to tear down. */
+function endWifiSession(): void {}
+
 export const darwin: PlatformOps = {
   id: 'darwin',
   enumerateAdapters,
@@ -393,5 +454,8 @@ export const darwin: PlatformOps = {
   pingCommand,
   speedTestBind,
   buildSetMacPlan,
-  buildProfilePlan
+  buildProfilePlan,
+  scanWifi,
+  requestWifiAccess,
+  endWifiSession
 }

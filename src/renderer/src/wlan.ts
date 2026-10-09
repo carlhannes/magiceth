@@ -145,7 +145,7 @@ function statusLine(): string {
     // Name the stem, not a file: the time log is being appended to right now and the aggregate
     // does not exist until the recording stops, so naming either one alone would be wrong.
     const where = result.savedTo
-      ? `saving as ${result.savedTo.replace(/^.*\//, '').replace(/\.agg\.csv$/, '')}`
+      ? `saving as ${result.savedTo.replace(/^.*[\\/]/, '').replace(/\.agg\.csv$/, '')}`
       : 'NOT being saved — could not write to Documents'
     return `Recording ${clock(result.elapsedSec)} · ${result.scans} scans · ${count}, ${aps} · ${where}`
   }
@@ -310,7 +310,7 @@ function renderBuckets(): string {
   return out.join('')
 }
 
-/** Recordings written to ~/Documents/magiceth, newest first. */
+/** Recordings written to Documents/magiceth, newest first. */
 function renderSavedList(): string {
   if (savedList.length === 0) {
     return `<div class="section-title">Saved recordings</div>
@@ -327,7 +327,7 @@ function renderSavedList(): string {
       </li>`
     )
     .join('')
-  return `<div class="section-title">Saved recordings — ~/Documents/magiceth</div>
+  return `<div class="section-title">Saved recordings — Documents/magiceth</div>
     <ul class="profiles">${items}</ul>
     <p class="hint2"><b>Enter</b> open · <b>F</b> show in folder · <b>S</b> close</p>`
 }
@@ -393,9 +393,10 @@ async function resolveDevice(): Promise<string> {
   if (device) return device
   try {
     const adapters: Adapter[] = await window.api.listAdapters()
-    device = adapters.find((a) => a.kind === 'wifi')?.device ?? 'en0'
+    // '' means "whatever the OS considers its Wi-Fi card" — main resolves it per platform.
+    device = adapters.find((a) => a.kind === 'wifi')?.device ?? ''
   } catch {
-    device = 'en0'
+    device = ''
   }
   return device
 }

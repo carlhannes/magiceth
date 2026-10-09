@@ -1,23 +1,20 @@
-// WLAN scanning. macOS only for now.
-//
-// The scan itself is done by a small Swift helper shipped as a .app bundle, because macOS reveals
-// BSSIDs and beacon information elements only to a process holding a Location Services grant, and
-// only ever offers that grant to a real bundle. See docs/WIFI-FINDINGS.md for the evidence.
+// WLAN scanning: the active scan, the recording loop, and the one place a sighting becomes an
+// access point with a vendor. How the air is actually read differs per OS and lives behind
+// PlatformOps.scanWifi — the macOS helper .app, `iw` on Linux, a PowerShell helper on Windows —
+// so nothing in here knows which one it is talking to.
 //
 // The shape of this module is survey.ts's: one active run held at module level, every asynchronous
 // continuation re-checking that it is still the current one, and a typed result with a human
 // message on every degraded path rather than a thrown error.
 
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
-import { run } from '../util/run-command'
-import { readBeacon } from './ie80211'
+import { getPlatform } from '../platform'
+import type { PlatformOps, WifiScanOutcome, WifiSighting } from '../platform'
 import { resolveVendor } from './oui'
 import { channelBuckets, channelSummary, foldSighting, groupBySsid, toTracks } from './wifi-model'
 import type { TrackStore } from './wifi-model'
 import { appendSnapshot, beginRecording, finishRecording } from './recordings'
 import type { RecordingPaths } from './recordings'
-import type { WifiBand, WifiBss, WifiScanResult } from '../../shared/types'
+import type { WifiBss, WifiScanResult } from '../../shared/types'
 
 /**
  * Gap between scans. A scan takes about five seconds by itself — the radio has to visit every
@@ -39,51 +36,6 @@ const MAX_SECONDS = 1800
  */
 const SNAPSHOT_MS = 2000
 
-const HELPER_TIMEOUT_MS = 30_000
-
-interface HelperNetwork {
-  ssid?: string
-  bssid?: string
-  rssi: number
-  noise?: number
-  channel?: number
-  band?: number
-  width?: number
-  ie?: string
-  countryCode?: string
-}
-
-interface HelperOutput {
-  status: string
-  auth?: string
-  networks?: HelperNetwork[]
-  message?: string
-}
-
-/**
- * Where the helper bundle lives. The development copy wins when it is present, which is exactly
- * right: it only exists in a checkout, never inside a packaged app.
- */
-export function helperPath(): string {
-  const executable = 'magiceth-wifi.app/Contents/MacOS/magiceth-wifi'
-  const dev = join(__dirname, '../../resources/wifi-helper/build', executable)
-  if (existsSync(dev)) return dev
-  return join(process.resourcesPath ?? '', 'wifi-helper', executable)
-}
-
-/** CWChannelBand: 1 = 2.4 GHz, 2 = 5 GHz, 3 = 6 GHz. */
-export function bandOf(raw?: number): WifiBand {
-  if (raw === 1) return '2.4'
-  if (raw === 2) return '5'
-  if (raw === 3) return '6'
-  return '?'
-}
-
-/** CWChannelWidth: 1 = 20, 2 = 40, 3 = 80, 4 = 160 MHz. */
-export function widthOf(raw?: number): number | undefined {
-  return { 1: 20, 2: 40, 3: 80, 4: 160 }[raw ?? 0]
-}
-
 /**
  * The second-least-significant bit of the first octet is the locally-administered bit. Modern APs
  * set it on the virtual BSSIDs they invent per SSID, and no OUI lookup can succeed for one — so it
@@ -94,20 +46,20 @@ export function isLocallyAdministered(bssid: string): boolean {
   return Number.isFinite(first) && (first & 0x02) !== 0
 }
 
-/** One helper record to one access point. Pure, so the whole mapping is testable from a fixture. */
-export function toBss(n: HelperNetwork): WifiBss | undefined {
-  if (!n.bssid) return undefined
-  const beacon = n.ie ? readBeacon(n.ie) : { vendorOuis: [] as string[] }
-  const bssid = n.bssid.toLowerCase()
+/** One sighting to one access point. Pure, so the whole mapping is testable from a fixture. */
+export function toBss(s: WifiSighting): WifiBss {
+  const beacon = s.beacon
+  const bssid = s.bssid.toLowerCase()
   return {
     bssid,
-    // The SSID element in the beacon is the authoritative one; CoreWLAN's copy is a convenience.
-    ssid: n.ssid || beacon.ssid || '',
-    rssi: n.rssi,
-    noise: n.noise === 0 ? undefined : n.noise,
-    channel: n.channel ?? 0,
-    band: bandOf(n.band),
-    widthMhz: widthOf(n.width),
+    // The SSID element in the beacon is the authoritative one; the OS's copy is a convenience.
+    ssid: s.ssid || beacon.ssid || '',
+    rssi: s.rssi,
+    noise: s.noise,
+    channel: s.channel,
+    band: s.band,
+    // The OS's own width when it has one (CoreWLAN); the beacon's operation elements otherwise.
+    widthMhz: s.widthMhz ?? beacon.widthMhz,
     phy: beacon.phy,
     streams: beacon.streams,
     security: beacon.security ?? 'Open',
@@ -119,11 +71,12 @@ export function toBss(n: HelperNetwork): WifiBss | undefined {
       beacon.manufacturer ?? resolveVendor(bssid, isLocallyAdministered(bssid), beacon.vendorOuis),
     model: beacon.model,
     locallyAdministered: isLocallyAdministered(bssid),
-    countryCode: n.countryCode
+    countryCode: s.countryCode ?? beacon.countryCode
   }
 }
 
 interface ActiveScan {
+  platform: PlatformOps
   device: string
   startedAt: number
   scans: number
@@ -195,41 +148,26 @@ function fail(device: string, status: WifiScanResult['status'], message: string)
   }
 }
 
-/**
- * Raise the Location Services dialog.
- *
- * It has to go through LaunchServices: a binary started as a child of another process is
- * attributed to that parent by TCC, so asking from there is a silent no-op — no dialog, no error.
- * Launched this way the helper is responsible for itself and macOS prompts properly. Fire and
- * forget; the next scan picks up the answer.
- */
-function requestPermission(): void {
-  const bundle = helperPath().replace(/\/Contents\/MacOS\/.*$/, '')
-  void run('open', ['-a', bundle], { timeoutMs: 5000 })
-}
-
-async function scanOnce(device: string): Promise<HelperOutput | string> {
-  const helper = helperPath()
-  if (!existsSync(helper)) {
-    return 'The Wi-Fi helper is missing — run scripts/build-wifi-helper.sh.'
-  }
-  const result = await run(helper, ['--interface', device], { timeoutMs: HELPER_TIMEOUT_MS })
-  if (!result.stdout.trim()) {
-    return result.stderr.trim() || 'The Wi-Fi helper produced no output.'
-  }
+/** The OS this is running on, or null where none of the three implementations applies. */
+function platform(): PlatformOps | null {
   try {
-    return JSON.parse(result.stdout) as HelperOutput
+    return getPlatform()
   } catch {
-    return 'The Wi-Fi helper produced output that could not be read.'
+    return null
   }
 }
 
-function ingest(s: ActiveScan, output: HelperOutput): void {
-  const seen: WifiBss[] = []
-  for (const raw of output.networks ?? []) {
-    const bss = toBss(raw)
-    if (bss) seen.push(bss)
+/** One sweep. The platform promises never to throw, but a bug there must not take the loop down. */
+async function scanOnce(p: PlatformOps, device: string): Promise<WifiScanOutcome> {
+  try {
+    return await p.scanWifi(device)
+  } catch (err) {
+    return { status: 'error', message: `Wi-Fi scan failed: ${String(err)}` }
   }
+}
+
+function ingest(s: ActiveScan, sightings: WifiSighting[]): void {
+  const seen = sightings.map(toBss)
   s.latest = seen
   s.scans++
   const at = elapsed(s)
@@ -256,10 +194,10 @@ function loop(s: ActiveScan): void {
   }
   s.timer = setTimeout(() => {
     if (active !== s) return
-    void scanOnce(s.device).then((output) => {
+    void scanOnce(s.platform, s.device).then((out) => {
       if (active !== s) return
-      if (typeof output !== 'string' && output.status === 'ok') {
-        ingest(s, output)
+      if (out.status === 'ok') {
+        ingest(s, out.sightings)
         // Report the state as it is now, not as it was when this scan was launched. A stop that
         // lands while a scan is in flight would otherwise be undone by the result arriving after
         // it and announcing `running: true` again.
@@ -283,31 +221,28 @@ export async function startWifiScan(
   if (previous?.recording) stopWifiScan()
   const mine = ++generation
 
-  if (process.platform !== 'darwin') {
-    return fail(device, 'unsupported', 'Wi-Fi scanning is macOS-only in this version.')
+  const p = platform()
+  if (!p) {
+    return fail(device, 'unsupported', `Wi-Fi scanning is not available on ${process.platform}.`)
   }
 
-  const output = await scanOnce(device)
+  const out = await scanOnce(p, device)
   // Someone pressed again while this scan was in the air; that call owns the state now.
   if (mine !== generation)
     return active
       ? snapshot(active, active.recording)
       : fail(device, 'error', 'Superseded by a newer scan.')
-  if (typeof output === 'string') return fail(device, 'no-helper', output)
-  if (output.status !== 'ok') {
-    requestPermission()
-    return fail(
-      device,
-      'needs-permission',
-      output.message ??
-        'macOS hides access point details until magiceth has Location access. Approve the prompt, then scan again.'
-    )
+  if (out.status !== 'ok') {
+    // Only a refusal is worth asking about; a missing tool or a broken helper is not a prompt.
+    if (out.status === 'needs-permission') p.requestWifiAccess()
+    return fail(device, out.status, out.message)
   }
 
   // Keep the history across a one-off scan so repeated presses build a picture; a new recording
   // starts from nothing, because that is what pressing record means.
   const keep = mode === 'once' && previous ? previous : null
   const s: ActiveScan = {
+    platform: p,
     device,
     startedAt: keep?.device === device ? keep.startedAt : Date.now(),
     scans: keep?.device === device ? keep.scans : 0,
@@ -322,7 +257,7 @@ export async function startWifiScan(
     onUpdate
   }
   active = s
-  ingest(s, output)
+  ingest(s, out.sightings)
   if (s.recording) loop(s)
   return snapshot(s, s.recording)
 }
@@ -341,4 +276,9 @@ export function stopWifiScan(): WifiScanResult | null {
     if (!written) s.paths = undefined
   }
   return snapshot(s, false)
+}
+
+/** On quit: stop whatever long-lived thing the OS half may have started (the Linux scan loop). */
+export function endWifiSession(): void {
+  platform()?.endWifiSession()
 }

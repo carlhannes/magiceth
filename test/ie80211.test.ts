@@ -3,51 +3,20 @@ import {
   hexToBytes,
   htStreams,
   parseBssLoad,
+  parseCountry,
   parseElements,
+  parseHeOperation,
+  parseHtOperation,
   parseRsn,
+  parseVhtOperation,
+  phyLabel,
   readBeacon,
-  vhtStreams
+  securityLabel,
+  vhtStreams,
+  vhtWidth
 } from '../src/main/capabilities/ie80211'
+import { AP_24_BUSY, AP_5G_4X4, AP_6E_2X2 } from './fixtures/beacons'
 
-// Fixtures are real beacons captured from the air on 2026-09-29 with the CoreWLAN helper, not
-// hand-written bytes. A beacon nobody here designed is the only kind that catches the things
-// nobody here would have thought to fake.
-
-/** Real beacon captured 2026-09-29: 1c:0b:8b:f0:2d:39 (tardis_nomap), channel 48. */
-const AP_6E_2X2 =
-  '000c7461726469735f6e6f6d617001088c129824b048606c050401030000070a534504240817640b1e00200100230212' +
-  '0030140100000fac040100000fac040100000fac08cc000b050200042778460573da00000c2d1aef0903ffff00000000' +
-  '00000000000001000000000000000000003d16300704000000000000000000000000000000000000007f0a04000f0200' +
-  '0000400040bf0cf6f98933faff0000faff0020c005012a32fcffc305032e2e2e2ef40120ff21230d01181a40100c6300' +
-  '88ff49811c110800fafffafffafffaff791cc7711cc771ff0724f43f000dfcffff022703ff0e260903a4ff27a4ff4243' +
-  'ff6232ffff126c1700e01f09001876800600222222222222ff066a0411000000dd178cfdf00101020100020101030301' +
-  '010004010109020303dd180050f2020101890003a4000027a4000042435e0062322f00dd0a00156d0155374c697465dd' +
-  '1300156d00010100010293a681061c0b8bf02d37'
-
-/** Real beacon captured 2026-09-29: 84:78:48:1c:dd:37 (tardis_nomap), channel 128. */
-const AP_5G_4X4 =
-  '000c7461726469735f6e6f6d617001088c129824b048606c070a534504240817640b1e00200100230218003014010000' +
-  '0fac040100000fac040100000fac08cc000b05000001127a460573da00000c2d1aef0903ffffffff0000000000000000' +
-  '01000000000000000000003d16800700000000000000000000000000000000000000007f0a04000f02000000400040bf' +
-  '0cf6f98b33aaff0000aaff0020c005017a72fcffc305033c3c3c3cc911000d8655ff8478481cdd39c526a7f84a14f401' +
-  '20ff27230d01181a40100c634088ff5b9d1c110a00aaffaaffaaffaaff7b1cc7711cc7711cc7711cc771ff0724f43f00' +
-  '26fcffff022703ff0e260103a4ff27a4ff4243ff6232ffff126c1700e01f1be01877803600444444444444ff066a0411' +
-  '000000dd178cfdf00101020100020101030301010004010109020f0fdd180050f2020101810003a4000027a400004243' +
-  '5e0062322f00dd168cfdf0040000494c510c05203000cb17000009110000dd078cfdf004010102dd0c00156d01553750' +
-  '726f584753dd3900156d000101000102a4a681068478481cdd36892434393135333139342d666436612d346438622d38' +
-  '6265372d626635663138336433306161'
-
-/** Real beacon captured 2026-09-29: 8a:78:48:1c:dd:38 (tdc_nomap), channel 1. */
-const AP_24_BUSY =
-  '00097464635f6e6f6d6170010882848b960c1218240301010706534504010d14230206002a010232043048606c301401' +
-  '00000fac040100000fac040100000fac020c000b050b004cb055460573da00000c2d1aad0903ffff0000000000000000' +
-  '000001000000000000000000003d16010005000000000000000000000000000000000000007f0a040000020000004000' +
-  '40c911000d8655ff8478481cdd39c526a7f84814ff1d230d01181a4010006040880f419d1c110a00fafffaff791cc771' +
-  '1cc771ff0724f43f0025fcffff022703ff0e260703a4ff27a4ff4243ff6232ffff0f6c9700e00101e018770012002222' +
-  '22ff066a0411000000dd178cfdf00101020100020101030301010004010109020300dd180050f2020101870003a40000' +
-  '27a4000042435e0062322f00dd168cfdf0040000494c510c05203000cb17000009110000dd078cfdf004010102dd3900' +
-  '156d000101000102a4a681068478481cdd36892434393135333139342d666436612d346438622d386265372d62663566' +
-  '3138336433306161'
 describe('hexToBytes', () => {
   it('reads a byte string', () => {
     expect([...hexToBytes('000b11ff')]).toEqual([0, 11, 17, 255])
@@ -142,6 +111,74 @@ describe('parseRsn', () => {
   })
 })
 
+describe('channel width from the operation elements', () => {
+  it('reads 20 and 40 MHz off the HT Operation secondary channel offset', () => {
+    expect(parseHtOperation(hexToBytes('0600'))).toEqual({ primary: 6, widthMhz: 20 })
+    expect(parseHtOperation(hexToBytes('0605'))).toEqual({ primary: 6, widthMhz: 40 })
+    expect(parseHtOperation(hexToBytes('0607'))).toEqual({ primary: 6, widthMhz: 40 })
+    expect(parseHtOperation(hexToBytes('06'))).toBeUndefined()
+  })
+
+  it('tells 80 from 160 by the distance between the centre segments, not the width field', () => {
+    expect(vhtWidth(1, 42, 0)).toBe(80)
+    expect(vhtWidth(1, 42, 50)).toBe(160)
+    expect(vhtWidth(1, 106, 90)).toBe(160)
+    // The deprecated encodings older gear still sends.
+    expect(vhtWidth(2, 50, 0)).toBe(160)
+    expect(vhtWidth(3, 42, 106)).toBe(160)
+    // Width 0 means the HT Operation element decides.
+    expect(vhtWidth(0, 0, 0)).toBeUndefined()
+    expect(parseVhtOperation(hexToBytes('012a32'))).toEqual({ widthMhz: 160 })
+    expect(parseVhtOperation(hexToBytes('01'))).toBeUndefined()
+  })
+
+  it('reads the 6 GHz width out of HE Operation only when the parameters say it is there', () => {
+    // Documented layout (802.11ax 9.4.2.249), not a capture: ext id, params with bit 17 set,
+    // colour, MCS set, then the 6 GHz info: primary 37, control width 3 (160), segments 47/55.
+    expect(
+      parseHeOperation(
+        hexToBytes('24' + '000002' + '0d' + 'fcff' + '25' + '03' + '2f' + '37' + '00')
+      )
+    ).toEqual({
+      widthMhz: 160
+    })
+    expect(
+      parseHeOperation(
+        hexToBytes('24' + '000002' + '0d' + 'fcff' + '25' + '02' + '2f' + '00' + '00')
+      )
+    ).toEqual({
+      widthMhz: 80
+    })
+    // Bit 17 clear: nothing to read, and that is not an error.
+    expect(parseHeOperation(hexToBytes('24' + 'f43f00' + '0d' + 'fcff'))).toEqual({})
+    // Declared but truncated.
+    expect(parseHeOperation(hexToBytes('24' + '000002' + '0d' + 'fcff' + '25'))).toBeUndefined()
+  })
+})
+
+describe('labels shared by every source', () => {
+  it('names the suites the way parseRsn always has', () => {
+    const none = { sae: false, psk: false, enterprise: false, owe: false }
+    expect(securityLabel({ ...none, psk: true })).toBe('WPA2-Personal')
+    expect(securityLabel({ ...none, sae: true })).toBe('WPA3-Personal')
+    expect(securityLabel({ ...none, sae: true, psk: true })).toBe('WPA2/WPA3-Personal')
+    expect(securityLabel({ ...none, enterprise: true })).toBe('WPA2/WPA3-Enterprise')
+    expect(securityLabel({ ...none, owe: true })).toBe('Enhanced Open (OWE)')
+  })
+
+  it('names the newest PHY present', () => {
+    expect(phyLabel({ ht: true, vht: true, he: true, eht: true })).toBe('802.11be')
+    expect(phyLabel({ ht: true, vht: true, he: true, eht: false })).toBe('802.11ax')
+    expect(phyLabel({ ht: true, vht: false, he: false, eht: false })).toBe('802.11n')
+    expect(phyLabel({ ht: false, vht: false, he: false, eht: false })).toBeUndefined()
+  })
+
+  it('reads a country and rejects a byte pair that is not one', () => {
+    expect(parseCountry(hexToBytes('534504'))).toBe('SE')
+    expect(parseCountry(hexToBytes('0000'))).toBeUndefined()
+  })
+})
+
 describe('readBeacon against real captures', () => {
   it('reads a Wi-Fi 7 access point with a busy 2.4 GHz channel', () => {
     const facts = readBeacon(AP_24_BUSY)
@@ -155,6 +192,8 @@ describe('readBeacon against real captures', () => {
     expect(facts.security).toBe('WPA2-Personal')
     // 00:15:6d is Ubiquiti — present even though the BSSID is a randomised one.
     expect(facts.vendorOuis).toContain('00156d')
+    expect(facts.widthMhz).toBe(20)
+    expect(facts.countryCode).toBe('SE')
   })
 
   it('reads a 4x4 radio on 5 GHz', () => {
@@ -163,6 +202,9 @@ describe('readBeacon against real captures', () => {
     expect(facts.streams).toBe(4)
     expect(facts.clients).toBe(0)
     expect(facts.utilizationPct).toBe(0)
+    // VHT Operation says width 1 with segments 122 and 114: the newer 160 MHz encoding, which is
+    // also what CoreWLAN reported for this access point.
+    expect(facts.widthMhz).toBe(160)
   })
 
   it('reads a 2x2 radio and its channel load', () => {
@@ -173,6 +215,14 @@ describe('readBeacon against real captures', () => {
     // The same physical access point as the WPA2 capture above, on a different SSID that does
     // advertise SAE — so the security readout follows the beacon, not the hardware.
     expect(facts.security).toBe('WPA3-Personal')
+    // Segments 42 and 50, eight apart: 160 MHz, matching CoreWLAN.
+    expect(facts.widthMhz).toBe(160)
+  })
+
+  it('calls an access point with only the old WPA element WPA, and one with neither open', () => {
+    // Documented layout: SSID, then a vendor element 00:50:f2 type 01 (WPA) with no RSN.
+    expect(readBeacon('00026869' + 'dd0a0050f20101000050f202').security).toBe('WPA')
+    expect(readBeacon('00026869').security).toBeUndefined()
   })
 
   it('reports no model when the access point broadcasts no WPS element', () => {

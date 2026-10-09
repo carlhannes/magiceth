@@ -1,9 +1,12 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { run } from '../util/run-command'
 import { normalizeMac } from '../../shared/mac'
 import { cidrToDotted, isValidIpv4 } from '../../shared/net'
 import { psEscapeDouble } from '../privilege'
+import { parseWifiHelper } from './wifi-helper'
 import type { ElevatedPlan } from '../privilege'
-import type { PingOptions, PingSpec, PlatformOps, RawAdapter } from './index'
+import type { PingOptions, PingSpec, PlatformOps, RawAdapter, WifiScanOutcome } from './index'
 import type { NetInfo, Profile } from '../../shared/types'
 
 // Windows. Format per documentation — verify on real hardware (spike):
@@ -235,6 +238,64 @@ function speedTestBind(_device: string, srcIp?: string): string | undefined {
   return srcIp
 }
 
+// --- WLAN mode — documented API, not yet run on hardware (see docs/WIFI-FINDINGS.md). ---
+//
+// A PowerShell helper (resources/wifi-helper/wifi-scan.ps1) calls the native WLAN API, which is
+// the only thing on Windows that reports real dBm and the raw beacon elements, and prints the same
+// JSON the macOS helper does. Since Windows 11 24H2 the API is gated behind Location consent, and
+// a script hosted by powershell.exe — which lives in System32 — can never raise the consent prompt,
+// so a refusal opens the Location settings page instead.
+
+/** Compile of the P/Invoke bindings (~2 s), a four-second sweep, and the marshalling. */
+const HELPER_TIMEOUT_MS = 25_000
+
+const PERMISSION_MESSAGE =
+  'Windows hides access points until magiceth may use your location. In the Settings page that just opened, turn on Location and "Let desktop apps access your location", then scan again.'
+
+/** The development checkout wins when present; a packaged app finds it among its resources. */
+export function helperPath(): string {
+  const script = 'wifi-helper/wifi-scan.ps1'
+  const dev = join(__dirname, '../../resources', script)
+  if (existsSync(dev)) return dev
+  return join(process.resourcesPath ?? '', script)
+}
+
+async function scanWifi(device: string): Promise<WifiScanOutcome> {
+  const helper = helperPath()
+  if (!existsSync(helper)) {
+    return {
+      status: 'no-helper',
+      message: 'The Wi-Fi helper script (wifi-helper/wifi-scan.ps1) is missing from the app.'
+    }
+  }
+  // -File, not -Command, so the adapter name travels as an argument and never through a parser.
+  const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helper]
+  if (device) args.push('-Interface', device)
+  const res = await run('powershell', args, { timeoutMs: HELPER_TIMEOUT_MS })
+  if (!res.stdout.trim()) {
+    const why = res.stderr.trim()
+    return why
+      ? { status: 'error', message: `The Wi-Fi helper failed: ${why}` }
+      : {
+          status: 'no-tool',
+          message: 'Windows PowerShell could not be started, so nothing can scan.'
+        }
+  }
+  return parseWifiHelper(res.stdout, PERMISSION_MESSAGE)
+}
+
+/** Open the Location privacy page; the message tells the user which two switches to turn on. */
+function requestWifiAccess(): void {
+  void run(
+    'powershell',
+    ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process ms-settings:privacy-location'],
+    { timeoutMs: 5000 }
+  )
+}
+
+/** Each scan is one short-lived helper process, so there is nothing to tear down. */
+function endWifiSession(): void {}
+
 export const win32: PlatformOps = {
   id: 'win32',
   enumerateAdapters,
@@ -242,5 +303,8 @@ export const win32: PlatformOps = {
   pingCommand,
   speedTestBind,
   buildSetMacPlan,
-  buildProfilePlan
+  buildProfilePlan,
+  scanWifi,
+  requestWifiAccess,
+  endWifiSession
 }

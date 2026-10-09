@@ -267,6 +267,24 @@ export function channelCentreMhz(channel: number, band: WifiBand): number | unde
 }
 
 /**
+ * The inverse: which channel a centre frequency is, and on which band. Linux and Windows report a
+ * frequency rather than a channel number, and it is the band that decides how 2.4 and 5 GHz
+ * channel numbers that collide with 6 GHz ones are told apart. Channel 2 on 6 GHz sits at 5935,
+ * off the 5950 + 5n grid every other 6 GHz channel follows; nothing else is special-cased.
+ */
+export function channelFromMhz(mhz: number): { channel: number; band: WifiBand } | undefined {
+  if (!Number.isInteger(mhz)) return undefined
+  if (mhz === 2484) return { channel: 14, band: '2.4' }
+  if (mhz >= 2412 && mhz <= 2472 && (mhz - 2407) % 5 === 0) {
+    return { channel: (mhz - 2407) / 5, band: '2.4' }
+  }
+  if (mhz >= 5150 && mhz <= 5920 && mhz % 5 === 0) return { channel: (mhz - 5000) / 5, band: '5' }
+  if (mhz === 5935) return { channel: 2, band: '6' }
+  if (mhz >= 5955 && mhz <= 7115 && mhz % 5 === 0) return { channel: (mhz - 5950) / 5, band: '6' }
+  return undefined
+}
+
+/**
  * The stretch of spectrum an access point actually occupies.
  *
  * Approximation worth knowing about: CoreWLAN reports the *primary* channel, not the centre of a

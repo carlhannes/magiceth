@@ -4,6 +4,7 @@ import {
   accumulate,
   channelBuckets,
   channelCentreMhz,
+  channelFromMhz,
   channelSummary,
   distinctRadios,
   groupBySsid,
@@ -413,5 +414,41 @@ describe('channelBuckets', () => {
       bss({ bssid: 'c', channel: 1 })
     ])
     expect(channelBuckets(tracks)[0].channels).toEqual([1, 5])
+  })
+})
+
+describe('channelFromMhz', () => {
+  it('reads the channel and band off a centre frequency', () => {
+    expect(channelFromMhz(2412)).toEqual({ channel: 1, band: '2.4' })
+    expect(channelFromMhz(2484)).toEqual({ channel: 14, band: '2.4' })
+    expect(channelFromMhz(5180)).toEqual({ channel: 36, band: '5' })
+    expect(channelFromMhz(5825)).toEqual({ channel: 165, band: '5' })
+    expect(channelFromMhz(5935)).toEqual({ channel: 2, band: '6' })
+    expect(channelFromMhz(5955)).toEqual({ channel: 1, band: '6' })
+    expect(channelFromMhz(7115)).toEqual({ channel: 233, band: '6' })
+  })
+
+  it('refuses frequencies off the grid rather than inventing a channel', () => {
+    expect(channelFromMhz(2413)).toBeUndefined()
+    expect(channelFromMhz(0)).toBeUndefined()
+    expect(channelFromMhz(5180.5)).toBeUndefined()
+    expect(channelFromMhz(3000)).toBeUndefined()
+  })
+
+  it('round-trips with channelCentreMhz on the channels anyone deploys', () => {
+    const cases: [number, '2.4' | '5' | '6'][] = [
+      [1, '2.4'],
+      [6, '2.4'],
+      [11, '2.4'],
+      [36, '5'],
+      [100, '5'],
+      [149, '5'],
+      [1, '6'],
+      [37, '6'],
+      [233, '6']
+    ]
+    for (const [channel, band] of cases) {
+      expect(channelFromMhz(channelCentreMhz(channel, band)!)).toEqual({ channel, band })
+    }
   })
 })

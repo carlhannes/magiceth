@@ -326,7 +326,8 @@ export interface SavedRecording {
   buckets: ChannelBucket[]
 }
 
-export type WifiScanStatus = 'ok' | 'unsupported' | 'no-helper' | 'needs-permission' | 'error'
+export type WifiScanStatus =
+  'ok' | 'unsupported' | 'no-helper' | 'no-tool' | 'needs-permission' | 'needs-privilege' | 'error'
 
 export interface WifiScanResult {
   status: WifiScanStatus

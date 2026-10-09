@@ -32,6 +32,25 @@ The first scan raises a Location prompt. It only appears when the helper is laun
 LaunchServices, because TCC attributes a shell-spawned child to the terminal — so a scan run
 straight from a shell will silently return nil BSSIDs rather than prompting.
 
+### The same gate on Windows, with a twist
+
+Since Windows 11 24H2 the WLAN API returns `ERROR_ACCESS_DENIED` (5) without Location consent, and
+the one-time consent prompt is only raised for a process **outside `C:\Windows\System32`**. The
+helper is a script hosted by `powershell.exe`, which lives inside it, so it can never prompt: a
+refusal opens `ms-settings:privacy-location` and the message names the two switches. Do not spend
+time making the script prompt; a compiled helper outside System32 is the only route, and it is in
+the backlog. Run the script by hand with `powershell -ExecutionPolicy Bypass -File
+resources\wifi-helper\wifi-scan.ps1` to see the raw envelope.
+
+### Linux: never `nmcli … --rescan yes`
+
+NetworkManager rejects a rescan inside ten seconds of the previous one, and `nmcli device wifi list
+--rescan yes` then sits for fifteen seconds waiting for results that never come. The code fires
+`nmcli device wifi rescan`, ignores its answer, waits, and reads `iw dev <if> scan dump` — which
+needs no privilege, unlike `iw … scan` itself. Reading the dump returns instantly from a cache, so
+a loop that does not wait for a sweep re-reads the same entries as new sightings; that is why
+`scanWifi` spaces calls out and drops entries older than fifteen seconds.
+
 ## Running the app: kill every Electron instance, not just Vite
 
 **This is the one that will waste your time.** `npm run dev` starts Vite _and_ an Electron app as a

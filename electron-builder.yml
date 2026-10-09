@@ -7,14 +7,14 @@ files:
 # chipsets.json is bundled into the main bundle (via import), so no extra runtime resources are needed.
 # The app has no production dependencies — everything is bundled by electron-vite/electron-builder.
 
-# The exception is the macOS Wi-Fi helper, which cannot be bundled into JavaScript: it is a signed
-# .app of its own, because macOS grants Location access — and therefore BSSIDs and beacon
-# information elements — only to a process with a bundle identity. Build it first with
+# The exception is the Wi-Fi helpers, which cannot be bundled into JavaScript. Each platform ships
+# only its own — a top-level extraResources would be merged into every build, and a Windows build
+# made on a Mac would carry the macOS bundle. Linux needs none: `iw` and `nmcli` are system tools.
+#
+# macOS: a signed .app of its own, because macOS grants Location access — and therefore BSSIDs and
+# beacon information elements — only to a process with a bundle identity. Build it first with
 # scripts/build-wifi-helper.sh; see docs/WIFI-FINDINGS.md for why it has to work this way.
-extraResources:
-  - from: resources/wifi-helper/build/magiceth-wifi.app
-    to: wifi-helper/magiceth-wifi.app
-    filter: ['**/*']
+# Windows: a PowerShell script calling the native WLAN API, run as-is.
 
 # Internal tool -> unsigned. No macOS notarization, no Windows certificate.
 mac:
@@ -22,7 +22,14 @@ mac:
   target:
     - target: dmg
       arch: [arm64, x64]
+  extraResources:
+    - from: resources/wifi-helper/build/magiceth-wifi.app
+      to: wifi-helper/magiceth-wifi.app
+      filter: ['**/*']
 win:
+  extraResources:
+    - from: resources/wifi-helper/wifi-scan.ps1
+      to: wifi-helper/wifi-scan.ps1
   target:
     # One installer covering both architectures — it picks the right one at install time.
     - target: nsis

@@ -35,6 +35,8 @@ src/
       darwin.ts            # macOS implementation (+ pure parsers)
       linux.ts             # Linux implementation (+ pure parsers)
       win32.ts             # Windows implementation (+ pure parsers)
+      iw.ts                # pure: `iw scan dump` text → beacon facts (Linux), the elevated scan loop
+      wifi-helper.ts       # pure: the JSON both Wi-Fi helpers (macOS, Windows) print
     capabilities/
       adapters.ts          # dongle list + chipset lookup
       diagnostics.ts       # orchestrates netinfo + probes
@@ -44,7 +46,7 @@ src/
       reconfig.ts          # MAC rolling + profile application + undo
       profiles.ts          # fs/electron glue for profile storage
       profiles-core.ts     # pure profile operations (upsert/remove/…)
-      wifiscan.ts          # WLAN mode: drives the Wi-Fi helper, holds the active scan
+      wifiscan.ts          # WLAN mode: the active scan + recording loop; the OS half is in platform/
       wifi-model.ts        # pure: group APs by SSID, fold into tracks, channel load and blocks
       ie80211.ts           # pure: decode 802.11 beacon information elements
       oui.ts               # pure: who made this radio, from the IEEE registries
@@ -60,7 +62,7 @@ src/
     src/wlan.ts            # WLAN mode: network list, AP list, AP detail, recording
     src/styles.css
     src/env.d.ts
-resources/wifi-helper/     # Swift source + Info.plist for the macOS Wi-Fi helper .app
+resources/wifi-helper/     # the macOS helper .app (Swift + Info.plist) and the Windows helper (.ps1)
   shared/
     types.ts               # shared types + the MagicethApi contract
     mac.ts                 # MAC helpers (normalize, randomize locally-administered)
@@ -86,8 +88,11 @@ timeout and `windowsHide`.
 | `speedtest`                  | None       | Throughput both ways, bound to the dongle. Manual only — it moves real traffic. Degrades gracefully.          |
 | `reconfig`                   | Root/admin | Rolls MAC, applies DHCP/static profile, undoes.                                                               |
 | `profiles` / `profiles-core` | None       | Reads/writes profile JSON; pure CRUD operations.                                                              |
-| `wifiscan` → `ie80211`       | Location   | WLAN mode. Runs the Wi-Fi helper, decodes beacons, accumulates a recording. macOS only.                       |
+| `wifiscan` → `ie80211`       | Location\* | WLAN mode. Asks the platform for a sweep, decodes beacons, accumulates a recording. All three OSes.           |
 | `recordings` / `-core`       | None       | Writes a recording to CSV in Documents, reads it back, reveals it in the file manager.                        |
+
+\* Location consent on macOS and Windows; nothing on Linux with NetworkManager, one `pkexec`
+prompt without it. See [reading the air](#reading-the-air-on-each-os).
 
 ## Platform layer (`PlatformOps`)
 
@@ -102,6 +107,9 @@ interface PlatformOps {
   speedTestBind(device, srcIp): string | undefined // curl --interface: name, or address on Windows
   buildSetMacPlan(device, mac): Promise<ElevatedPlan>
   buildProfilePlan(device, profile): Promise<ElevatedPlan>
+  scanWifi(device): Promise<WifiScanOutcome> // one sweep of the air, decoded to beacon facts
+  requestWifiAccess(): void // raise the OS's consent dialog/page; no-op on Linux
+  endWifiSession(): void // stop anything long-lived (the Linux elevated loop)
 }
 ```
 
@@ -111,10 +119,10 @@ run the command and call the parser. Example (macOS): `parseIfconfig`, `parseIpc
 `parseIoregUsbMacs`, `joinDarwinAdapters`. This is the load-bearing test surface — see
 [test philosophy](#test-philosophy).
 
-Examples of commands per OS: macOS `ioreg`/`networksetup`/`ifconfig`/`ipconfig getsummary`;
-Linux `ip -j`/`udevadm`/sysfs/`resolvectl`; Windows `Get-NetAdapter`/`Get-NetIPAddress`/`netsh`
-(via `powershell ... | ConvertTo-Json`). JSON output is preferred where available to avoid
-brittle text parsing.
+Examples of commands per OS: macOS `ioreg`/`networksetup`/`ifconfig`/`ipconfig getsummary` and
+the Wi-Fi helper `.app`; Linux `ip -j`/`udevadm`/sysfs/`resolvectl` and `iw`/`nmcli`; Windows
+`Get-NetAdapter`/`Get-NetIPAddress`/`netsh` (via `powershell ... | ConvertTo-Json`) and the Wi-Fi
+helper `.ps1`. JSON output is preferred where available to avoid brittle text parsing.
 
 ## IPC contract
 
@@ -151,6 +159,10 @@ Least privilege: the app and all read-only diagnostics run unprivileged. Only `s
 - **macOS:** `osascript -e 'do shell script "…" with administrator privileges'`
 - **Linux:** `pkexec`
 - **Windows:** `Start-Process -Verb RunAs` (UAC), with `-EncodedCommand` (base64/UTF-16LE) to avoid quoting issues
+
+Wi-Fi scanning is the one read-only feature that can need elevation, and only on a Linux without
+NetworkManager: triggering a sweep needs `CAP_NET_ADMIN`, so one `pkexec` prompt starts a scan loop
+(`iw.ts`) that ends on a stop file, a hard cap, or five idle minutes — the port survey's pattern.
 
 Changes are verified by re-reading netinfo afterwards (e.g. that the MAC was actually changed).
 `reconfig` saves the previous state so `Undo` (`U`) can restore it.
@@ -228,22 +240,36 @@ its centre frequency plus or minus half its width, and a channel counts every sp
 own 20 MHz. That is why 1, 6 and 11 come out clear of each other while 1 and 3 do not. The centre
 is approximated from the _primary_ channel, which is all CoreWLAN reports — noted in the backlog.
 
-## The macOS Wi-Fi helper
+## Reading the air on each OS
 
-WLAN mode is the one capability that cannot be a shell command, because there is no longer a
-command for it — `airport` is gone and nothing replaced it. It runs a small Swift binary shipped
-as a **real `.app` bundle** inside the app's resources, which then behaves like every other
-capability: run it, read JSON, parse.
+Every OS answers "what is around me" differently, and only macOS and Windows will hand over the
+beacon bytes. So the seam is one level up: `PlatformOps.scanWifi()` returns **sightings whose
+beacon facts are already decoded** (`BeaconFacts` from `ie80211.ts`), and `wifiscan.ts`, the
+model, the recordings and the screens never learn which OS they are on. The vendor lookup is the
+one thing added after the seam, in `toBss()`, so it happens in exactly one place.
 
-The bundle is not tidiness. macOS reveals a scanned network's BSSID and its beacon information
-elements only to a process holding a Location Services grant, and only ever offers that grant to
-something with a bundle identity — and elevation does not substitute, because TCC and root are
-independent gates. The full evidence is in [WIFI-FINDINGS.md](WIFI-FINDINGS.md).
+| OS      | Sweep                                                                                                                                                                                                                                                                             | Decoded by                                                                        | Gate                                                                                                                                                                                                                     |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| macOS   | The Swift helper `.app` scans through CoreWLAN and prints JSON with the raw elements as hex.                                                                                                                                                                                      | `readBeacon()` on the bytes                                                       | Location Services, held by the helper's bundle identity; `open -a` raises the prompt.                                                                                                                                    |
+| Linux   | `nmcli device wifi rescan` asks NetworkManager for a sweep (rejected within 10 s of the last one, so calls are spaced), then `iw dev <if> scan dump` reads the kernel cache unprivileged. Without NetworkManager, one `pkexec` prompt starts a loop that runs `iw … scan` itself. | `parseIwScan()` on `iw`'s text — the kernel keeps no raw bytes for known elements | None for reading; `pkexec` once on the fallback path.                                                                                                                                                                    |
+| Windows | A PowerShell helper calls `WlanScan` / `WlanGetNetworkBssList` through P/Invoke and prints the same JSON as the macOS helper, with the raw element blob.                                                                                                                          | `readBeacon()` on the bytes                                                       | Location consent since Windows 11 24H2. The one-time prompt is only raised for a process outside `System32`, which `powershell.exe` is not, so a refusal opens `ms-settings:privacy-location` with instructions instead. |
 
-The helper stays deliberately stupid: it emits raw information elements as hex and decodes nothing.
-Every parser lives in `ie80211.ts` as a pure function tested against real captured beacons, which
-keeps the untestable Swift surface to about a hundred lines. Build it with
-`scripts/build-wifi-helper.sh`; `npm run package` does so first.
+**The helpers stay deliberately stupid.** Both print what the OS handed them and decode nothing, so
+the untestable Swift and PowerShell surfaces stay small and every parser is a pure function tested
+against real captured beacons. The macOS one is a **real `.app` bundle** because macOS reveals a
+scanned network's BSSID and its beacon elements only to a process holding a Location grant, and
+only ever offers that grant to something with a bundle identity — elevation does not substitute,
+because TCC and root are independent gates. Build it with `scripts/build-wifi-helper.sh`; `npm run
+package` does so first, and skips it off macOS. The Windows one is a script shipped as-is.
+
+**Three label rules are shared**, not duplicated: `securityLabel()` names a suite from AKM flags,
+`phyLabel()` the generation from which capability elements exist, and `vhtWidth()` tells 80 from
+160 MHz by the distance between the VHT centre segments — which matters because `iw` prints the
+width field's label and that label is wrong for the newer 160 MHz encoding. The byte decoder and
+the `iw` text parser both call them, so the two cannot disagree about the same access point.
+
+The evidence for the macOS claims, and what each other OS has been checked against, is in
+[WIFI-FINDINGS.md](WIFI-FINDINGS.md).
 
 ## Saved recordings
 

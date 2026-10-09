@@ -1,8 +1,10 @@
 # Wi-Fi findings
 
-What macOS will and will not tell an application about the air around it, and how `magiceth` gets
-at the rest. Everything below was measured on 2026-09-29; commands and their results are quoted so
-the conclusions can be re-checked rather than taken on trust.
+What each operating system will and will not tell an application about the air around it, and how
+`magiceth` gets at the rest. The macOS sections were measured on 2026-09-29; commands and their
+results are quoted so the conclusions can be re-checked rather than taken on trust. The Linux and
+Windows sections at the end are **from documentation and source, not from measurement** — they say
+exactly which claims are waiting for a machine.
 
 This file owns the Wi-Fi scanning topic. [ARCHITECTURE.md](ARCHITECTURE.md) links here instead of
 repeating it.
@@ -116,6 +118,55 @@ three times in succession, each correctly resetting its counters, accumulating a
 while the machine moved, and producing min/max/average for signal. No orphaned helper processes
 after any run.
 
-**Not verified:** Linux and Windows are not implemented at all — see
-[BACKLOG.md](BACKLOG.md). Nothing here has been tried against an enterprise network, a captive
-portal, or an access point that does broadcast WPS.
+Re-run on 2026-10-09 after the OS-specific half moved behind `PlatformOps.scanWifi`: same
+networks, same detail values, and the width the new operation-element decoder reads off the beacon
+(160 MHz for both 5 GHz radios) is the width CoreWLAN reports for them.
+
+**Not verified:** nothing here has been tried against an enterprise network, a captive portal, or
+an access point that does broadcast WPS.
+
+## Linux — implemented, not yet run on hardware
+
+What the implementation relies on, and where each claim comes from:
+
+| Claim                                                                                                                     | Source                                                                                                                                     | Status                |
+| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------- |
+| `iw dev <if> scan dump` reads the kernel's scan cache without privileges                                                  | nl80211: `NL80211_CMD_GET_SCAN` is unprivileged, `NL80211_CMD_TRIGGER_SCAN` needs `CAP_NET_ADMIN`                                          | documentation         |
+| The cache expires entries 30 s after they were last heard                                                                 | cfg80211 `IEEE80211_SCAN_RESULT_EXPIRE`                                                                                                    | documentation         |
+| `iw` prints BSS Load, HT/VHT/HE/EHT capabilities and operation, RSN suites, WPS fields, vendor OUIs, country, `last seen` | iw `scan.c`                                                                                                                                | documentation         |
+| `iw`'s "(80 MHz)" label on VHT width 1 ignores the centre segments; 160 MHz is segment distance 8                         | 802.11-2020 9.4.2.158.3; the same rule is checked against CoreWLAN on macOS                                                                | measured (macOS side) |
+| `nmcli device wifi rescan` is allowed for an active local session without a password                                      | polkit action `org.freedesktop.NetworkManager.wifi.scan`, `allow_active=yes` by default                                                    | documentation         |
+| NetworkManager rejects a rescan within 10 s of the previous one; `nmcli … --rescan yes` can block 15 s when rejected      | NetworkManager `nm-device-wifi.c` scan threshold; plasma-nm commit "Before requesting a scan, check the time threshold"; nmcli `devices.c` | documentation         |
+| `iw dev <if> scan` as root works while NetworkManager manages the interface                                               | common practice; both talk to the same kernel cache                                                                                        | documentation         |
+
+Consequences in the code: calls are spaced ten seconds apart, the rescan's answer is ignored, the
+cache is read five seconds after asking, and entries older than fifteen seconds are dropped unless
+that would leave nothing. Without `nmcli`, `pkexec` starts the loop in `iw.ts`, which ends on a stop
+file, a 3600 s cap, or five minutes without a request.
+
+**To measure on a Linux box with a Wi-Fi card:** that `scan dump` returns blocks unprivileged;
+that two rescans three seconds apart get the second rejected; a full real dump saved as the
+`test/iw.test.ts` fixture in place of the documented-format one; that the pkexec path prompts once,
+scans continuously, exits on idle, and leaves no root `sh` behind after quitting the app; and that
+a recording's snapshot rows are not duplicated sweeps.
+
+## Windows — implemented, not yet run on hardware
+
+| Claim                                                                                                                                         | Source                                                                                                                                            | Status        |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `WlanGetNetworkBssList` returns real dBm (`lRssi`), the centre frequency in kHz, and the raw information elements                             | [WLAN_BSS_ENTRY](https://learn.microsoft.com/en-us/windows/win32/api/wlanapi/ns-wlanapi-wlan_bss_entry)                                           | documentation |
+| `WlanScan` returns at once; a logo-compliant driver completes within 4 s; the service alone scans every 60 s, sometimes never while connected | [WlanScan](https://learn.microsoft.com/en-us/windows/win32/api/wlanapi/nf-wlanapi-wlanscan)                                                       | documentation |
+| Since Windows 11 24H2 these calls return `ERROR_ACCESS_DENIED` (5) unless the user allows precise location                                    | [Changes to API behavior for Wi-Fi access and location](https://learn.microsoft.com/en-us/windows/win32/nativewifi/wi-fi-access-location-changes) | documentation |
+| The one-time consent prompt is raised only for a process "running within the user's context and outside of `C:\Windows\System32`"             | same page — and `powershell.exe` lives in `System32\WindowsPowerShell\v1.0`, so a script-hosted helper can never raise it                         | documentation |
+| `netsh wlan show networks mode=bssid` is gated the same way, and reports signal as a percentage with no elements                              | Microsoft Q&A reports; `netsh` output format                                                                                                      | documentation |
+| `Add-Type` compiles the P/Invoke bindings with the .NET Framework compiler in Windows PowerShell 5.1 (≈1–2 s)                                 | PowerShell documentation                                                                                                                          | documentation |
+
+Consequences in the code: the helper is a `.ps1` run with `-ExecutionPolicy Bypass -File`, it sleeps
+the four seconds the API contract allows, and a code 5 from either call becomes `needs-permission`,
+on which the app opens `ms-settings:privacy-location` and tells the user which two switches to turn
+on — _Location_ and _Let desktop apps access your location_.
+
+**To measure on a Windows 11 machine (note the build; 24H2 is where the gate exists):** run the
+script from a terminal and time it; confirm the `ie` hex decodes to BSS Load figures; turn Location
+off and confirm exit code 2 and that the Settings page opens; save the real envelope as the
+`test/wifi-helper.test.ts` Windows fixture; then the in-app walk-through in `WINDOWS-TEST.md`.

@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "build:helper": "sh scripts/build-wifi-helper.sh",
+    "build:helper": "node scripts/build-wifi-helper.mjs",
     "package": "npm run build:helper && npm run build && electron-builder"
   },
   "devDependencies": {
