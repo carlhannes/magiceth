@@ -254,15 +254,18 @@ npm test           # vitest (pure parsers/functions)
 Everything is unsigned — no macOS notarization, no Windows certificate — so macOS needs
 right-click → Open and Windows shows SmartScreen → More info → Run anyway.
 
-A full release is four files, and all four build from macOS with no Wine involved (electron-builder
-fetches its own NSIS toolchain):
+A full release is four files, and all four build from macOS. The Windows ones need Rosetta on an
+Apple Silicon Mac, because electron-builder stamps the version into the `.exe` through an x86 Wine
+it fetches itself (`softwareupdate --install-rosetta`). Both Windows targets are listed in
+`electron-builder.yml`, so one command always builds the installer **and** the portable `.exe` —
+never build just one of them, a release is both:
 
-| Artifact                    | Built by                                    | For                              |
-| --------------------------- | ------------------------------------------- | -------------------------------- |
-| `magiceth-<v>-arm64.dmg`    | `npm run package -- --mac`                  | macOS, Apple Silicon             |
-| `magiceth-<v>.dmg`          | `npm run package -- --mac`                  | macOS, Intel                     |
-| `magiceth Setup <v>.exe`    | `npx electron-builder --win nsis`           | Windows installer, x64 + arm64   |
-| `magiceth-<v>-portable.exe` | `npx electron-builder --win portable --x64` | Windows, runs without installing |
+| Artifact                    | Built by                   | For                              |
+| --------------------------- | -------------------------- | -------------------------------- |
+| `magiceth-<v>-arm64.dmg`    | `npm run package -- --mac` | macOS, Apple Silicon             |
+| `magiceth-<v>.dmg`          | `npm run package -- --mac` | macOS, Intel                     |
+| `magiceth Setup <v>.exe`    | `npm run package -- --win` | Windows installer, x64 + arm64   |
+| `magiceth-<v>-portable.exe` | `npm run package -- --win` | Windows, runs without installing |
 
 The Linux AppImage target exists in `electron-builder.yml` but needs a Linux host (or Docker), and
 **no part of the Linux path has been run on real hardware** — see [docs/BACKLOG.md](docs/BACKLOG.md)
