@@ -10,6 +10,11 @@ file only covers what is specific to driving this repo from an agent session.
 npm run typecheck && npm run lint && npm test && npx prettier --check .
 ```
 
+CI installs with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`, so a test may only import modules whose import
+chain never reaches `electron` — `recordings.ts`, `profiles.ts`, `index.ts` and anything importing
+them are out. The symptom is one suite failing with "Electron failed to install correctly" while
+everything passes locally. Reproduce it by hiding `node_modules/electron/path.txt` for a run.
+
 The load-bearing test surface is the pure parsers in `test/`. If you change a parser, feed it
 **real captured output** rather than output you invented — the two multi-dongle bugs found on
 2026-08-04 were both invisible to hand-written fixtures because they came from a driver quirk

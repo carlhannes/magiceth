@@ -4,6 +4,8 @@
 // Kept apart from wifiscan.ts so the accumulate-over-time logic can be unit-tested without a
 // radio, which is the same split survey.ts uses for its VLAN tally.
 
+import { resolveVendor } from './oui'
+import type { WifiSighting } from '../platform'
 import type {
   ChannelBucket,
   ChannelLoad,
@@ -171,6 +173,45 @@ export function groupBySsid(bssids: WifiBss[]): WifiNetwork[] {
       }
     })
     .sort((a, b) => b.bestRssi - a.bestRssi)
+}
+
+/**
+ * The second-least-significant bit of the first octet is the locally-administered bit. Modern APs
+ * set it on the virtual BSSIDs they invent per SSID, and no OUI lookup can succeed for one — so it
+ * is recorded rather than silently producing an "unknown vendor".
+ */
+export function isLocallyAdministered(bssid: string): boolean {
+  const first = Number.parseInt(bssid.slice(0, 2), 16)
+  return Number.isFinite(first) && (first & 0x02) !== 0
+}
+
+/** One sighting to one access point. Pure, so the whole mapping is testable from a fixture. */
+export function toBss(s: WifiSighting): WifiBss {
+  const beacon = s.beacon
+  const bssid = s.bssid.toLowerCase()
+  return {
+    bssid,
+    // The SSID element in the beacon is the authoritative one; the OS's copy is a convenience.
+    ssid: s.ssid || beacon.ssid || '',
+    rssi: s.rssi,
+    noise: s.noise,
+    channel: s.channel,
+    band: s.band,
+    // The OS's own width when it has one (CoreWLAN); the beacon's operation elements otherwise.
+    widthMhz: s.widthMhz ?? beacon.widthMhz,
+    phy: beacon.phy,
+    streams: beacon.streams,
+    security: beacon.security ?? 'Open',
+    clients: beacon.clients,
+    utilizationPct: beacon.utilizationPct,
+    // A model name broadcast in a WPS element is self-declared and beats any lookup; otherwise
+    // the address, or the beacon's vendor elements when the address is randomised.
+    vendor:
+      beacon.manufacturer ?? resolveVendor(bssid, isLocallyAdministered(bssid), beacon.vendorOuis),
+    model: beacon.model,
+    locallyAdministered: isLocallyAdministered(bssid),
+    countryCode: s.countryCode ?? beacon.countryCode
+  }
 }
 
 /**
