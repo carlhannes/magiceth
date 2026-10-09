@@ -66,7 +66,7 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 - **Active control** — roll a new (locally-administered) MAC, switch between DHCP and static profiles, create/edit profiles inline, and undo the last change.
 - **WLAN mode** — the same idea pointed at the air. Every network in earshot, the access points behind each one, and per access point: channel, band, width, PHY generation with MIMO stream count (`802.11be, MIMO 4×4`), security read from the actual AKM suites, channel utilization, client count, country, and the
   manufacturer looked up from the IEEE OUI registries — including for the randomised BSSIDs modern
-  access points use, where the maker is recovered from the beacon's own vendor elements instead. All of it is decoded from the raw beacon, so **no monitor mode and no disconnection** — your Wi-Fi keeps working while you scan. Press `L` to record: it keeps scanning while you walk a site and gives min/max/average for signal, clients and channel load, keeping access points you have moved away from. macOS and Windows hand out this detail only to an app allowed to use your location, which magiceth asks for once on macOS and points you to in Settings on Windows; Linux reads it straight from `iw`. Verified live on macOS; implemented but not yet run on Linux or Windows — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for exactly what is and is not obtainable on each.
+  access points use, where the maker is recovered from the beacon's own vendor elements instead. All of it is decoded from the raw beacon, so **no monitor mode and no disconnection** — your Wi-Fi keeps working while you scan. Press `L` to record: it keeps scanning while you walk a site and gives min/max/average for signal, clients and channel load, keeping access points you have moved away from. macOS and Windows hand out this detail only to an app allowed to use your location, which magiceth asks for once on macOS and points you to in Settings on Windows; Linux reads it straight from `iw`. Verified live on macOS and Windows 11; implemented but not yet run on Linux — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for exactly what is and is not obtainable on each.
 
 ### Cheap things happen by themselves; expensive things need intent
 
@@ -111,11 +111,11 @@ what a "please add this chipset" issue or PR needs.
 
 ## Platform status
 
-| Platform                | Status                                                                                                                                                              |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified; **Wi-Fi mode live-verified**                                                             |
-| **Windows 11** (x64)    | Identification, diagnostics, ping, DHCP/static profile switching and MAC rolling all verified on real hardware; **Wi-Fi mode implemented, not yet run on hardware** |
-| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**, Wi-Fi mode included                                              |
+| Platform                | Status                                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified; **Wi-Fi mode live-verified**                        |
+| **Windows 11** (x64)    | Identification, diagnostics, ping, DHCP/static profile switching, MAC rolling and **Wi-Fi mode** all verified on real hardware |
+| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**, Wi-Fi mode included         |
 
 On Linux the DHCP-vs-static readout is inferred from the address lifetime that `ip -j addr`
 reports, which is the one part of the port readout that has not been checked against a live
@@ -187,6 +187,7 @@ it; opening an access point shows everything known about it.
 | `L`           | Start / stop recording — keeps scanning and tracks min/max/avg while you move |
 | `C`           | Channel view, then the same grouped into bands' blocks, then back             |
 | `S`           | Saved recordings — open one to view it; `F` reveals it in the file manager    |
+| `O`           | Windows only, after a refused scan: turn Location on (asks for admin)         |
 
 **Recordings are saved to `Documents/magiceth`** as two CSVs you can open in any spreadsheet: a
 time log written as you walk (one row per access point per snapshot, at least two seconds apart)
@@ -218,7 +219,9 @@ channel advertised a count, so the figure is a floor.
 Scanning is passive and read-only: it never associates with anything and never disconnects you.
 On macOS the first scan asks for Location access, and on Windows 11 a refused scan opens the
 Location settings page and says which two switches to turn on — on both, that consent is the only
-way the system will reveal access point identifiers. On Linux the results are read from `iw`
+way the system will reveal access point identifiers. If Windows says those settings are "managed
+by your organization" on a machine that has no organization, a privacy tool has pinned Location
+off with a policy key; `O` offers to undo that for you, after a confirming press and a UAC prompt. On Linux the results are read from `iw`
 without any privilege; NetworkManager triggers the sweep, and on a machine without it one `pkexec`
 prompt does. See [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for what each OS has been checked
 against.

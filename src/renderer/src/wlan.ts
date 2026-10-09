@@ -17,7 +17,14 @@ import type {
   WifiTrack
 } from '../../shared/types'
 import { clock, escapeHtml, plural, row, rowWithSub } from './view'
-import { renderShell, requestRender, setMode, setNotice } from './shell'
+import {
+  confirmStep,
+  consumePending,
+  renderShell,
+  requestRender,
+  setMode,
+  setNotice
+} from './shell'
 
 let device = ''
 let result: WifiScanResult | null = null
@@ -33,6 +40,10 @@ let savedSel = 0
  * views a live result does, so every screen below renders it without knowing which it is looking at.
  */
 let loaded: SavedRecording | null = null
+
+/** What pressing O is about to do, on the one OS that offers it. Asked before, never assumed. */
+const ENABLE_ACCESS_EXPLAINER =
+  'Turn Location on for me: removes the policy keys that pin it off (a privacy tool usually left them), switches on Location services and desktop-app access, and starts the location service. Asks for admin (UAC).'
 
 /** What pressing L is about to do. Shown as the confirmation, not as standing hint text. */
 const RECORD_EXPLAINER =
@@ -351,9 +362,13 @@ function renderLevel(): string {
 
 function renderBody(): string {
   if (result && result.status !== 'ok' && networks().length === 0) {
+    const fix = result.canEnableAccess
+      ? `<p class="hint2"><b>O</b> turn Location on for me (asks for admin) · <b>R</b> scan again</p>`
+      : ''
     return `<section class="panel-card">
       <div class="section-title">Wi-Fi scan</div>
       <p class="status-msg">${escapeHtml(result.message ?? 'The scan failed.')}</p>
+      ${fix}
     </section>`
   }
   return `<section class="panel-card">${renderLevel()}</section>`
@@ -368,11 +383,12 @@ export function renderWlan(): string {
       : level === 'buckets'
         ? '<b>C</b> close'
         : '<b>C</b> channels'
+  const fixKey = result?.canEnableAccess && networks().length === 0 ? ' · <b>O</b> location' : ''
   const footer =
     level === 'saved'
       ? `<b>↑↓</b> select · <b>Enter</b> open · <b>F</b> folder · <b>S</b> close · <b>Tab</b> ethernet`
       : level === 'networks'
-        ? `<b>↑↓</b> select · <b>Enter</b> open · ${channelKey} · <b>S</b> saved · <b>R</b> scan · ${record}`
+        ? `<b>↑↓</b> select · <b>Enter</b> open · ${channelKey} · <b>S</b> saved · <b>R</b> scan · ${record}${fixKey}`
         : `<b>↑↓</b> select · <b>Enter</b> open · <b>←</b> back · ${channelKey} · <b>R</b> scan · ${record}`
   return renderShell({
     // Which list you are on, and which row you opened — so moving the selection keeps your place
@@ -422,6 +438,23 @@ async function scan(mode: 'once' | 'record'): Promise<void> {
     scanning = false
     requestRender()
   }
+}
+
+/** The one-key Location fix. Whatever comes back is shown; a failure leaves the screen as it was. */
+async function enableAccess(): Promise<void> {
+  scanning = true
+  setNotice(null)
+  requestRender()
+  let outcome = { ok: false, message: 'Could not change the Location settings.' }
+  try {
+    outcome = await window.api.enableWifiAccess()
+  } catch (err) {
+    outcome = { ok: false, message: `Could not change the Location settings: ${String(err)}` }
+  }
+  scanning = false
+  setNotice(outcome.message)
+  requestRender()
+  if (outcome.ok) void scan('once')
 }
 
 async function stopRecording(): Promise<void> {
@@ -525,6 +558,9 @@ function ascend(): void {
 }
 
 export function handleWlanKey(e: KeyboardEvent): void {
+  // Every keystroke consumes any outstanding confirmation: only the very next press of the same
+  // key counts, exactly as in Ethernet mode.
+  const pending = consumePending()
   if (e.key === 'ArrowDown') move(1)
   else if (e.key === 'ArrowUp') move(-1)
   else if (e.key === 'Enter' || e.key === 'ArrowRight') descend()
@@ -552,6 +588,9 @@ export function handleWlanKey(e: KeyboardEvent): void {
   } else if (e.key === 'f' || e.key === 'F') {
     const summary = level === 'saved' ? savedList[savedSel] : loaded?.summary
     if (summary) void window.api.revealRecording(summary.id)
+  } else if (e.key === 'o' || e.key === 'O') {
+    if (!result?.canEnableAccess || scanning) return
+    if (confirmStep('o', '', ENABLE_ACCESS_EXPLAINER, pending)) void enableAccess()
   } else return
   e.preventDefault()
 }

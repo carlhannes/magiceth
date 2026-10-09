@@ -69,7 +69,9 @@ tested before, **Tab** switches. Wi-Fi mode scans as soon as you enter it.
   the app may use your location, so the first thing you may see is a Settings page opening and a
   message in the app saying which two switches to turn on — **Location**, and **Let desktop apps
   access your location**. Turn them on, go back to the app, press **R**. That whole dance is
-  expected and worth describing exactly as it happened.
+  expected and worth describing exactly as it happened. If Settings says those switches are
+  "managed by your organization", press **O** in the app: it explains what it will change, a
+  second **O** runs it after a UAC prompt, and it scans again by itself.
 - Once it scans: you should see networks grouped by name with a signal bar, **Enter** opens the
   access points behind one, **Enter** again shows one in full — BSSID, maker, security, PHY with
   MIMO, channel and width, clients and channel utilization if the access point advertises them.

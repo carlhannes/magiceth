@@ -34,10 +34,10 @@ notices are their own open question further down this file.
 The scanner works on macOS and is verified end to end ([WIFI-FINDINGS.md](WIFI-FINDINGS.md)). What
 is still open:
 
-- **Linux and Windows are implemented but have not been run on hardware.** Every claim they rest
-  on, and what to measure first, is listed in [WIFI-FINDINGS.md](WIFI-FINDINGS.md). Until then the
-  `iw` fixture in `test/iw.test.ts` is documented format rather than a capture, and the Windows
-  helper script has been reviewed, not executed. Monitor mode (`tcpdump -I`) was considered and
+- **Linux is implemented but has not been run on hardware; Windows has run on one machine.** Every
+  claim they rest on, and what to measure first, is listed in [WIFI-FINDINGS.md](WIFI-FINDINGS.md).
+  Until then the `iw` fixture in `test/iw.test.ts` and the Windows entries in
+  `test/wifi-helper.test.ts` are documented format rather than captures. Monitor mode (`tcpdump -I`) was considered and
   rejected for Linux: it needs root, drops the association the machine is using, hears one channel
   at a time, and adds nothing the screens show — client counts and load come from BSS Load, which
   `iw` already prints. Per-client visibility would be a different feature.
@@ -55,6 +55,10 @@ is still open:
   outside `System32`, and the helper is hosted by `powershell.exe`. A compiled helper `.exe` shipped
   in the app's resources would get the prompt; it needs a .NET toolchain at build time and an
   unsigned binary SmartScreen may flag, so for now a refusal opens the Location settings page.
+- **The `O` Location fix edits HKCU as whoever answered the UAC prompt.** On a machine where the
+  user is not an administrator and a different account approves the elevation, the user-level
+  consent switches land in that administrator's hive, and the user still has to flip them in
+  Settings. The machine-wide switch and the policy keys are fixed either way.
 - **`Add-Type` fails under Constrained Language Mode** (AppLocker/WDAC policies), which the Windows
   helper reports as an error rather than working around.
 - **No noise figure off macOS.** `iw` reports noise per channel (`iw dev <if> survey dump`), not per

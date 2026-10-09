@@ -14,7 +14,7 @@ import { channelBuckets, channelSummary, foldSighting, groupBySsid, toTracks } f
 import type { TrackStore } from './wifi-model'
 import { appendSnapshot, beginRecording, finishRecording } from './recordings'
 import type { RecordingPaths } from './recordings'
-import type { WifiBss, WifiScanResult } from '../../shared/types'
+import type { WifiAccessResult, WifiBss, WifiScanResult } from '../../shared/types'
 
 /**
  * Gap between scans. A scan takes about five seconds by itself — the radio has to visit every
@@ -235,7 +235,9 @@ export async function startWifiScan(
   if (out.status !== 'ok') {
     // Only a refusal is worth asking about; a missing tool or a broken helper is not a prompt.
     if (out.status === 'needs-permission') p.requestWifiAccess()
-    return fail(device, out.status, out.message)
+    const result = fail(device, out.status, out.message)
+    if (out.status === 'needs-permission' && p.enableWifiAccess) result.canEnableAccess = true
+    return result
   }
 
   // Keep the history across a one-off scan so repeated presses build a picture; a new recording
@@ -281,4 +283,15 @@ export function stopWifiScan(): WifiScanResult | null {
 /** On quit: stop whatever long-lived thing the OS half may have started (the Linux scan loop). */
 export function endWifiSession(): void {
   platform()?.endWifiSession()
+}
+
+/** The opt-in Location fix, where the OS has one. Never throws: the renderer shows the message. */
+export async function enableWifiAccess(): Promise<WifiAccessResult> {
+  const p = platform()
+  if (!p?.enableWifiAccess) return { ok: false, message: 'Nothing to change on this system.' }
+  try {
+    return await p.enableWifiAccess()
+  } catch (err) {
+    return { ok: false, message: `Could not change the Location settings: ${String(err)}` }
+  }
 }

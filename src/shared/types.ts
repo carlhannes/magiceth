@@ -329,6 +329,12 @@ export interface SavedRecording {
 export type WifiScanStatus =
   'ok' | 'unsupported' | 'no-helper' | 'no-tool' | 'needs-permission' | 'needs-privilege' | 'error'
 
+/** Outcome of the one-key Location fix on Windows. Never thrown: a refusal is a message. */
+export interface WifiAccessResult {
+  ok: boolean
+  message: string
+}
+
 export interface WifiScanResult {
   status: WifiScanStatus
   /** True while the continuous recording loop is running. */
@@ -349,6 +355,11 @@ export interface WifiScanResult {
    */
   savedTo?: string
   message?: string
+  /**
+   * True when a refused scan can be fixed from inside the app — Windows, where the usual cause is
+   * a policy key left by a privacy tool. The renderer offers the key only when this is set.
+   */
+  canEnableAccess?: boolean
 }
 
 export interface MagicethApi {
@@ -371,6 +382,8 @@ export interface MagicethApi {
   /** Resolves with everything the scan collected, or null when none was running. */
   stopWifiScan(): Promise<WifiScanResult | null>
   onWifiUpdate(cb: (result: WifiScanResult) => void): () => void
+  /** Windows only: remove the policies that block Location and turn it on, after a UAC prompt. */
+  enableWifiAccess(): Promise<WifiAccessResult>
   listRecordings(): Promise<RecordingSummary[]>
   readRecording(id: string): Promise<SavedRecording | null>
   /** Opens the platform file manager with the recording selected. */

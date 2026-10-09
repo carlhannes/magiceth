@@ -6,7 +6,14 @@ import { linux } from './linux'
 import { win32 } from './win32'
 import type { ElevatedPlan } from '../privilege'
 import type { BeaconFacts } from '../capabilities/ie80211'
-import type { AdapterKind, NetInfo, Profile, UsbInfo, WifiBand } from '../../shared/types'
+import type {
+  AdapterKind,
+  NetInfo,
+  Profile,
+  UsbInfo,
+  WifiAccessResult,
+  WifiBand
+} from '../../shared/types'
 
 export interface PingSpec {
   file: string
@@ -86,6 +93,12 @@ export interface PlatformOps {
   requestWifiAccess(): void
   /** Tear down anything long-lived the scanner started. Called when the app quits. */
   endWifiSession(): void
+  /**
+   * Where the OS can be told to allow Wi-Fi access rather than merely asked — Windows, whose
+   * Location switches are often pinned off by a policy key. Elevated, opt-in, verified by
+   * re-reading. Absent on an OS where the user has to answer a prompt themselves.
+   */
+  enableWifiAccess?(): Promise<WifiAccessResult>
 }
 
 export function getPlatform(): PlatformOps {

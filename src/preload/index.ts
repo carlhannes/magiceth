@@ -7,6 +7,7 @@ import type {
   ReconfigResult,
   SpeedTestResult,
   SurveyResult,
+  WifiAccessResult,
   WifiScanResult,
   RecordingSummary,
   SavedRecording
@@ -47,6 +48,7 @@ const api: MagicethApi = {
   startWifiScan: (device: string, mode: 'once' | 'record'): Promise<WifiScanResult> =>
     ipcRenderer.invoke('wifi:start', device, mode),
   stopWifiScan: (): Promise<WifiScanResult | null> => ipcRenderer.invoke('wifi:stop'),
+  enableWifiAccess: (): Promise<WifiAccessResult> => ipcRenderer.invoke('wifi:enableAccess'),
   onWifiUpdate: (cb: (result: WifiScanResult) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: WifiScanResult): void => cb(data)
     ipcRenderer.on('wifi:update', listener)

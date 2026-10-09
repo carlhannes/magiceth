@@ -5,7 +5,12 @@ import { listAdapters } from './capabilities/adapters'
 import { runDiagnostics } from './capabilities/diagnostics'
 import { startSurvey, stopSurvey } from './capabilities/survey'
 import { startSpeedTest, stopSpeedTest } from './capabilities/speedtest'
-import { endWifiSession, startWifiScan, stopWifiScan } from './capabilities/wifiscan'
+import {
+  enableWifiAccess,
+  endWifiSession,
+  startWifiScan,
+  stopWifiScan
+} from './capabilities/wifiscan'
 import { listRecordings, readRecording, revealRecording } from './capabilities/recordings'
 import { applyProfile, rollMac, undo } from './capabilities/reconfig'
 import {
@@ -143,6 +148,8 @@ app.whenReady().then(() => {
     })
   )
   ipcMain.handle('wifi:stop', () => stopWifiScan())
+  // Privileged and opt-in (UAC on Windows): the renderer asks for a confirming second press first.
+  ipcMain.handle('wifi:enableAccess', () => enableWifiAccess())
 
   // Recordings the scanner has written to ~/Documents/magiceth. Reads are cheap and the ids are
   // validated against the filename pattern in the capability, so a bad id cannot escape the folder.

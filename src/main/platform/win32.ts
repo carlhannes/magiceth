@@ -3,11 +3,11 @@ import { join } from 'node:path'
 import { run } from '../util/run-command'
 import { normalizeMac } from '../../shared/mac'
 import { cidrToDotted, isValidIpv4 } from '../../shared/net'
-import { psEscapeDouble } from '../privilege'
+import { psEscapeDouble, runElevatedPlan } from '../privilege'
 import { parseWifiHelper } from './wifi-helper'
 import type { ElevatedPlan } from '../privilege'
 import type { PingOptions, PingSpec, PlatformOps, RawAdapter, WifiScanOutcome } from './index'
-import type { NetInfo, Profile } from '../../shared/types'
+import type { NetInfo, Profile, WifiAccessResult } from '../../shared/types'
 
 // Windows. Format per documentation — verify on real hardware (spike):
 //  - `Get-NetAdapter | Select ... | ConvertTo-Json` gives adapters; USB dongles have
@@ -296,6 +296,73 @@ function requestWifiAccess(): void {
 /** Each scan is one short-lived helper process, so there is nothing to tear down. */
 function endWifiSession(): void {}
 
+/** The machine-wide Location switch; `Allow` here is what Settings calls "Location services". */
+const LOCATION_CONSENT =
+  'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\location'
+
+/**
+ * Turn Location on by force, as an administrator. Seen on the first Windows machine this ran on:
+ * Settings showed "some of these settings are managed by your organization" on a personal PC, and
+ * the cause was `DisableLocation` under the LocationAndSensors policy key — the kind of thing a
+ * privacy or debloat tool leaves behind. gpedit showed nothing, because the key was written
+ * directly. So this removes every policy value that pins Location off, sets the three consent
+ * switches Settings would set (machine, user, and "desktop apps"), and makes sure the location
+ * service can start. Every step tolerates the value not being there.
+ */
+export function winEnableLocationScript(): string {
+  const policies = [
+    'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\LocationAndSensors',
+    'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\LocationAndSensors'
+  ]
+  const consent = [
+    LOCATION_CONSENT,
+    LOCATION_CONSENT.replace('HKLM:', 'HKCU:'),
+    `${LOCATION_CONSENT.replace('HKLM:', 'HKCU:')}\\NonPackaged`
+  ]
+  return [
+    "$ErrorActionPreference='SilentlyContinue'",
+    ...policies.map(
+      (k) =>
+        `Remove-ItemProperty '${k}' -Name DisableLocation,DisableWindowsLocationProvider,DisableLocationScripting`
+    ),
+    "Remove-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\AppPrivacy' -Name LetAppsAccessLocation,LetAppsAccessLocation_UserInControlOfTheseApps,LetAppsAccessLocation_ForceAllowTheseApps,LetAppsAccessLocation_ForceDenyTheseApps",
+    ...consent.map(
+      (k) => `New-Item '${k}' -Force | Out-Null; Set-ItemProperty '${k}' -Name Value -Value Allow`
+    ),
+    'Set-Service lfsvc -StartupType Manual; Start-Service lfsvc'
+  ].join('; ')
+}
+
+/**
+ * Nice to have, never load-bearing: whatever happens here comes back as a message, and the app is
+ * exactly where it was. UAC does not hand stdout back, so the result is read off the registry.
+ */
+async function enableWifiAccess(): Promise<WifiAccessResult> {
+  try {
+    await runElevatedPlan({ interpreter: 'powershell', script: winEnableLocationScript() }, 90_000)
+    const check = await run(
+      'powershell',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `(Get-ItemProperty '${LOCATION_CONSENT}').Value`
+      ],
+      { timeoutMs: 10000 }
+    )
+    if (check.stdout.trim() === 'Allow') {
+      return { ok: true, message: 'Location is on. Scanning again…' }
+    }
+    return {
+      ok: false,
+      message:
+        'Location is still off — the UAC prompt may have been dismissed. You can also turn it on by hand in Settings → Privacy & security → Location.'
+    }
+  } catch (err) {
+    return { ok: false, message: `Could not change the Location settings: ${String(err)}` }
+  }
+}
+
 export const win32: PlatformOps = {
   id: 'win32',
   enumerateAdapters,
@@ -306,5 +373,6 @@ export const win32: PlatformOps = {
   buildProfilePlan,
   scanWifi,
   requestWifiAccess,
-  endWifiSession
+  endWifiSession,
+  enableWifiAccess
 }

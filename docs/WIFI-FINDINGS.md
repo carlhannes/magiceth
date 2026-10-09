@@ -150,7 +150,26 @@ that two rescans three seconds apart get the second rejected; a full real dump s
 scans continuously, exits on idle, and leaves no root `sh` behind after quitting the app; and that
 a recording's snapshot rows are not duplicated sweeps.
 
-## Windows — implemented, not yet run on hardware
+## Windows — verified on one machine
+
+Run on 2026-10-09 on a Windows 11 Pro desktop with a local account (build not recorded): the scan
+listed every network in reach, with channels, clients and channel utilization, the channel and
+block views worked, and nothing crashed. The first attempt did not scan at all, and the reason is
+the most useful thing learned:
+
+**The Location page said "some of these settings are managed by your organization"** on a
+personal machine. gpedit showed every location policy as not configured. The cause was
+`DisableLocation = 1` under `HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors`,
+written straight into the registry — most likely by a privacy or debloat tool at setup time, since
+gpedit only shows what it set itself. Deleting the value and turning the two switches on in
+Settings was enough. That sequence is now the `O` key: an opt-in, confirmed, UAC-elevated script
+(`winEnableLocationScript`) that removes the policy values, sets the consent switches and starts
+the location service, then re-reads the machine-wide switch to report whether it worked.
+
+Still waiting for a capture: the real helper envelope as the `test/wifi-helper.test.ts` fixture
+(the Windows entries there are built from the documented layout), and the scan duration.
+
+What the implementation relies on, and where each claim comes from:
 
 | Claim                                                                                                                                         | Source                                                                                                                                            | Status        |
 | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
@@ -163,10 +182,5 @@ a recording's snapshot rows are not duplicated sweeps.
 
 Consequences in the code: the helper is a `.ps1` run with `-ExecutionPolicy Bypass -File`, it sleeps
 the four seconds the API contract allows, and a code 5 from either call becomes `needs-permission`,
-on which the app opens `ms-settings:privacy-location` and tells the user which two switches to turn
-on — _Location_ and _Let desktop apps access your location_.
-
-**To measure on a Windows 11 machine (note the build; 24H2 is where the gate exists):** run the
-script from a terminal and time it; confirm the `ie` hex decodes to BSS Load figures; turn Location
-off and confirm exit code 2 and that the Settings page opens; save the real envelope as the
-`test/wifi-helper.test.ts` Windows fixture; then the in-app walk-through in `WINDOWS-TEST.md`.
+on which the app opens `ms-settings:privacy-location`, tells the user which two switches to turn on
+— _Location_ and _Let desktop apps access your location_ — and offers `O`.

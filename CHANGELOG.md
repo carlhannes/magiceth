@@ -16,11 +16,14 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   points behind each one, and for each access point its channel, band, width, PHY generation with
   MIMO stream count, security, channel utilization, client count and country — all decoded from the
   raw beacon, so none of it needs monitor mode.
-- **Wi-Fi mode on Linux and Windows** — implemented, not yet run on hardware. Linux reads the
+- **Wi-Fi mode on Linux and Windows** — Windows verified on one machine, Linux not yet run on
+  hardware. Linux reads the
   kernel's scan cache with `iw` after asking NetworkManager for a sweep, and without NetworkManager
   one `pkexec` prompt starts a scan loop that stops by itself. Windows runs a PowerShell helper
   against the native WLAN API, which since Windows 11 24H2 needs Location consent; a refused scan
-  opens the Location settings page and says what to turn on. The OS-specific half now sits behind
+  opens the Location settings page and says what to turn on — and `O` offers to turn it on for
+  you, after a confirming press and a UAC prompt, because the first Windows machine this ran on had
+  Location pinned off by a policy key a privacy tool had left behind. The OS-specific half now sits behind
   `PlatformOps.scanWifi`, so the model, the recordings and the screens are the same code on all
   three — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for what each OS has been checked
   against and what is still waiting for a machine.

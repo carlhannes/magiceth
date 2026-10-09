@@ -163,6 +163,9 @@ Least privilege: the app and all read-only diagnostics run unprivileged. Only `s
 Wi-Fi scanning is the one read-only feature that can need elevation, and only on a Linux without
 NetworkManager: triggering a sweep needs `CAP_NET_ADMIN`, so one `pkexec` prompt starts a scan loop
 (`iw.ts`) that ends on a stop file, a hard cap, or five idle minutes — the port survey's pattern.
+Windows has the opposite problem: Location is sometimes pinned off by a policy key, so `O` offers
+to remove it — `PlatformOps.enableWifiAccess`, an elevated PowerShell plan verified by re-reading
+the consent switch, offered only where the platform implements it and only after a confirming press.
 
 Changes are verified by re-reading netinfo afterwards (e.g. that the MAC was actually changed).
 `reconfig` saves the previous state so `Undo` (`U`) can restore it.
