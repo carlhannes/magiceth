@@ -9,6 +9,8 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ## [Unreleased]
 
+## [0.5.0] – 2026-10-09
+
 ### Added
 
 - **WLAN mode** — a Wi-Fi scanner alongside the existing port diagnostics, reached from a new mode
@@ -235,6 +237,7 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 - Platform support for Windows/macOS/Linux (arm64 + amd64); packaging via electron-builder (unsigned).
 - macOS live-verified; Linux/Windows implemented against documented format with unit-tested parsers.
 
-[Unreleased]: https://github.com/carlhannes/magiceth/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/carlhannes/magiceth/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/carlhannes/magiceth/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/carlhannes/magiceth/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/carlhannes/magiceth/releases/tag/v0.3.0

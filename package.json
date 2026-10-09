@@ -1,6 +1,6 @@
 {
   "name": "magiceth",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "One-handed network diagnostics: a wired port through a USB dongle, or the Wi-Fi around you",
   "author": "magiceth",
   "license": "WTFPL",

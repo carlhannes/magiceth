@@ -270,9 +270,10 @@ never build just one of them, a release is both:
 | `magiceth Setup <v>.exe`    | `npm run package -- --win` | Windows installer, x64 + arm64   |
 | `magiceth-<v>-portable.exe` | `npm run package -- --win` | Windows, runs without installing |
 
-The Linux AppImage target exists in `electron-builder.yml` but needs a Linux host (or Docker), and
-**no part of the Linux path has been run on real hardware** — see [docs/BACKLOG.md](docs/BACKLOG.md)
-before publishing one.
+No Linux binary is published. The AppImage target exists in `electron-builder.yml`; on a Linux
+host, `npm ci && npm run build && npx electron-builder --linux AppImage` builds one. **No part of
+the Linux path has been run on real hardware** — see [docs/BACKLOG.md](docs/BACKLOG.md) — so treat
+it as a build-from-source preview and say what you find.
 
 ## How it works
 
