@@ -97,6 +97,19 @@ and start again. Do **not** verify by grepping the bundle for a comment you just
 strips most comments, so that check fails on fresh code too and tells you nothing. Grep for a string
 literal or a distinctive expression instead.
 
+## Driving the UI: Playwright, never the system keyboard
+
+`npm run ui-check` builds the app and drives it through Playwright's Electron support
+(`scripts/ui-check.mjs`): keystrokes and screenshots go over the debugging protocol, the window
+is hidden right after launch, and the person at the machine can keep typing. It walks Configure
+mode end to end and dumps a per-key trace of the screen key on failure. Extend it rather than
+reaching for `osascript`.
+
+**Do not send keystrokes through System Events while someone is using the machine.** It was done
+once on 2026-10-13 and the test input landed in the user's terminal, and their typing landed in the
+app, which produced a "bug" that was nothing of the kind. The notes below remain for the one case
+Playwright cannot cover — a dialog raised by the OS itself.
+
 ## Driving the UI on macOS
 
 Screenshots and keystrokes need two separate macOS permissions for the process running the agent —
@@ -131,6 +144,28 @@ rather than implying coverage:
 - Linux and Windows behaviour is verified through parsers plus documented command formats. Never
   describe them as tested when they are not — [docs/BACKLOG.md](docs/BACKLOG.md) tracks what is
   genuinely unverified.
+
+## Configure mode and plugins
+
+- **Plugins never import from `main/`.** A built-in plugin under `src/plugins/` must have the same
+  shape as one a user drops into `Documents/magiceth/plugins`: it gets everything through the
+  `PluginHost` it is handed. ESLint enforces it (`no-restricted-imports`); `import type` and pure
+  helpers from `src/shared/` are fine, and rollup puts anything shared into `out/main/chunks/`.
+- **Each `src/plugins/<id>/` is its own main-process entry.** `electron.vite.config.ts` discovers
+  them by their `package.json` and copies that manifest next to the bundle, so
+  `out/main/plugins/<id>/` has exactly what a user plugin folder has. A new built-in plugin needs no
+  config change, but `npm run dev` must be restarted to pick up a new folder.
+- **No plugin or host code runs as root.** The only elevated piece is the per-OS address-hold
+  script (`*AddressHoldScript` in `platform/`), a pure function with a test. The DHCP server binds
+  port 67 unprivileged — verified on macOS 27, true on Windows, and arranged on Linux by the script
+  lowering `ip_unprivileged_port_start`. Running the app binary as root would also fail outright
+  on an AppImage, because root cannot read a FUSE mount.
+- **The DHCP socket hears every interface.** `lease.ts` is written so that a packet from the
+  office LAN gets silence; keep it that way (no unicast replies, no NAK, nothing outside the pool)
+  and add a test for every new case.
+- **The Flex Mini has not been seen yet.** `test/fixtures/dhcp.ts` and the discovery fixture are
+  hand-built. CONFIGURE-TEST.md says which captures to take; when they exist, replace the fixtures
+  with them rather than adding alongside.
 
 ## Do not weaken the invariants
 

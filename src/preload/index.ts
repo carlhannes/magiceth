@@ -12,6 +12,7 @@ import type {
   RecordingSummary,
   SavedRecording
 } from '../shared/types'
+import type { KeyPress, PluginActivation, PluginManifest, PluginScreen } from '../shared/plugin'
 
 // Exposes a small, typed API on window.api. contextIsolation is on and the renderer
 // never gets direct access to Node/Electron — only these methods.
@@ -63,7 +64,19 @@ const api: MagicethApi = {
     ipcRenderer.invoke('profiles:saveCurrent', device, name),
   deleteProfile: (id: string): Promise<Profile[]> => ipcRenderer.invoke('profiles:delete', id),
   saveProfile: (profile: Profile): Promise<Profile[]> =>
-    ipcRenderer.invoke('profiles:save', profile)
+    ipcRenderer.invoke('profiles:save', profile),
+  listPlugins: (): Promise<PluginManifest[]> => ipcRenderer.invoke('plugins:list'),
+  activatePlugin: (id: string, device: string): Promise<PluginActivation> =>
+    ipcRenderer.invoke('plugins:activate', id, device),
+  deactivatePlugin: (): Promise<void> => ipcRenderer.invoke('plugins:deactivate'),
+  sendPluginKey: (key: KeyPress): Promise<void> => ipcRenderer.invoke('plugins:key', key),
+  submitPluginForm: (formId: string, values: Record<string, string>): Promise<void> =>
+    ipcRenderer.invoke('plugins:submit', formId, values),
+  onPluginView: (cb: (screen: PluginScreen) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: PluginScreen): void => cb(data)
+    ipcRenderer.on('plugins:view', listener)
+    return () => ipcRenderer.removeListener('plugins:view', listener)
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -23,7 +23,13 @@ count, security, channel utilization, client count and manufacturer — all read
 beacon, so nothing needs monitor mode and your connection stays up. Press `L` and it records while
 you walk a site, writing CSVs you can open in a spreadsheet.
 
-The app opens on a chooser between the two; `Tab` switches at any time.
+**Configure mode** uses the port to set a device up rather than to look at it. It is a small
+plugin system; the plugin it ships with adopts a factory-default UniFi switch or access point —
+the SSH-less Flex Mini included — to a remote controller, by serving DHCP option 43 on the port
+and relaying the device's informs to the controller you saved. Your own plugins go in
+`Documents/magiceth/plugins`.
+
+The app opens on a chooser between the three; `Tab` cycles through them at any time.
 
 <p align="center">
   <img src="docs/shots/screenshot-modes.png" alt="The mode chooser shown on startup" width="420">
@@ -140,9 +146,9 @@ npm run dev        # starts the app in development mode
 
 ## Usage
 
-Launch the app (does **not** require admin). It opens on a chooser with two modes — press `1`/`E`
-for **Ethernet** or `2`/`W` for **Wi-Fi**. `Tab` switches between them at any time and `Esc` steps
-back out. Everything is controlled from the keyboard.
+Launch the app (does **not** require admin). It opens on a chooser with three modes — press `1`/`E`
+for **Ethernet**, `2`/`W` for **Wi-Fi** or `3`/`C` for **Configure**. `Tab` cycles through them at
+any time and `Esc` steps back out. Everything is controlled from the keyboard.
 
 ### Ethernet mode
 
@@ -226,6 +232,63 @@ without any privilege; NetworkManager triggers the sweep, and on a machine witho
 prompt does. See [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for what each OS has been checked
 against.
 
+### Configure mode
+
+A list of plugins, each a small program that uses the selected port to set something up. `↑`/`↓`
+picks one, `←`/`→` picks the port (the dongle is preselected), `Enter` opens it and `Esc` leaves
+it — after a second press if the plugin has something running, because leaving stops it. Nothing
+in a plugin folder is read beyond its `package.json` until you open it.
+
+**UniFi adoption** (built in) points a factory-default UniFi device at a remote controller from
+this port, without SSH — which is the only way in for a USW-Flex-Mini, a USW-Ultra or the Power
+devices. Save a controller once (`N`, its inform URL or just its hostname), connect the device to
+the port and **nothing else** (power it from a PoE injector or USB-C), and press `Enter`:
+
+1. The app puts an address on the port (one admin prompt) and answers the device's DHCP request
+   with option 43 naming this laptop. Only clients that identify as Ubiquiti (`ubnt` vendor
+   class) ever get a lease, and only this port's own broadcast ever carries one.
+2. The device POSTs its informs to this laptop on port 8080; the relay forwards each one to the
+   controller you saved and hands the answer back. The device appears in the controller as
+   pending — click **Adopt** there.
+3. The adoption travels back the same way. The device then stores the controller's **Override
+   Inform Host**, which it cannot reach from this port, so it shows _Adopting_ until it is cabled
+   into its real network. Set that override on the controller **before** adopting, to a hostname
+   the device can reach from where it will live.
+
+| Key     | Action                                                          |
+| ------- | --------------------------------------------------------------- |
+| `↑` `↓` | Select a controller                                             |
+| `Enter` | Start the session on the selected port (asks for admin once)    |
+| `S`     | Stop the session; afterwards, back to the list                  |
+| `N` `E` | New / edit a controller                                         |
+| `D`     | Delete the selected controller (asks for a second press)        |
+| `Esc`   | Leave the plugin (asks for a second press while a session runs) |
+
+While it runs the screen shows the address being served, every lease handed out, every inform
+relayed with the controller's HTTP status, and each UniFi device heard by discovery on UDP 10001 —
+model, firmware, address and whether it is still factory default — so you can see the device
+arrive before it has even asked for an address.
+
+The session caps itself at fifteen minutes, and the address is removed from the port by the same
+elevated script that added it, even if the app has gone. On Linux the script also lowers
+`net.ipv4.ip_unprivileged_port_start` to 67 for the session, machine-wide, and puts it back; on
+Windows it adds three firewall rules scoped to the app's executable and removes them. Port 8080 on
+this laptop must be free — a device derives `http://<address>:8080/inform` from option 43, so the
+port is not negotiable — and the start refuses, before any prompt, if the port already has a DHCP
+server on it. **Not yet verified on hardware**; the procedure is in
+[CONFIGURE-TEST.md](CONFIGURE-TEST.md).
+
+**Writing a plugin.** A folder in `Documents/magiceth/plugins` with a `package.json` carrying
+`"magiceth": { "api": 1, "title": "…" }` and an `index.js` that exports `activate(host)`. It runs
+as plain Node in the app's main process and describes its screen as blocks (text, table, list,
+log, form, raw html); the app draws them, sends every key back, and shows a bar with `Esc` to
+leave. The host gives it the port, a log, a JSON store, a way to run commands without a shell, and
+a DHCP server that answers only what the plugin allows. The contract is `src/shared/plugin.ts`,
+and the built-in plugin in `src/plugins/unifi-adopt` is the worked example — it has the same
+shape, so copying it is the quickest start. A plugin dropped into the folder appears in the list
+the next time the mode is opened; editing it takes effect the next time it is opened. See the
+security note below: a plugin runs with the app's own privileges.
+
 `M`, `U` and applying a profile change real network configuration. On a **dongle** they act on the
 first press — that is the one-handed point. On a **built-in** port they ask first and act on the
 second press of the same key, because that is the machine's own connection; any other key cancels.
@@ -234,7 +297,9 @@ second press of the same key, because that is the machine's own connection; any 
 
 Reads/diagnostics run unprivileged. Actions that _change_ the adapter (MAC, IP config) or
 capture packets (LLDP/CDP) require admin/root and request it **per action** via an OS prompt
-(macOS password dialog, Linux `pkexec`, Windows UAC). See [SECURITY.md](SECURITY.md).
+(macOS password dialog, Linux `pkexec`, Windows UAC). A Configure-mode session asks once, to hold
+an extra address on the port for its duration; the DHCP server itself runs unprivileged. See
+[SECURITY.md](SECURITY.md).
 
 ### What leaves the machine
 
@@ -243,6 +308,10 @@ speed test (`T`) transfers data to and from `speed.cloudflare.com`. Nothing abou
 sent with it — it is a volume of filler bytes, timed — but it is outbound traffic to a third
 party, it uses real bandwidth on the network under test, and it needs a working internet
 connection. It runs only when you press `T`.
+
+The second exception is a Configure-mode session you start: the UniFi plugin forwards the
+device's inform packets — Ubiquiti's own encrypted management traffic — to the controller URL
+you saved, and nothing else. A plugin of your own can do whatever it was written to do.
 
 ## Building & packaging
 

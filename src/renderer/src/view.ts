@@ -30,7 +30,9 @@ export function clock(seconds: number): string {
 }
 
 export function keyLabel(key: string): string {
-  return key === 'Enter' ? 'Enter' : key.toUpperCase()
+  if (key === 'Enter' || key === 'Tab') return key
+  if (key === 'Escape') return 'Esc'
+  return key.toUpperCase()
 }
 
 export function speedText(mbps?: number): string {

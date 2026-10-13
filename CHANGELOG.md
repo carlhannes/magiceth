@@ -9,6 +9,32 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ## [Unreleased]
 
+### Added
+
+- **Configure mode** — a third mode (`3`/`C`) that uses the port to set a device up, built as a
+  plugin system. A plugin is a folder with a `package.json` and an `index.js`; the app reads only
+  the manifest until you open one, draws the screen the plugin describes (text, table, list, log,
+  form, raw html), forwards every key to it and shows a bar with `Esc` to leave. Built-in plugins
+  live in `src/plugins/`, yours in `Documents/magiceth/plugins`. The contract is
+  `src/shared/plugin.ts`.
+- **UniFi adoption plugin** — points a factory-default UniFi device, the SSH-less Flex Mini
+  included, at a remote controller from the dongle: an in-process DHCP server on the port hands
+  out option 43 naming the laptop (answering only the `ubnt` vendor class, only from its own pool,
+  only on the port's own broadcast, never a NAK), an inform relay on port 8080 forwards the
+  device's informs to the controller you saved, and discovery on UDP 10001 shows the device with
+  model, firmware and whether it is still factory default. One admin prompt per session holds an
+  extra address on the port; the same script removes it, caps the session at fifteen minutes, and
+  on Linux lowers `ip_unprivileged_port_start` to 67 meanwhile. **Not yet run on hardware** —
+  `CONFIGURE-TEST.md` is the procedure, and the DHCP and discovery fixtures are hand-built from
+  the documented formats until a Flex Mini capture replaces them.
+
+### Changed
+
+- `Tab` cycles Ethernet → Wi-Fi → Configure instead of toggling two modes.
+- The elevated PowerShell window on Windows is hidden; a fifteen-minute session with a console on
+  screen read as something stuck.
+- Recordings and user plugins resolve the same `Documents/magiceth` folder through one helper.
+
 ## [0.5.0] – 2026-10-09
 
 ### Added

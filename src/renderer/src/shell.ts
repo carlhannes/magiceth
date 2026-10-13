@@ -9,8 +9,11 @@ import { escapeHtml, keyLabel } from './view'
 export const app = document.getElementById('app') as HTMLElement
 export const APP_VERSION = __APP_VERSION__
 
-/** Ethernet is everything the tool did before; WLAN scans the air. The chooser is the way in. */
-export type Mode = 'chooser' | 'ethernet' | 'wlan'
+/**
+ * Ethernet is everything the tool did before; WLAN scans the air; Configure runs a plugin that
+ * sets something up through the port. The chooser is the way in.
+ */
+export type Mode = 'chooser' | 'ethernet' | 'wlan' | 'configure'
 
 let mode: Mode = 'chooser'
 
@@ -101,11 +104,12 @@ export function confirmStep(
   key: string,
   device: string,
   message: string,
-  pending: PendingAction | null
+  pending: PendingAction | null,
+  verb = 'start'
 ): boolean {
   if (pending && pending.key === key && pending.device === device) return true
   pendingAction = { key, device }
-  notice = `${message} Press ${keyLabel(key)} again to start.`
+  notice = `${message} Press ${keyLabel(key)} again to ${verb}.`
   requestRender()
   return false
 }
@@ -140,7 +144,14 @@ export function renderShell(view: ModeView): string {
 
 export function renderTopbar(busy = false): string {
   const spinner = busy ? '<span class="spin">⟳</span>' : ''
-  const where = mode === 'ethernet' ? 'Ethernet' : mode === 'wlan' ? 'Wi-Fi' : ''
+  const where =
+    mode === 'ethernet'
+      ? 'Ethernet'
+      : mode === 'wlan'
+        ? 'Wi-Fi'
+        : mode === 'configure'
+          ? 'Configure'
+          : ''
   const tag = where ? `<span class="mode-tag">${where}</span>` : ''
   return `<header class="topbar"><h1>magiceth</h1>${tag}<span class="ver">v${APP_VERSION}</span>${spinner}</header>`
 }
@@ -151,13 +162,14 @@ export function renderNotice(): string {
 }
 
 /**
- * The first screen. Two jobs, and the tool does them differently enough that mixing them on one
- * screen would cost the glanceability the whole thing is built around.
+ * The first screen. Three jobs, and the tool does them differently enough that mixing them on
+ * one screen would cost the glanceability the whole thing is built around.
  */
 export function renderChooser(): string {
   return renderShell({
     key: 'chooser',
-    footer: '<b>1</b>/<b>E</b> ethernet · <b>2</b>/<b>W</b> wi-fi · <b>Tab</b> switches anytime',
+    footer:
+      '<b>1</b>/<b>E</b> ethernet · <b>2</b>/<b>W</b> wi-fi · <b>3</b>/<b>C</b> configure · <b>Tab</b> switches anytime',
     body: `
     <section class="chooser">
       <div class="mode-card">
@@ -169,6 +181,11 @@ export function renderChooser(): string {
         <span class="mode-key">2</span>
         <h2>Wi-Fi</h2>
         <p>The air around you — every network, the access points behind it, their channels, width, load and signal.</p>
+      </div>
+      <div class="mode-card">
+        <span class="mode-key">3</span>
+        <h2>Configure</h2>
+        <p>Set a device up through the port — adopt a UniFi switch to a remote controller, or run a plugin of your own.</p>
       </div>
     </section>`
   })

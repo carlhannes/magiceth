@@ -15,6 +15,24 @@ export default tseslint.config(
     }
   },
   {
+    // A built-in plugin must have the same shape as one a user drops into Documents: it talks to
+    // the app only through the host it is given. Types and pure helpers from shared/ are fine.
+    files: ['src/plugins/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/main/**', '**/renderer/**', '**/preload/**'],
+              message: 'A plugin uses the host it is given; it never imports from main/.'
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module'

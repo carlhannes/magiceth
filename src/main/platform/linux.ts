@@ -10,6 +10,7 @@ import { LOOP_MAX_SECONDS, iwScanLoopScript, parseIwScan } from './iw'
 import type { IwBss } from './iw'
 import type { ElevatedPlan } from '../privilege'
 import type {
+  HeldAddress,
   PingOptions,
   PingSpec,
   PlatformOps,
@@ -274,6 +275,41 @@ async function buildProfilePlan(device: string, profile: Profile): Promise<Eleva
   return { interpreter: 'sh', script: linuxProfileScript(device, profile) }
 }
 
+/**
+ * Hold an extra address on the port until the stop file appears or the cap runs out, and let the
+ * unprivileged app bind port 67 meanwhile by lowering `net.ipv4.ip_unprivileged_port_start` —
+ * the one OS where that port is privileged. The sysctl is machine-wide for the session and put
+ * back at the end (README and SECURITY.md say so). The address is re-asserted every second, a
+ * no-op while present, in case NetworkManager flushes it when the link comes up.
+ */
+export function linuxAddressHoldScript(
+  device: string,
+  link: HeldAddress,
+  stopFile: string,
+  maxSeconds: number
+): string {
+  const d = shQuote(device)
+  const addr = shQuote(`${link.ip}/${link.cidr}`)
+  const stop = shQuote(stopFile)
+  return (
+    `old=$(sysctl -n net.ipv4.ip_unprivileged_port_start 2>/dev/null); ` +
+    `sysctl -q -w net.ipv4.ip_unprivileged_port_start=67; ` +
+    `n=0; while [ ! -f ${stop} ] && [ $n -lt ${maxSeconds} ]; do ` +
+    `ip addr add ${addr} dev ${d} 2>/dev/null; sleep 1; n=$((n+1)); done; ` +
+    `ip addr del ${addr} dev ${d} 2>/dev/null; ` +
+    `sysctl -q -w net.ipv4.ip_unprivileged_port_start="\${old:-1024}"; rm -f ${stop}; true`
+  )
+}
+
+async function buildAddressHoldPlan(
+  device: string,
+  link: HeldAddress,
+  stopFile: string,
+  maxSeconds: number
+): Promise<ElevatedPlan> {
+  return { interpreter: 'sh', script: linuxAddressHoldScript(device, link, stopFile, maxSeconds) }
+}
+
 function speedTestBind(device: string): string | undefined {
   // Linux binds a socket to an interface by name, which is what curl --interface does here.
   return device || undefined
@@ -511,6 +547,7 @@ export const linux: PlatformOps = {
   speedTestBind,
   buildSetMacPlan,
   buildProfilePlan,
+  buildAddressHoldPlan,
   scanWifi,
   requestWifiAccess,
   endWifiSession

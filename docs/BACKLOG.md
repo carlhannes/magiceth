@@ -29,6 +29,42 @@ focus; extend the confirm keypress to dongles as well; or leave it and document 
 The confirmation is cleared by any other keypress and never by a timer, because self-clearing
 notices are their own open question further down this file.
 
+## Configure mode: unverified until it meets a Flex Mini
+
+Everything below is built against documented formats and local checks (port 67 binds
+unprivileged on this Mac; the loopback smoke test in CONFIGURE-TEST.md). None of it has met a
+UniFi device. In the order CONFIGURE-TEST.md exercises them:
+
+- **The Flex Mini as a DHCP client.** Whether it sends the `ubnt` vendor class (every reference
+  config matches on it, none shows a capture), whether it sets the broadcast flag, and whether it
+  accepts an OFFER sent to the subnet-directed broadcast rather than 255.255.255.255. The server
+  cannot send the limited broadcast out a chosen interface from Node on macOS, so it does not try;
+  if a client turns out to need it, the fallback is a host route for 255.255.255.255 added by the
+  address-hold script. `test/fixtures/dhcp.ts` is hand-built and says so.
+- **The relay end to end.** A real inform through `inform-relay.ts` to a real controller, the
+  device listed as pending, the adoption reply going back, and what the device does next: keep
+  informing through the relay (reaches Connected on the dongle) or go quiet until moved.
+- **The address hold on each OS.** macOS `ifconfig alias` surviving the link coming up; Linux
+  `ip addr add` on a NetworkManager-managed port and the sysctl being put back; Windows
+  `netsh interface ipv4 add address` on a DHCP-configured adapter (it may refuse, in which case the
+  fallback is `winProfileScript` static → restore) and the firewall rules coming and going.
+- **The discovery parser** against the Flex Mini's own broadcast; today it follows nmap's field
+  table. Devices on the laptop's other networks are filtered by subnet and by the 192.168.1.20
+  fallback address, which is a heuristic.
+- **The plugin API is version 1 and may change.** `PluginHost` and the block vocabulary are the
+  minimum the UniFi plugin needed. Obvious next pieces: a way for a plugin to ask for a
+  confirmation in the notice bar, selection handled by the host rather than re-sent as arrow keys,
+  and a `run` that can elevate through a plan the host builds.
+- **Candidates for a second plugin:** `set-inform` over SSH for devices that have it (needs
+  password automation — `ssh` alone cannot take `ubnt`/`ubnt` non-interactively), and adopting
+  through the controller's API so the click in the controller goes away.
+- **The Linux sysctl relaxation is machine-wide** for the session. A capability on the binary or a
+  helper owning the socket would be narrower; both are more machinery than this warranted before
+  the feature has been seen working.
+- **Pre-existing, noticed while reading:** `macProfileScript` passes `''` as the router to
+  `networksetup -setmanual` for a static profile without a gateway, which `networksetup` may
+  reject. Untouched; a static profile without a gateway has never been verified on any OS.
+
 ## WLAN mode: what is missing
 
 The scanner works on macOS and is verified end to end ([WIFI-FINDINGS.md](WIFI-FINDINGS.md)). What

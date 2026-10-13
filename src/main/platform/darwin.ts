@@ -6,7 +6,14 @@ import { cidrToDotted, isValidIpv4 } from '../../shared/net'
 import { shQuote } from '../privilege'
 import { parseWifiHelper } from './wifi-helper'
 import type { ElevatedPlan } from '../privilege'
-import type { PingOptions, PingSpec, PlatformOps, RawAdapter, WifiScanOutcome } from './index'
+import type {
+  HeldAddress,
+  PingOptions,
+  PingSpec,
+  PlatformOps,
+  RawAdapter,
+  WifiScanOutcome
+} from './index'
 import type { NetInfo, Profile } from '../../shared/types'
 
 // macOS. Verified against real output (ASIX AX88179A dongle):
@@ -384,6 +391,40 @@ async function buildProfilePlan(device: string, profile: Profile): Promise<Eleva
   return { interpreter: 'sh', script: macProfileScript(device, service, profile) }
 }
 
+/**
+ * Hold an alias address on the port until the stop file appears or the cap runs out. The alias
+ * is re-asserted every second — a no-op while it is there — because configd reconfigures a port
+ * when its link comes up, which is exactly when the device being configured gets plugged in.
+ * `ifconfig`, not `networksetup`: the latter needs a router, and a router on the dongle can take
+ * the default route with it.
+ */
+export function macAddressHoldScript(
+  device: string,
+  link: HeldAddress,
+  stopFile: string,
+  maxSeconds: number
+): string {
+  const d = shQuote(device)
+  const ip = shQuote(link.ip)
+  const mask = shQuote(cidrToDotted(link.cidr))
+  const stop = shQuote(stopFile)
+  return (
+    `ifconfig ${d} inet ${ip} netmask ${mask} alias && ` +
+    `n=0; while [ ! -f ${stop} ] && [ $n -lt ${maxSeconds} ]; do ` +
+    `ifconfig ${d} inet ${ip} netmask ${mask} alias 2>/dev/null; sleep 1; n=$((n+1)); done; ` +
+    `ifconfig ${d} inet ${ip} -alias; rm -f ${stop}; true`
+  )
+}
+
+async function buildAddressHoldPlan(
+  device: string,
+  link: HeldAddress,
+  stopFile: string,
+  maxSeconds: number
+): Promise<ElevatedPlan> {
+  return { interpreter: 'sh', script: macAddressHoldScript(device, link, stopFile, maxSeconds) }
+}
+
 function speedTestBind(device: string): string | undefined {
   // macOS binds a socket to an interface by name, which is what curl --interface does here.
   return device || undefined
@@ -455,6 +496,7 @@ export const darwin: PlatformOps = {
   speedTestBind,
   buildSetMacPlan,
   buildProfilePlan,
+  buildAddressHoldPlan,
   scanWifi,
   requestWifiAccess,
   endWifiSession

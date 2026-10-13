@@ -46,20 +46,36 @@ src/
       reconfig.ts          # MAC rolling + profile application + undo
       profiles.ts          # fs/electron glue for profile storage
       profiles-core.ts     # pure profile operations (upsert/remove/…)
+    plugins/
+      loader.ts            # Configure mode: find plugin folders, run at most one, forward keys, unload
+      manifest.ts          # pure: a plugin folder's package.json → PluginManifest
+      host.ts              # what a plugin is handed: port, log, storage, run(), a DHCP server
+      storage.ts           # fs/electron glue: one JSON file per plugin in userData
+      dhcp/
+        codec.ts           # pure: DHCP packets to and from bytes
+        lease.ts           # pure: what to answer, if anything (the office-LAN rules live here)
+        subnet.ts          # pure: a private /24 that clashes with nothing local
+        server.ts          # the socket: 0.0.0.0:67, replies to the link's broadcast
+        session.ts         # one session: the elevated address hold, then the server, then teardown
+    util/app-paths.ts      # the Documents/magiceth folder, shared by recordings and user plugins
       wifiscan.ts          # WLAN mode: the active scan + recording loop; the OS half is in platform/
       wifi-model.ts        # pure: group APs by SSID, fold into tracks, channel load and blocks
       ie80211.ts           # pure: decode 802.11 beacon information elements
       oui.ts               # pure: who made this radio, from the IEEE registries
       recordings.ts        # fs/electron glue for saved recordings (+ reveal in the file manager)
       recordings-core.ts   # pure: the recording CSV, written and read back
+  plugins/
+    unifi-adopt/           # the built-in Configure plugin: package.json + index.ts + its own modules
   preload/index.ts
   renderer/
     index.html
     src/main.ts            # entry: mounts, dispatches render + keys by mode
     src/shell.ts           # mode chooser, notice bar, pending confirmations, render hook
-    src/view.ts            # pure formatters shared by both modes (row, clock, escapeHtml…)
+    src/view.ts            # pure formatters shared by every mode (row, clock, escapeHtml…)
     src/ethernet.ts        # Ethernet mode: the port dashboard + profile editor
     src/wlan.ts            # WLAN mode: network list, AP list, AP detail, recording
+    src/configure.ts       # Configure mode: the plugin chooser and the active plugin's screen
+    src/plugin-view.ts     # pure: a plugin's view blocks → HTML
     src/styles.css
     src/env.d.ts
 resources/wifi-helper/     # the macOS helper .app (Swift + Info.plist) and the Windows helper (.ps1)
@@ -69,6 +85,7 @@ resources/wifi-helper/     # the macOS helper .app (Swift + Info.plist) and the 
     net.ts                 # cidr<->netmask, isValidIpv4
     adapter.ts             # sortAdapters / pickSelected (pure, used by main + renderer)
     profile.ts             # validateProfileDraft (shared by renderer + tests)
+    plugin.ts              # the plugin contract: manifest, view blocks, PluginHost, PluginInstance
 resources/chipsets.json    # VID:PID -> chipset (single source of truth, bundled in at build)
 test/                      # vitest — pure parsers/functions
 ```
@@ -80,19 +97,23 @@ Each capability is a platform-independent interface in `capabilities/` that dele
 (arguments as an array, **no shell**) — which makes quoting/injection a non-issue — with a
 timeout and `windowsHide`.
 
-| Module                       | Privileges | What it does                                                                                                  |
-| ---------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
-| `adapters`                   | None       | Enumerates the ports worth showing, dongles first; looks up chipsets via `chipsets.json`.                     |
-| `diagnostics` → `probe`      | None       | Reads netinfo and runs gateway/internet ping + DNS test in parallel.                                          |
-| `survey`                     | Root/admin | Port survey: runs `tcpdump` until stopped, tallying 802.1Q VLANs and LLDP/CDP. Optional; degrades gracefully. |
-| `speedtest`                  | None       | Throughput both ways, bound to the dongle. Manual only — it moves real traffic. Degrades gracefully.          |
-| `reconfig`                   | Root/admin | Rolls MAC, applies DHCP/static profile, undoes.                                                               |
-| `profiles` / `profiles-core` | None       | Reads/writes profile JSON; pure CRUD operations.                                                              |
-| `wifiscan` → `ie80211`       | Location\* | WLAN mode. Asks the platform for a sweep, decodes beacons, accumulates a recording. All three OSes.           |
-| `recordings` / `-core`       | None       | Writes a recording to CSV in Documents, reads it back, reveals it in the file manager.                        |
+| Module                       | Privileges  | What it does                                                                                                  |
+| ---------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------- |
+| `adapters`                   | None        | Enumerates the ports worth showing, dongles first; looks up chipsets via `chipsets.json`.                     |
+| `diagnostics` → `probe`      | None        | Reads netinfo and runs gateway/internet ping + DNS test in parallel.                                          |
+| `survey`                     | Root/admin  | Port survey: runs `tcpdump` until stopped, tallying 802.1Q VLANs and LLDP/CDP. Optional; degrades gracefully. |
+| `speedtest`                  | None        | Throughput both ways, bound to the dongle. Manual only — it moves real traffic. Degrades gracefully.          |
+| `reconfig`                   | Root/admin  | Rolls MAC, applies DHCP/static profile, undoes.                                                               |
+| `profiles` / `profiles-core` | None        | Reads/writes profile JSON; pure CRUD operations.                                                              |
+| `wifiscan` → `ie80211`       | Location\*  | WLAN mode. Asks the platform for a sweep, decodes beacons, accumulates a recording. All three OSes.           |
+| `recordings` / `-core`       | None        | Writes a recording to CSV in Documents, reads it back, reveals it in the file manager.                        |
+| `plugins` → `dhcp`           | Root/admin† | Configure mode. Loads one plugin at a time; the host's DHCP server needs an address held on the port.         |
 
 \* Location consent on macOS and Windows; nothing on Linux with NetworkManager, one `pkexec`
 prompt without it. See [reading the air](#reading-the-air-on-each-os).
+
+† One prompt per session, for the address hold only; the DHCP server, the relay and discovery run
+unprivileged. See [Configure mode](#configure-mode-plugins).
 
 ## Platform layer (`PlatformOps`)
 
@@ -107,6 +128,7 @@ interface PlatformOps {
   speedTestBind(device, srcIp): string | undefined // curl --interface: name, or address on Windows
   buildSetMacPlan(device, mac): Promise<ElevatedPlan>
   buildProfilePlan(device, profile): Promise<ElevatedPlan>
+  buildAddressHoldPlan(device, link, stopFile, maxSeconds): Promise<ElevatedPlan> // Configure mode
   scanWifi(device): Promise<WifiScanOutcome> // one sweep of the air, decoded to beacon facts
   requestWifiAccess(): void // raise the OS's consent dialog/page; no-op on Linux
   endWifiSession(): void // stop anything long-lived (the Linux elevated loop)
@@ -135,7 +157,9 @@ The preload exposes `window.api` per `MagicethApi` (`src/shared/types.ts`). Chan
 - **Long-running (unprivileged):** `speedtest:start`, `speedtest:stop`
 - **Long-running (unprivileged):** `wifi:start`, `wifi:stop`
 - **Saved recordings:** `recordings:list`, `recordings:read`, `recordings:reveal`
-- **Push events (main → renderer):** `adapters:changed`, `survey:update`, `speedtest:update`, `wifi:update`
+- **Windows Location fix (privileged, opt-in):** `wifi:enableAccess`
+- **Plugins:** `plugins:list` (manifests only), `plugins:activate`, `plugins:deactivate`, `plugins:key`, `plugins:submit`
+- **Push events (main → renderer):** `adapters:changed`, `survey:update`, `speedtest:update`, `wifi:update`, `plugins:view`
 
 Every channel has a consumer in the renderer — if a capability stops being used, its channel,
 its `MagicethApi` method and its preload wiring go with it.
@@ -154,7 +178,8 @@ rather than a possible Wi-Fi default route.
 ## Privilege model
 
 Least privilege: the app and all read-only diagnostics run unprivileged. Only `survey`
-(capture) and `reconfig` (MAC/IP) are elevated, and then **per action** via `src/main/privilege.ts`:
+(capture), `reconfig` (MAC/IP) and a Configure session's address hold are elevated, and then
+**per action** via `src/main/privilege.ts`:
 
 - **macOS:** `osascript -e 'do shell script "…" with administrator privileges'`
 - **Linux:** `pkexec`
@@ -214,17 +239,68 @@ which is where `chipsets.json`'s capabilities and the raw USB IDs are shown). Ea
 `render*()` that returns `''` when closed, they share the `.panel-card` shell, and opening one
 closes the other so the single screen never grows past a glance.
 
-## Two modes
+## Three modes
 
-The app opens on a chooser: **Ethernet**, the wired port dashboard, and **WLAN**, the Wi-Fi
-scanner. `Tab` switches between them and `Esc` steps back out. They are separate because they
-answer different questions, and mixing them on one screen would cost the at-a-glance readability
-the whole tool is built around.
+The app opens on a chooser: **Ethernet**, the wired port dashboard; **WLAN**, the Wi-Fi scanner;
+and **Configure**, which uses the port to set a device up through a plugin. `Tab` cycles through
+them and `Esc` steps back out. They are separate because they answer different questions, and
+mixing them on one screen would cost the at-a-glance readability the whole tool is built around.
 
-`main.ts` is the only module that knows both exist. `shell.ts` holds what they share — the mode,
-the notice bar, the pending-confirmation gate and the render hook — and imports neither of them,
-so the dependency graph stays a tree. Leaving a mode shuts down whatever it had running, for the
-same reason switching adapter does: a capture or a scan belongs to the screen it was started from.
+`main.ts` is the only module that knows all three exist. `shell.ts` holds what they share — the
+mode, the notice bar, the pending-confirmation gate and the render hook — and imports none of
+them, so the dependency graph stays a tree. Leaving a mode shuts down whatever it had running, for
+the same reason switching adapter does: a capture, a scan or a DHCP session belongs to the screen
+it was started from.
+
+## Configure mode: plugins
+
+A plugin is a folder with a `package.json` and an entry script. The app ships its own under
+`src/plugins/`, bundled by `electron.vite.config.ts` as extra main-process entries with the
+manifest copied next to each bundle; the user's live in `Documents/magiceth/plugins`. Both have
+exactly the same shape, which is the point: the built-in one is the worked example for writing
+another, and ESLint keeps it honest by forbidding imports from `main/` (`src/plugins/**` may use
+types and pure helpers from `shared/`, nothing else).
+
+**Nothing runs until it is picked.** `loader.ts` reads manifests — `parseManifest` is pure and
+strict about the two fields that matter for safety, the id (it becomes a storage filename) and the
+entry (it becomes a `require()`, and must resolve inside the folder) — every time the chooser
+asks, so a folder dropped in appears without a restart. Picking a plugin `require()`s its entry in
+the main process, hands it a `PluginHost`, and calls `activate`. Leaving calls `deactivate`,
+stops any DHCP session the host opened for it, and drops every module under the plugin's folder
+from the require cache, so the next pick reads the files again. One plugin runs at a time.
+
+**The renderer never runs plugin code.** A plugin describes its screen as blocks — text, table,
+list, log, form, raw html — and `plugin-view.ts` has exactly one renderer per kind, so every
+plugin looks like the rest of the app and the CSP stays `script-src 'self'`. Every key goes back
+to the plugin over IPC and the host re-renders after each; `Esc` and `Tab` are the shell's, gated
+by a second press while the plugin reports something running. A form block takes over the screen
+the way the profile editor does — rendering suspended, fields read from the DOM on save — and is
+redrawn only when the plugin's next view carries a validation error for it.
+
+**The DHCP server is host infrastructure**, so no plugin ever writes a shell string. A session
+(`dhcp/session.ts`, in survey.ts's shape) refuses when the port already has a DHCP lease, picks a
+private /24 that clashes with nothing local, and asks the platform for one elevated script that
+adds the address as an alias, waits on a stop file or a cap, and removes it — an alias rather than
+a static profile because `networksetup -setmanual` needs a router, and a router on the dongle can
+take the Mac's default route with it. Port 67 binds unprivileged on macOS (checked) and Windows;
+the Linux script lowers `ip_unprivileged_port_start` for the session. The server listens on the
+wildcard address because a broadcast reaches nothing else, which means it hears the office LAN
+too: `lease.ts` answers only the vendor class the plugin names, only from its own pool, only on
+the link's own broadcast, and never with a NAK — a production access point rebinding over Wi-Fi
+must come out of it with silence. Replies go to the subnet-directed broadcast rather than
+255.255.255.255 because Node cannot pick the egress interface for the latter on a multi-homed Mac,
+and embedded DHCP clients accept either.
+
+**The UniFi plugin** (`src/plugins/unifi-adopt/`) is three unprivileged pieces on top of that:
+option 43 (`01 04 <this laptop>`, Ubiquiti's documented sub-option 1), an HTTP relay on port 8080
+that forwards each inform POST verbatim to the saved controller URL (the port is what a device
+derives from option 43, so it is fixed), and a UDP 10001 discovery listener that decodes the TLV
+announcement for the screen. The relay and discovery bind before the session is requested, so a
+taken port fails before any password prompt. The adoption reply reaches the device through the
+relay and makes it persist the controller's Override Inform Host, which it then reaches from its
+real network — the status text says so, because on the dongle it looks stuck at "Adopting".
+None of this has met a Flex Mini yet; [CONFIGURE-TEST.md](../CONFIGURE-TEST.md) is the procedure
+and `docs/BACKLOG.md` lists what it has to settle.
 
 ## Reading the spectrum
 
@@ -339,8 +415,9 @@ topbar, the notice, an optional pinned status line, the body, and the key legend
 scrolls. The frame is fixed because the legend is how anyone discovers what the app does, and a
 legend that scrolls away on any list longer than the window is a legend nobody reads.
 
-Having one function assemble it is what keeps the five screens that need it — both Ethernet states,
-the profile editor, WLAN and the chooser — from drifting apart. `shell.ts` imports neither mode, so
+Having one function assemble it is what keeps the screens that need it — both Ethernet states,
+the profile editor, WLAN, Configure's chooser and plugin screens, and the mode chooser — from
+drifting apart. `shell.ts` imports neither mode, so
 the graph stays a tree.
 
 Two details in `main.ts` that are easy to lose and hard to notice:
@@ -375,3 +452,7 @@ comes first, because the bandwidth being spent belongs to whoever owns the netwo
   output. Then verify on real hardware.
 - **New IPC:** add a handler in `src/main/index.ts`, a method in `MagicethApi` (`src/shared/types.ts`),
   and expose it in `src/preload/index.ts`.
+- **New Configure plugin:** a folder under `src/plugins/<id>/` with a `package.json` carrying
+  `"magiceth": { "api": 1 }` and an `index.ts` exporting `activate(host)` — the build finds it by
+  itself. A user's goes in `Documents/magiceth/plugins/<id>/` as plain JavaScript. The contract is
+  `src/shared/plugin.ts`; `src/plugins/unifi-adopt` is the example.

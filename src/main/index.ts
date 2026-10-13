@@ -19,8 +19,17 @@ import {
   saveCurrentAsProfile,
   saveProfile
 } from './capabilities/profiles'
+import {
+  activatePlugin,
+  deactivatePlugin,
+  listPlugins,
+  onPluginScreen,
+  pluginKey,
+  pluginSubmit
+} from './plugins/loader'
 import { getPlatform } from './platform'
 import type { Adapter, Profile, ReconfigResult } from '../shared/types'
+import type { KeyPress } from '../shared/plugin'
 
 // The hotplug probe: a signature over os.networkInterfaces() (platform-independent, no
 // privileges, cheap enough to poll) that changes when a dongle is plugged/unplugged or link
@@ -166,6 +175,23 @@ app.whenReady().then(() => {
   ipcMain.handle('profiles:delete', (_event, id: string) => deleteProfile(id))
   ipcMain.handle('profiles:save', (_event, profile: Profile) => saveProfile(profile))
 
+  // Configure mode. Listing reads manifests only; code runs from `plugins:activate` on, and every
+  // re-render the active plugin asks for is pushed as a whole screen.
+  onPluginScreen((screen) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('plugins:view', screen)
+    }
+  })
+  ipcMain.handle('plugins:list', () => listPlugins())
+  ipcMain.handle('plugins:activate', (_event, id: string, device: string) =>
+    activatePlugin(id, device)
+  )
+  ipcMain.handle('plugins:deactivate', () => deactivatePlugin())
+  ipcMain.handle('plugins:key', (_event, key: KeyPress) => pluginKey(key))
+  ipcMain.handle('plugins:submit', (_event, formId: string, values: Record<string, string>) =>
+    pluginSubmit(formId, values)
+  )
+
   // Active control (privileged)
   ipcMain.handle('reconfig:rollMac', (_event, device: string) => rollMac(device))
   ipcMain.handle('reconfig:undo', (_event, device: string) => undo(device))
@@ -194,6 +220,9 @@ app.on('before-quit', () => {
   stopSpeedTest()
   stopWifiScan()
   endWifiSession()
+  // The parts that matter — the address-hold stop file and the DHCP socket — go before its first
+  // await, so not awaiting here loses nothing.
+  void deactivatePlugin()
 })
 
 app.on('window-all-closed', () => {

@@ -1,0 +1,11 @@
+{
+  "name": "unifi-adopt",
+  "version": "1.0.0",
+  "description": "Point a factory-default UniFi device (Flex Mini and other SSH-less models included) at a remote controller: DHCP option 43 on this port, informs relayed to the controller, devices seen by discovery.",
+  "author": "magiceth",
+  "main": "index.js",
+  "magiceth": {
+    "api": 1,
+    "title": "UniFi adoption"
+  }
+}

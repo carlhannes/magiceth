@@ -553,3 +553,28 @@ body {
 .profiles .pd.bad {
   color: #e05a5a;
 }
+
+/* --- Configure mode --- */
+
+/* A plugin's log block: monospace, wrapped, muted — it is the detail under the summary rows. */
+.log {
+  margin-top: 6px;
+  font:
+    12px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+}
+
+.warn-text {
+  color: var(--warn);
+}
+
+/* A plugin that cannot be opened — wrong api, bad entry — stays in the list with the reason. */
+.profile.muted {
+  opacity: 0.55;
+}
