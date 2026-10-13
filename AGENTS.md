@@ -97,13 +97,18 @@ and start again. Do **not** verify by grepping the bundle for a comment you just
 strips most comments, so that check fails on fresh code too and tells you nothing. Grep for a string
 literal or a distinctive expression instead.
 
-## Driving the UI: Playwright, never the system keyboard
+## Driving the UI: Electron's own debugging endpoints, never the system keyboard
 
-`npm run ui-check` builds the app and drives it through Playwright's Electron support
-(`scripts/ui-check.mjs`): keystrokes and screenshots go over the debugging protocol, the window
-is hidden right after launch, and the person at the machine can keep typing. It walks Configure
-mode end to end and dumps a per-key trace of the screen key on failure. Extend it rather than
-reaching for `osascript`.
+`npm run ui-check` builds the app and drives it with nothing installed (`scripts/ui-check.mjs`):
+Electron is started with `--remote-debugging-port=0 --inspect=0`, the page is reached over the
+Chrome DevTools Protocol (`Runtime.evaluate` for state and synthetic `KeyboardEvent`s,
+`Page.captureScreenshot` for pictures) and the main process over the Node inspector, which is how
+the window is hidden right after launch so the person at the machine can keep typing. Two
+gotchas it already handles: the inspector's global scope has no `require`, so Electron's `app` is
+reached through `process.getBuiltinModule('node:module').createRequire(...)`; and `innerText`
+reflects CSS `text-transform`, so a section title reads as upper case. It walks Configure mode end
+to end and dumps a per-key trace of the screen key on failure. Extend it rather than reaching for
+`osascript`.
 
 **Do not send keystrokes through System Events while someone is using the machine.** It was done
 once on 2026-10-13 and the test input landed in the user's terminal, and their typing landed in the
