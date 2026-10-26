@@ -39,6 +39,24 @@ Done on 2026-10-13 on the development Mac, worth repeating after a change to `dh
   into `Documents/magiceth/plugins/hello/`; leave and re-enter the mode; it is listed and renders.
   Edit the text, leave and re-enter; the new text shows without a restart.
 
+## Results so far
+
+**2026-10-26, macOS, en9 (AX88179A), USW-Flex-Mini 2.1.6.762, controller = a UniFi OS gateway on
+the home LAN.** Steps 1–3 run; step 4 not reached.
+
+- Step 1: capture in `test/fixtures/flexmini-capture.ts`. DISCOVER every 20 s with vendor class
+  `ubnt`, hostname `USW-Flex-Mini`, parameter list 1 3 28 6 12 15 43, broadcast flag clear, no
+  client id. Discovery (v2, command 6) every 10 s from 192.168.1.20, default flag set. The Mac's
+  own DHCP client also DISCOVERs on the link, without a vendor class.
+- Step 2: alias on the port within 5 s of approval, present throughout, removed at the 15-minute
+  cap; stop file gone; nothing left running.
+- Step 3: lease 7 s after `DHCP server on …` — the device accepts the OFFER to the subnet
+  broadcast. Discovery row with model and version. Renewal every 60 s. Informs every ~96 s, 3.3 kB,
+  **the controller answered 404 to all nine**. Garbage to the same URL gets 400. Not explained
+  yet; see BACKLOG. Next evidence: the controller's `server.log` while an inform arrives, and
+  whether the device shows as pending in its device list.
+- Also seen: a DISCOVER from a device on the laptop's Wi-Fi LAN, ignored as designed.
+
 ## 1. Capture the device before the plugin sees it
 
 The one step that produces the fixtures. Dongle in the laptop, Flex Mini powered, port 2 of the
@@ -71,7 +89,7 @@ Approve the prompt.
 - Plug the Flex Mini's cable in (link comes up): the alias is still there a few seconds later.
   This is the configd claim — if the alias vanishes and comes back within a second, the re-assert
   in the loop is doing its job; if it vanishes for good, that is a finding.
-- `S`: the alias is gone within two seconds, and `ls /tmp/magiceth-dhcp-*` shows no stop file.
+- `S`: the alias is gone within two seconds, and `ls "$TMPDIR"magiceth-dhcp-*` shows no stop file (the session writes it to the OS temp dir, which on macOS is not `/tmp`).
 - Start again and quit the app mid-session: the alias is gone within two seconds.
 - Start again and wait: the session ends by itself at fifteen minutes with the alias removed.
 

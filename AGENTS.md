@@ -168,9 +168,11 @@ rather than implying coverage:
 - **The DHCP socket hears every interface.** `lease.ts` is written so that a packet from the
   office LAN gets silence; keep it that way (no unicast replies, no NAK, nothing outside the pool)
   and add a test for every new case.
-- **The Flex Mini has not been seen yet.** `test/fixtures/dhcp.ts` and the discovery fixture are
-  hand-built. CONFIGURE-TEST.md says which captures to take; when they exist, replace the fixtures
-  with them rather than adding alongside.
+- **The Flex Mini's real packets are in `test/fixtures/flexmini-capture.ts`** (captured
+  2026-10-26): its DISCOVER, its discovery announcement, and the Mac's own DISCOVER on the same
+  link. Test against those first; `test/fixtures/dhcp.ts` builds the message types no capture
+  covers yet (REQUEST, RELEASE, DECLINE). When a capture of the OFFER/REQUEST/ACK exchange or an
+  inform body exists, it goes into the capture file and replaces the hand-built case.
 
 ## Do not weaken the invariants
 

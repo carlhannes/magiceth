@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { parseDiscovery, PROBE_V1 } from '../src/plugins/unifi-adopt/discovery'
+import { FLEX_MINI_DISCOVERY, FLEX_MINI_MAC } from './fixtures/flexmini-capture'
 
-// Built from the field table in nmap's ubiquiti-discovery.nse. DOCUMENTED FORMAT — the Flex
-// Mini's own broadcast, captured per CONFIGURE-TEST.md, belongs here as a hex constant.
+// The v1 cases are built from the field table in nmap's ubiquiti-discovery.nse; the v2 case is
+// the Flex Mini's real announcement from test/fixtures/flexmini-capture.ts.
 function tlv(type: number, value: Buffer | string): Buffer {
   const v = typeof value === 'string' ? Buffer.from(value, 'utf8') : value
   const len = Buffer.alloc(2)
@@ -52,17 +53,29 @@ describe('parseDiscovery', () => {
     })
   })
 
-  it('reads a v2 announcement with the one-byte default flag', () => {
-    const d = parseDiscovery(
-      packet(
-        2,
-        6,
-        Buffer.concat([tlv(0x01, MAC), tlv(0x15, 'USW-Flex-Mini'), tlv(0x17, Buffer.from([0]))])
-      )
-    )
-    expect(d?.mac).toBe('78:45:58:a1:b2:c3')
-    expect(d?.model).toBe('USW-Flex-Mini')
-    expect(d?.isDefault).toBe(false)
+  it("reads the Flex Mini's own v2 announcement, captured 2026-10-26", () => {
+    const d = parseDiscovery(Buffer.from(FLEX_MINI_DISCOVERY, 'hex'))
+    expect(d).toEqual({
+      mac: FLEX_MINI_MAC,
+      ip: '192.168.1.20',
+      hostname: 'USW-Flex-Mini',
+      product: 'USMINI',
+      // 0x14 carries the long name and 0x15 the short one; the long name wins.
+      model: 'USW-Flex-Mini',
+      firmware: 'US.m487.boot_2.1.6+762.250807.1735',
+      version: '2.1.6.762',
+      uptimeSec: 50,
+      isDefault: true,
+      unknown: {
+        '0x18': '00',
+        '0x2c': '03',
+        '0x19': '01',
+        '0x1a': '01',
+        '0x13': 'ac8ba9af9a6f',
+        '0x12': '00000004',
+        '0x1b': '312e372e33'
+      }
+    })
   })
 
   it('is undefined for other versions and for runts', () => {

@@ -110,12 +110,18 @@ export function activate(host: PluginHost): PluginInstance {
       case 'offer':
         host.log(`Offered ${event.ip} to ${event.mac}.`)
         break
-      case 'ack':
+      case 'ack': {
+        // The Flex Mini renews every 60 s (half its 120 s lease); only a new or changed lease
+        // is worth a line. The table above shows the current state either way.
+        const renewal = r.leases.get(event.mac) === event.ip
         r.leases.set(event.mac, event.ip)
-        host.log(
-          `Lease ${event.ip} → ${event.mac}. It should inform through this laptop within a minute.`
-        )
+        if (renewal) host.update()
+        else
+          host.log(
+            `Lease ${event.ip} → ${event.mac}. It should inform through this laptop within a minute.`
+          )
         break
+      }
       case 'release':
         r.leases.delete(event.mac)
         host.log(`${event.mac} released ${event.ip}.`)
@@ -158,7 +164,7 @@ export function activate(host: PluginHost): PluginInstance {
     const first = !r.devices.has(key)
     r.devices.set(key, { ...device, from, seenAt: Date.now() })
     if (first) {
-      const what = [device.model ?? device.product, device.firmware ?? device.version]
+      const what = [device.model ?? device.product, device.version ?? device.firmware]
         .filter(Boolean)
         .join(' · ')
       host.log(
@@ -279,7 +285,7 @@ export function activate(host: PluginHost): PluginInstance {
         const name = d.model ?? d.product ?? d.hostname ?? 'UniFi device'
         const state =
           d.isDefault === undefined ? '' : d.isDefault ? ' · factory default' : ' · adopted'
-        const fw = d.firmware ?? d.version
+        const fw = d.version ?? d.firmware
         return `${name} · ${d.mac ?? d.from} · ${d.ip ?? d.from}${fw ? ` · ${fw}` : ''}${state}`
       })
   }
@@ -325,11 +331,23 @@ export function activate(host: PluginHost): PluginInstance {
         tone: r.error ? 'warn' : 'muted'
       })
     } else if (r.informs > 0) {
-      blocks.splice(1, 0, {
-        kind: 'text',
-        text: 'The device is talking to the controller. Click Adopt there; the reply comes back through this relay.',
-        tone: 'muted'
-      })
+      const status = r.lastInform?.status
+      const accepted = status !== undefined && status >= 200 && status < 300
+      blocks.splice(
+        1,
+        0,
+        accepted
+          ? {
+              kind: 'text',
+              text: 'The device is talking to the controller. Click Adopt there; the reply comes back through this relay.',
+              tone: 'muted'
+            }
+          : {
+              kind: 'text',
+              text: `The controller answered ${r.lastInform?.error ? 'nothing' : `HTTP ${status}`} to the last inform, so it has not accepted the device yet. Check that the inform URL is the controller's own and whether the device is listed there as pending.`,
+              tone: 'warn'
+            }
+      )
     }
     return {
       status: live ? (r.listening ? `serving ${where}` : 'starting…') : 'ended',

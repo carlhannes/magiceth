@@ -18,6 +18,7 @@ import {
   vendorClass
 } from '../src/main/plugins/dhcp/codec'
 import { clientPacket, UBNT_MAC } from './fixtures/dhcp'
+import { FLEX_MINI_DISCOVER, FLEX_MINI_MAC, MAC_HOST_DISCOVER } from './fixtures/flexmini-capture'
 
 describe('parseDhcp', () => {
   it('reads the header and the options of a DISCOVER', () => {
@@ -149,5 +150,34 @@ describe('hexToBytes', () => {
 
   it('refuses an odd number of digits', () => {
     expect(() => hexToBytes('abc')).toThrow(/odd/i)
+  })
+})
+
+describe("the Flex Mini's real DISCOVER (captured 2026-10-26)", () => {
+  const m = parseDhcp(Buffer.from(FLEX_MINI_DISCOVER, 'hex'))!
+
+  it('parses as a broadcast-flag-clear DISCOVER from the switch', () => {
+    expect(m.op).toBe(1)
+    expect(m.mac).toBe(FLEX_MINI_MAC)
+    expect(m.xid).toBe(0xc36d91aa)
+    expect(m.flags).toBe(0)
+    expect(m.giaddr).toBe('0.0.0.0')
+    expect(messageType(m)).toBe(DHCP.DISCOVER)
+  })
+
+  it('carries the ubnt vendor class, its hostname and option 43 in the parameter list', () => {
+    expect(vendorClass(m)).toBe('ubnt')
+    expect(hostname(m)).toBe('USW-Flex-Mini')
+    expect(paramList(m)).toEqual([1, 3, 28, 6, 12, 15, 43])
+    expect(clientId(m)).toBeUndefined()
+    expect(requestedIp(m)).toBeUndefined()
+  })
+
+  it("and the Mac's own DISCOVER on the same link has a client id but no vendor class", () => {
+    const host = parseDhcp(Buffer.from(MAC_HOST_DISCOVER, 'hex'))!
+    expect(messageType(host)).toBe(DHCP.DISCOVER)
+    expect(vendorClass(host)).toBeUndefined()
+    expect(clientId(host)).toBe('01:6c:6e:07:01:ff:de')
+    expect(hostname(host)).toBe('hannes-mbpm4')
   })
 })

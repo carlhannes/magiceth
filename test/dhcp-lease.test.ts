@@ -17,6 +17,7 @@ import {
 } from '../src/main/plugins/dhcp/lease'
 import type { Decision, LeaseConfig, LeaseTable } from '../src/main/plugins/dhcp/lease'
 import { clientPacket, UBNT_MAC } from './fixtures/dhcp'
+import { FLEX_MINI_DISCOVER, FLEX_MINI_MAC, MAC_HOST_DISCOVER } from './fixtures/flexmini-capture'
 import type { ClientPacket } from './fixtures/dhcp'
 
 const cfg: LeaseConfig = {
@@ -222,5 +223,25 @@ describe('decide: the pool', () => {
     const d = send({ type: DHCP.DISCOVER, mac: UBNT_MAC, vendorClass: 'ubnt' }, table)
     expect(d.reply).toBeUndefined()
     expect(d.events[1]).toEqual({ kind: 'error', message: 'The address pool is full.' })
+  })
+})
+
+describe('decide: against the real packets from the dongle link (captured 2026-10-26)', () => {
+  it("offers the Flex Mini's DISCOVER an address with option 43", () => {
+    const d = decide(parseDhcp(Buffer.from(FLEX_MINI_DISCOVER, 'hex'))!, {}, cfg)
+    expect(d.reply).toBeDefined()
+    expect(d.table).toEqual({ [FLEX_MINI_MAC]: '10.254.254.10' })
+    const offer = parseDhcp(d.reply!)!
+    expect(messageType(offer)).toBe(DHCP.OFFER)
+    expect(offer.xid).toBe(0xc36d91aa)
+    expect(bytesToHex(offer.options.get(OPT.VENDOR_SPECIFIC)!)).toBe('01:04:0a:fe:fe:01')
+  })
+
+  it("gives the Mac's own DHCP client on the same link silence", () => {
+    const d = decide(parseDhcp(Buffer.from(MAC_HOST_DISCOVER, 'hex'))!, {}, cfg)
+    expect(d.reply).toBeUndefined()
+    expect(d.events).toEqual([
+      { kind: 'ignored', mac: '6c:6e:07:01:ff:de', reason: 'no vendor class' }
+    ])
   })
 })

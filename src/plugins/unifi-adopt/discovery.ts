@@ -68,9 +68,13 @@ export function parseDiscovery(buf: Buffer): DiscoveredDevice | undefined {
       case 0x0c:
         device.product = text(value)
         break
+      // The Flex Mini sends both: 0x14 "USW-Flex-Mini" and 0x15 "USMINI" (captured 2026-10-26).
+      // The long name is the one a person recognises, so 0x15 only fills in when 0x14 is absent.
       case 0x14:
-      case 0x15:
         device.model = text(value)
+        break
+      case 0x15:
+        device.model = device.model ?? text(value)
         break
       case 0x16:
         device.version = text(value)

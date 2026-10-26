@@ -29,28 +29,34 @@ focus; extend the confirm keypress to dongles as well; or leave it and document 
 The confirmation is cleared by any other keypress and never by a timer, because self-clearing
 notices are their own open question further down this file.
 
-## Configure mode: unverified until it meets a Flex Mini
+## Configure mode: what the Flex Mini settled, and what is still open
 
-Everything below is built against documented formats and local checks (port 67 binds
-unprivileged on this Mac; the loopback smoke test in CONFIGURE-TEST.md). None of it has met a
-UniFi device. In the order CONFIGURE-TEST.md exercises them:
+On 2026-10-26 a factory-default USW-Flex-Mini (firmware 2.1.6.762) met the plugin on macOS
+through an AX88179A dongle, against a UniFi OS gateway as the controller. The captures live in
+`test/fixtures/flexmini-capture.ts`; CONFIGURE-TEST.md records the run. Verified that day:
 
-- **The Flex Mini as a DHCP client.** Whether it sends the `ubnt` vendor class (every reference
-  config matches on it, none shows a capture), whether it sets the broadcast flag, and whether it
-  accepts an OFFER sent to the subnet-directed broadcast rather than 255.255.255.255. The server
-  cannot send the limited broadcast out a chosen interface from Node on macOS, so it does not try;
-  if a client turns out to need it, the fallback is a host route for 255.255.255.255 added by the
-  address-hold script. `test/fixtures/dhcp.ts` is hand-built and says so.
-- **The relay end to end.** A real inform through `inform-relay.ts` to a real controller, the
-  device listed as pending, the adoption reply going back, and what the device does next: keep
-  informing through the relay (reaches Connected on the dongle) or go quiet until moved.
-- **The address hold on each OS.** macOS `ifconfig alias` surviving the link coming up; Linux
-  `ip addr add` on a NetworkManager-managed port and the sysctl being put back; Windows
-  `netsh interface ipv4 add address` on a DHCP-configured adapter (it may refuse, in which case the
-  fallback is `winProfileScript` static → restore) and the firewall rules coming and going.
-- **The discovery parser** against the Flex Mini's own broadcast; today it follows nmap's field
-  table. Devices on the laptop's other networks are filtered by subnet and by the 192.168.1.20
-  fallback address, which is a heuristic.
+- The Flex Mini sends the `ubnt` vendor class, asks for option 43, leaves the broadcast flag
+  clear, and **accepts an OFFER sent to the subnet-directed broadcast** — it leased seven seconds
+  after the server came up. The limited-broadcast fallback is not needed.
+- The macOS `ifconfig alias` hold: on the port within five seconds of approval, survived the whole
+  session with the link up, removed at the fifteen-minute cap, stop file gone.
+- Discovery: the real v2 announcement parses (0x14 is the long model name, 0x15 the short one).
+- The silence rule: a DISCOVER from a device on the laptop's Wi-Fi LAN was heard on the same
+  socket and ignored.
+
+Still open, in order of importance:
+
+- **The gateway answered HTTP 404 to every relayed inform** (nine in fifteen minutes, every ~96 s,
+  3.3 kB each). A garbage POST to the same URL gets 400, so it is the inform servlet answering.
+  Nothing public documents what 404 means there; the controller's own `server.log` during an
+  inform, and whether the device appears as pending in its device list, are the next evidence.
+  Until then the relay is unverified end to end, and so is everything after it (the adoption
+  reply, what the device does next). The plugin now says so on screen instead of "talking to the
+  controller" when the last status is not 2xx.
+- **The address hold on Linux and Windows.** Linux `ip addr add` on a NetworkManager-managed port
+  and the sysctl being put back; Windows `netsh interface ipv4 add address` on a DHCP-configured
+  adapter (it may refuse, in which case the fallback is `winProfileScript` static → restore) and
+  the firewall rules coming and going.
 - **The plugin API is version 1 and may change.** `PluginHost` and the block vocabulary are the
   minimum the UniFi plugin needed. Obvious next pieces: a way for a plugin to ask for a
   confirmation in the notice bar, selection handled by the host rather than re-sent as arrow keys,
