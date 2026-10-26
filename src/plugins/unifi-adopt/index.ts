@@ -185,6 +185,7 @@ export function activate(host: PluginHost): PluginInstance {
       devices: new Map()
     }
     run = r
+    host.clearLog()
     host.update()
     try {
       // The two unprivileged listeners first, so a taken port fails before any admin prompt.

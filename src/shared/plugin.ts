@@ -134,6 +134,8 @@ export interface PluginHost {
   log(text: string): void
   /** The log so far, oldest first, for a log block. */
   lines(): string[]
+  /** Forget the log and restart its clock — for a plugin whose work comes in separate runs. */
+  clearLog(): void
   /** Re-render: call after any state change the screen should show. */
   update(): void
   /** One JSON file per plugin, in the app's data folder. */

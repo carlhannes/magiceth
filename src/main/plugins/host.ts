@@ -28,7 +28,7 @@ export function createHost(
   device: string,
   onUpdate: () => void
 ): HostHandle {
-  const startedAt = Date.now()
+  let startedAt = Date.now()
   const lines: string[] = []
   let session: DhcpSession | null = null
 
@@ -41,6 +41,10 @@ export function createHost(
       onUpdate()
     },
     lines: () => [...lines],
+    clearLog() {
+      lines.length = 0
+      startedAt = Date.now()
+    },
     update: onUpdate,
     storage: pluginStorage(manifest.id),
     run: (file, args, opts) => run(file, args, opts),
