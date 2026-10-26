@@ -42,20 +42,28 @@ Done on 2026-10-13 on the development Mac, worth repeating after a change to `dh
 ## Results so far
 
 **2026-10-26, macOS, en9 (AX88179A), USW-Flex-Mini 2.1.6.762, controller = a UniFi OS gateway on
-the home LAN.** Steps 1–3 run; step 4 not reached.
+the home LAN.** Steps 1–5 run; the device ended up Connected in the controller.
 
 - Step 1: capture in `test/fixtures/flexmini-capture.ts`. DISCOVER every 20 s with vendor class
   `ubnt`, hostname `USW-Flex-Mini`, parameter list 1 3 28 6 12 15 43, broadcast flag clear, no
   client id. Discovery (v2, command 6) every 10 s from 192.168.1.20, default flag set. The Mac's
   own DHCP client also DISCOVERs on the link, without a vendor class.
-- Step 2: alias on the port within 5 s of approval, present throughout, removed at the 15-minute
-  cap; stop file gone; nothing left running.
-- Step 3: lease 7 s after `DHCP server on …` — the device accepts the OFFER to the subnet
-  broadcast. Discovery row with model and version. Renewal every 60 s. Informs every ~96 s, 3.3 kB,
-  **the controller answered 404 to all nine**. Garbage to the same URL gets 400. Not explained
-  yet; see BACKLOG. Next evidence: the controller's `server.log` while an inform arrives, and
-  whether the device shows as pending in its device list.
-- Also seen: a DISCOVER from a device on the laptop's Wi-Fi LAN, ignored as designed.
+- Step 2: alias on the port within 5 s of approval, present throughout; removed within 2 s of `S`,
+  and at the 15-minute cap; stop file gone; nothing left running.
+- Step 3: lease a few seconds after `DHCP server on …` — the device accepts the OFFER to the
+  subnet broadcast. Discovery row with model and version. Renewal every 60 s. Informs every ~96 s,
+  3.3 kB. **The controller answers 404 to an unadopted device's inform** and still lists it as
+  "Click to Adopt" with its dongle-link address; 404 means "pending, nothing for you", not a
+  rejection.
+- Step 4: after Adopt, the next inform got 200 and a 715-byte inform followed two seconds later
+  (the device acknowledging with its new key). Three more 200s within 25 s, one fresh DHCP
+  exchange while the device re-applied its network, then silence: it now informs to the
+  controller's own address, which it cannot reach from the dongle. That is what the ended-session
+  text assumes.
+- Step 5: `S`, cable moved to the real network, Connected in the controller shortly after.
+- Also seen: a DISCOVER from a device on the laptop's Wi-Fi LAN, ignored as designed. A Flex Mini
+  powered by PoE from the previous switch is dead when moved to the dongle — it needs its own
+  power (USB-C PD worked).
 
 ## 1. Capture the device before the plugin sees it
 
