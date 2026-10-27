@@ -9,6 +9,15 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **UniFi adoption: the controller's answer reaches the switch intact.** The relay streamed the
+  controller's reply on, which re-framed it as chunked for the device's HTTP/1.1 request; the
+  Flex family's small HTTP client cannot read that, so a USW-Flex-2.5G-8-PoE given a chunked 200
+  stayed factory default and the controller sat on "Adopting" (2026-10-27, against a self-hosted
+  UniFi OS Server). The relay now sends the answer whole, with its length, as the controller
+  does. A socket-level test holds it to that.
+
 ### Added
 
 - **Configure mode** — a third mode (`3`/`C`) that uses the port to set a device up, built as a

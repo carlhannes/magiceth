@@ -1,7 +1,9 @@
 // The inform relay: the device POSTs to http://<this laptop>:8080/inform, because that is the
 // URL it builds from option 43, and each POST is forwarded as-is to the controller the user saved.
 // The body is Ubiquiti's binary inform packet, encrypted end to end; only its header is read, for
-// the device MAC in the log. parseInformHeader is pure and tested in test/inform-relay.test.ts.
+// the device MAC in the log. The controller's answer goes back whole, with its length, because
+// the device's HTTP client is too small for chunked encoding. parseInformHeader is pure and the
+// framing is checked over a socket, both in test/inform-relay.test.ts.
 
 import http from 'node:http'
 import https from 'node:https'
@@ -70,7 +72,8 @@ function collect(req: http.IncomingMessage): Promise<Buffer> {
 
 export function startInformRelay(
   targetUrl: string,
-  onExchange: (exchange: InformExchange) => void
+  onExchange: (exchange: InformExchange) => void,
+  port = INFORM_PORT
 ): Promise<RelayHandle> {
   const target = new URL(targetUrl)
   const client = target.protocol === 'https:' ? https : http
@@ -97,18 +100,34 @@ export function startInformRelay(
             timeout: UPSTREAM_TIMEOUT_MS
           },
           (reply) => {
-            res.statusCode = reply.statusCode ?? 502
-            const type = reply.headers['content-type']
-            if (type) res.setHeader('content-type', type)
-            reply.pipe(res)
-            reply.on('end', () =>
-              onExchange({
-                mac,
-                bytes: body.length,
-                status: reply.statusCode,
-                ms: Date.now() - startedAt
+            // The controller answers with a Content-Length. Piping its reply on would re-frame
+            // it as chunked for the device's HTTP/1.1 request, and the Flex family's small HTTP
+            // client cannot read that: a USW-Flex-2.5G-8-PoE given a chunked 200 stayed factory
+            // default (2026-10-27). So the answer is collected and sent whole, with its length.
+            void collect(reply)
+              .then((answer) => {
+                res.statusCode = reply.statusCode ?? 502
+                const type = reply.headers['content-type']
+                if (type) res.setHeader('content-type', type)
+                res.setHeader('content-length', answer.length)
+                res.end(answer)
+                onExchange({
+                  mac,
+                  bytes: body.length,
+                  status: reply.statusCode,
+                  ms: Date.now() - startedAt
+                })
               })
-            )
+              .catch((err: Error) => {
+                if (!res.headersSent) res.statusCode = 502
+                res.end()
+                onExchange({
+                  mac,
+                  bytes: body.length,
+                  ms: Date.now() - startedAt,
+                  error: err.message
+                })
+              })
           }
         )
         upstream.on('timeout', () =>
@@ -133,15 +152,15 @@ export function startInformRelay(
       reject(
         new Error(
           err.code === 'EADDRINUSE'
-            ? `Port ${INFORM_PORT} is in use on this computer. A device builds its inform URL from option 43 as http://<address>:${INFORM_PORT}/inform, so whatever holds the port (a development server?) has to be stopped first.`
-            : `Could not open port ${INFORM_PORT}: ${err.message}`
+            ? `Port ${port} is in use on this computer. A device builds its inform URL from option 43 as http://<address>:${INFORM_PORT}/inform, so whatever holds the port (a development server?) has to be stopped first.`
+            : `Could not open port ${port}: ${err.message}`
         )
       )
     })
-    server.listen(INFORM_PORT, '0.0.0.0', () => {
+    server.listen(port, '0.0.0.0', () => {
       server.removeAllListeners('error')
       server.on('error', () => undefined)
-      resolve({ port: INFORM_PORT, close: () => server.close() })
+      resolve({ port, close: () => server.close() })
     })
   })
 }
