@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { cidrToDotted, dottedToCidr, isLinkLocalIpv4, isValidIpv4 } from '../src/shared/net'
+import {
+  cidrToDotted,
+  dottedToCidr,
+  intToIp,
+  ipToInt,
+  isLinkLocalIpv4,
+  isValidIpv4
+} from '../src/shared/net'
 
 describe('cidrToDotted', () => {
   it('converts prefix to dotted netmask', () => {
@@ -49,5 +56,15 @@ describe('isLinkLocalIpv4', () => {
     // Not a valid address at all, so not a link-local one either.
     expect(isLinkLocalIpv4('169.254.999.1')).toBe(false)
     expect(isLinkLocalIpv4('')).toBe(false)
+  })
+})
+
+describe('ipToInt / intToIp', () => {
+  it('round-trips and keeps the high bit unsigned', () => {
+    expect(ipToInt('10.254.254.1')).toBe(0x0afefe01)
+    expect(ipToInt('255.255.255.255')).toBe(0xffffffff)
+    expect(intToIp(0x0afefe01)).toBe('10.254.254.1')
+    expect(intToIp(0xffffffff)).toBe('255.255.255.255')
+    expect(intToIp(ipToInt('192.168.254.255'))).toBe('192.168.254.255')
   })
 })

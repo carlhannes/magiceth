@@ -3,7 +3,7 @@
 // saving them is that you can find, open and send them — a path under Application Support is
 // somewhere nobody looks.
 
-import { app, shell } from 'electron'
+import { shell } from 'electron'
 import {
   appendFileSync,
   mkdirSync,
@@ -13,6 +13,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { join } from 'node:path'
+import { documentsDir } from '../util/app-paths'
 import type { RecordingSummary, SavedRecording, WifiBss, WifiTrack } from '../../shared/types'
 import { channelBuckets, channelSummary, groupBySsid, trackToBss } from './wifi-model'
 import {
@@ -41,7 +42,7 @@ export interface RecordingPaths {
 }
 
 export function recordingsDir(): string {
-  return join(app.getPath('documents'), 'magiceth')
+  return documentsDir()
 }
 
 /**

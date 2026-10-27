@@ -22,9 +22,28 @@ Only the latest released version receives security updates (the project is in an
   NetworkManager, and the opt-in Windows Location fix (`O`) are elevated, and then **per action**
   via the OS's own prompt (macOS password / Linux `pkexec` / Windows UAC). The entire app never
   needs to run as admin.
+- **A Configure-mode session holds an address on the port.** One prompt adds an extra address to
+  the selected port and removes it when the session ends, through the same elevated script, so the
+  port's own configuration is never touched and the removal happens even if the app has gone. The
+  DHCP server runs unprivileged and answers only clients the plugin allows (the UniFi plugin: the
+  `ubnt` vendor class), only with addresses from its own pool, only on the port's own broadcast,
+  and never with a NAK — the socket hears every interface of a laptop that is usually also on an
+  office LAN, and a production device there must never get a lease from it. On Linux the script
+  also lowers `net.ipv4.ip_unprivileged_port_start` to 67 for the session, which lets any user
+  process on the machine bind ports 67–1023 until it is put back; on Windows it adds inbound
+  firewall rules for UDP 67, UDP 10001 and TCP 8080 scoped to the app's executable and removes
+  them.
+- **Plugins run with the app's privileges.** A plugin in `Documents/magiceth/plugins` is plain
+  Node code loaded into the main process when — and only when — you open it from the Configure
+  chooser; until then the app reads its `package.json` and nothing else. Treat the folder like a
+  place you put programs: anything that can write there (including a cloud sync of your Documents)
+  can put code there, and the chooser shows every plugin's origin — `built in`, or the folder it
+  was found in — and its author before you open it.
 - **No telemetry.** The tool sends no data anywhere. Network traffic happens only when you
-  start it yourself: ping (gateway, `1.1.1.1`/`8.8.8.8`), a DNS lookup, and passive
-  LLDP/CDP listening. It reads local network configuration; nothing is written outside your machine.
+  start it yourself: ping (gateway, `1.1.1.1`/`8.8.8.8`), a DNS lookup, passive LLDP/CDP
+  listening, the speed test, and in Configure mode whatever the plugin you opened does — the
+  built-in UniFi plugin relays the device's own encrypted inform packets to the controller URL you
+  saved. It reads local network configuration; nothing else is written outside your machine.
 - **Unsigned builds.** Release builds are unsigned, so macOS Gatekeeper and Windows SmartScreen
   warn the first time ("unknown developer" / "Windows protected your PC"). This is expected —
   verify that you obtained the build from the right source, or build it yourself from source.

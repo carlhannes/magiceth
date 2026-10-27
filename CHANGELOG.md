@@ -9,6 +9,42 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ## [Unreleased]
 
+### Added
+
+- **Configure mode** — a third mode (`3`/`C`) that uses the port to set a device up, built as a
+  plugin system. A plugin is a folder with a `package.json` and an `index.js`; the app reads only
+  the manifest until you open one, draws the screen the plugin describes (text, table, list, log,
+  form, raw html), forwards every key to it and shows a bar with `Esc` to leave. Built-in plugins
+  live in `src/plugins/`, yours in `Documents/magiceth/plugins`. The contract is
+  `src/shared/plugin.ts`.
+- **UniFi adoption plugin** — points a factory-default UniFi device, the SSH-less Flex Mini
+  included, at a remote controller from the dongle: an in-process DHCP server on the port hands
+  out option 43 naming the laptop (answering only the `ubnt` vendor class, only from its own pool,
+  only on the port's own broadcast, never a NAK), an inform relay on port 8080 forwards the
+  device's informs to the controller you saved, and discovery on UDP 10001 shows the device with
+  model, firmware and whether it is still factory default. One admin prompt per session holds an
+  extra address on the port; the same script removes it, caps the session at fifteen minutes, and
+  on Linux lowers `ip_unprivileged_port_start` to 67 meanwhile. Verified end to end on macOS on
+  2026-10-26 with a USW-Flex-Mini against a UniFi OS gateway — lease, relayed informs, the
+  adoption delivered back through the relay, Connected once moved to its real network — and the
+  switch's real packets are the test fixtures. Linux and Windows follow `CONFIGURE-TEST.md`.
+
+- **Plugin API 1, documented and locked** — [docs/PLUGINS.md](docs/PLUGINS.md) is the reference
+  for writing a plugin (manifest, module format, lifecycle, every block, the host member by member,
+  the DHCP service, stability policy), with the contract embedded and a test keeping the two
+  identical; `examples/plugins/hello` is a complete plugin to copy, held to the contract by a test
+  and driven by `npm run ui-check`.
+
+### Changed
+
+- `Tab` cycles Ethernet → Wi-Fi → Configure instead of toggling two modes.
+- The plugin chooser is one list sorted by title with type-to-search; plugins shipped with the app
+  carry a `built in` mark and every row names its author. The built-in plugin shares nothing with
+  the app at runtime — the build fails if its bundle requires anything a user plugin could not.
+- The elevated PowerShell window on Windows is hidden; a fifteen-minute session with a console on
+  screen read as something stuck.
+- Recordings and user plugins resolve the same `Documents/magiceth` folder through one helper.
+
 ## [0.5.0] – 2026-10-09
 
 ### Added

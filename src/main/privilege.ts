@@ -53,6 +53,8 @@ export async function runElevatedPlan(plan: ElevatedPlan, timeoutMs = 40000): Pr
   }
   // powershell (Windows). EncodedCommand avoids all quoting issues.
   const encoded = Buffer.from(plan.script, 'utf16le').toString('base64')
-  const outer = `Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-EncodedCommand','${encoded}'`
+  // Hidden, because a Configure-mode address hold keeps the elevated shell alive for the whole
+  // session and a console window sitting on screen for fifteen minutes reads as something stuck.
+  const outer = `Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-EncodedCommand','${encoded}'`
   return run('powershell', ['-NoProfile', '-NonInteractive', '-Command', outer], { timeoutMs })
 }

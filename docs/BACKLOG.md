@@ -29,6 +29,43 @@ focus; extend the confirm keypress to dongles as well; or leave it and document 
 The confirmation is cleared by any other keypress and never by a timer, because self-clearing
 notices are their own open question further down this file.
 
+## Configure mode: verified on macOS, open elsewhere
+
+On 2026-10-26 a factory-default USW-Flex-Mini (firmware 2.1.6.762) was adopted end to end through
+the plugin on macOS: lease with option 43 from the dongle, informs relayed to a UniFi OS gateway,
+the adoption delivered back through the relay, Connected once cabled into its real network.
+CONFIGURE-TEST.md has the run; the captures are in `test/fixtures/flexmini-capture.ts`. Worth
+knowing from it: the controller answers **404** to an unadopted device's inform while listing it
+as pending, and **200** once it has something to say; the device goes quiet on the dongle about
+half a minute after adoption because it now informs to the controller's own address.
+
+Still open:
+
+- **The address hold on Linux and Windows.** Linux `ip addr add` on a NetworkManager-managed port
+  and the sysctl being put back; Windows `netsh interface ipv4 add address` on a DHCP-configured
+  adapter (it may refuse, in which case the fallback is `winProfileScript` static → restore) and
+  the firewall rules coming and going. Steps 2–4 of CONFIGURE-TEST.md on each.
+- **A remote controller.** The run above used a gateway on the home LAN; a self-hosted controller
+  behind a public hostname with Override Inform Host set is the real use and has not been tried.
+  The mechanism is the same; the hostname and port 8080 reachability are the new variables.
+- **The discovery row is a snapshot.** It still says "factory default" after adoption, because the
+  device stops announcing; an age on the row, or dropping it after a minute of silence, would fix
+  that.
+- **The plugin API is locked at version 1** (`docs/PLUGINS.md`, "Stability"): additions only, which
+  a plugin feature-detects. Additions worth making when a second plugin needs them: a way for a
+  plugin to ask for a confirmation in the notice bar, an optional host-managed selection for `list`
+  blocks, a `run` that can elevate through a plan the host builds, and a shell-side safety where a
+  second `Esc` leaves a form the plugin kept open.
+- **Candidates for a second plugin:** `set-inform` over SSH for devices that have it (needs
+  password automation — `ssh` alone cannot take `ubnt`/`ubnt` non-interactively), and adopting
+  through the controller's API so the click in the controller goes away.
+- **The Linux sysctl relaxation is machine-wide** for the session. A capability on the binary or a
+  helper owning the socket would be narrower; both are more machinery than this warranted before
+  the feature has been seen working.
+- **Pre-existing, noticed while reading:** `macProfileScript` passes `''` as the router to
+  `networksetup -setmanual` for a static profile without a gateway, which `networksetup` may
+  reject. Untouched; a static profile without a gateway has never been verified on any OS.
+
 ## WLAN mode: what is missing
 
 The scanner works on macOS and is verified end to end ([WIFI-FINDINGS.md](WIFI-FINDINGS.md)). What

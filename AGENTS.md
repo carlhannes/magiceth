@@ -97,6 +97,27 @@ and start again. Do **not** verify by grepping the bundle for a comment you just
 strips most comments, so that check fails on fresh code too and tells you nothing. Grep for a string
 literal or a distinctive expression instead.
 
+## Driving the UI: Electron's own debugging endpoints, never the system keyboard
+
+`npm run ui-check` builds the app and drives it with nothing installed (`scripts/ui-check.mjs`):
+Electron is started with `--remote-debugging-port=0 --inspect=0`, the page is reached over the
+Chrome DevTools Protocol (`Runtime.evaluate` for state and synthetic `KeyboardEvent`s) and the main
+process over the Node inspector, which is how the window is hidden so the person at the machine can
+keep typing, and how the screenshots are taken: `webContents.capturePage(undefined, { stayHidden:
+true })`, because CDP's `Page.captureScreenshot` never answers for a hidden window — hidden **after** it has shown
+and verified hidden, because a hide before the window's own `show()` is undone by it, and the test
+window then sits in front collecting whoever's keystrokes (seen on 2026-10-27 as junk in the plugin
+chooser's search). Two gotchas it already handles: the inspector's global scope has no `require`, so Electron's `app` is
+reached through `process.getBuiltinModule('node:module').createRequire(...)`; and `innerText`
+reflects CSS `text-transform`, so a section title reads as upper case. It walks Configure mode end
+to end and dumps a per-key trace of the screen key on failure. Extend it rather than reaching for
+`osascript`.
+
+**Do not send keystrokes through System Events while someone is using the machine.** It was done
+once on 2026-10-13 and the test input landed in the user's terminal, and their typing landed in the
+app, which produced a "bug" that was nothing of the kind. The notes below remain for the one case
+Playwright cannot cover — a dialog raised by the OS itself.
+
 ## Driving the UI on macOS
 
 Screenshots and keystrokes need two separate macOS permissions for the process running the agent —
@@ -131,6 +152,38 @@ rather than implying coverage:
 - Linux and Windows behaviour is verified through parsers plus documented command formats. Never
   describe them as tested when they are not — [docs/BACKLOG.md](docs/BACKLOG.md) tracks what is
   genuinely unverified.
+
+## Configure mode and plugins
+
+- **A built-in plugin is a user plugin that happens to ship with the app.** Under `src/plugins/`
+  it may use Node built-ins, its own folder, and `import type` from `src/shared/` — nothing from
+  `main/`, `renderer/`, `preload/`, `electron`, or `shared/` at runtime. ESLint says so
+  (`@typescript-eslint/no-restricted-imports`), and `electron.vite.config.ts` fails the build if the
+  bundle under `out/main/plugins/<id>/` requires anything else. Need a helper from `shared/`? Copy
+  it into the plugin. Need something from the app? Add an optional member to `PluginHost`.
+- **The plugin API is locked.** `src/shared/plugin.ts` is version 1 and changes by addition only;
+  `docs/PLUGINS.md` embeds it verbatim and `test/plugin-docs.test.ts` fails when the two differ, so
+  an edit to the contract means editing the doc (and its change list) in the same commit.
+  `examples/plugins/hello` is the copyable plugin; `test/example-plugin.test.ts` holds it to the
+  contract and `ui-check` drives it, so keep its strings (`Hello from a user plugin.`, `Presses`,
+  `saying hello`) when editing it.
+- **Each `src/plugins/<id>/` is its own main-process entry.** `electron.vite.config.ts` discovers
+  them by their `package.json` and copies that manifest next to the bundle, so
+  `out/main/plugins/<id>/` has exactly what a user plugin folder has. A new built-in plugin needs no
+  config change, but `npm run dev` must be restarted to pick up a new folder.
+- **No plugin or host code runs as root.** The only elevated piece is the per-OS address-hold
+  script (`*AddressHoldScript` in `platform/`), a pure function with a test. The DHCP server binds
+  port 67 unprivileged — verified on macOS 27, true on Windows, and arranged on Linux by the script
+  lowering `ip_unprivileged_port_start`. Running the app binary as root would also fail outright
+  on an AppImage, because root cannot read a FUSE mount.
+- **The DHCP socket hears every interface.** `lease.ts` is written so that a packet from the
+  office LAN gets silence; keep it that way (no unicast replies, no NAK, nothing outside the pool)
+  and add a test for every new case.
+- **The Flex Mini's real packets are in `test/fixtures/flexmini-capture.ts`** (captured
+  2026-10-26): its DISCOVER, its discovery announcement, and the Mac's own DISCOVER on the same
+  link. Test against those first; `test/fixtures/dhcp.ts` builds the message types no capture
+  covers yet (REQUEST, RELEASE, DECLINE). When a capture of the OFFER/REQUEST/ACK exchange or an
+  inform body exists, it goes into the capture file and replaces the hand-built case.
 
 ## Do not weaken the invariants
 

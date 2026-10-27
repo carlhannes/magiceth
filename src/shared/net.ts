@@ -31,3 +31,15 @@ export function isValidIpv4(value: string): boolean {
 export function isLinkLocalIpv4(value: string): boolean {
   return isValidIpv4(value) && value.trim().startsWith('169.254.')
 }
+
+/** Dotted IPv4 → unsigned 32-bit integer. The caller has validated the address. */
+export function ipToInt(ip: string): number {
+  return ip.split('.').reduce((acc, octet) => ((acc << 8) | (parseInt(octet, 10) & 0xff)) >>> 0, 0)
+}
+
+/** Unsigned 32-bit integer → dotted IPv4. */
+export function intToIp(value: number): string {
+  return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff].join(
+    '.'
+  )
+}

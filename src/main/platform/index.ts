@@ -20,6 +20,12 @@ export interface PingSpec {
   args: string[]
 }
 
+/** The address a Configure-mode session puts on a port for its duration. */
+export interface HeldAddress {
+  ip: string
+  cidr: number
+}
+
 export interface PingOptions {
   device: string
   srcIp?: string
@@ -83,6 +89,21 @@ export interface PlatformOps {
   buildSetMacPlan(device: string, mac: string): Promise<ElevatedPlan>
   /** Build an elevation plan that applies a profile (DHCP/static + optional MAC) (M4, privileged). */
   buildProfilePlan(device: string, profile: Profile): Promise<ElevatedPlan>
+  /**
+   * Hold an extra address on a port for a Configure-mode DHCP session: add it, wait until
+   * `stopFile` appears or `maxSeconds` pass, remove it. One prompt for the whole session, and the
+   * removal is in the same script so it happens even if the app is gone. An alias rather than a
+   * static profile on purpose — the port's own configuration is never touched, and no router is
+   * set, so the machine's default route cannot move onto the dongle. Linux also lowers
+   * `net.ipv4.ip_unprivileged_port_start` to 67 for the session (restored after); Windows adds
+   * program-scoped firewall rules for the listeners (removed after).
+   */
+  buildAddressHoldPlan(
+    device: string,
+    link: HeldAddress,
+    stopFile: string,
+    maxSeconds: number
+  ): Promise<ElevatedPlan>
   /**
    * One fresh sweep of the air on `device` ('' = the default wireless interface). Resolves only
    * once the OS has *new* results — the recording loop assumes one call takes about one sweep.

@@ -1,7 +1,7 @@
 // Entry point. Mounts the app, decides which mode is on screen, and routes keystrokes to it.
 //
-// This file is the only one that knows both modes exist. shell.ts holds what they share, and
-// neither ethernet.ts nor wlan.ts imports the other, so the dependency graph stays a tree.
+// This file is the only one that knows all the modes exist. shell.ts holds what they share, and
+// no mode imports another, so the dependency graph stays a tree.
 
 import './styles.css'
 import {
@@ -18,6 +18,17 @@ import {
 import type { Mode } from './shell'
 import { handleEthernetKey, initEthernet, leaveEthernet, renderEthernet } from './ethernet'
 import { enterWlan, handleWlanKey, initWlan, leaveWlan, renderWlan } from './wlan'
+import {
+  configureAllowsLeaving,
+  enterConfigure,
+  handleConfigureKey,
+  initConfigure,
+  leaveConfigure,
+  renderConfigure
+} from './configure'
+
+/** Tab walks the modes in the order the chooser lists them. */
+const TAB_ORDER: Mode[] = ['ethernet', 'wlan', 'configure']
 
 /**
  * Which row was highlighted at the last paint, as view plus position. Compared rather than stored
@@ -47,6 +58,9 @@ function render(): void {
       break
     case 'wlan':
       app.innerHTML = renderWlan()
+      break
+    case 'configure':
+      app.innerHTML = renderConfigure()
       break
   }
 
@@ -88,6 +102,7 @@ function switchTo(next: Mode): void {
   if (current === next) return
   if (current === 'ethernet') leaveEthernet()
   if (current === 'wlan') leaveWlan()
+  if (current === 'configure') leaveConfigure()
   // A confirmation asked about the other mode's port must not survive the move: the next press
   // would answer a question about something no longer on screen.
   setPending(null)
@@ -95,11 +110,13 @@ function switchTo(next: Mode): void {
   setMode(next)
   requestRender()
   if (next === 'wlan') enterWlan()
+  if (next === 'configure') enterConfigure()
 }
 
 function handleChooserKey(e: KeyboardEvent): void {
   if (e.key === '1' || e.key === 'e' || e.key === 'E') switchTo('ethernet')
   else if (e.key === '2' || e.key === 'w' || e.key === 'W') switchTo('wlan')
+  else if (e.key === '3' || e.key === 'c' || e.key === 'C') switchTo('configure')
   else return
   e.preventDefault()
 }
@@ -114,18 +131,23 @@ document.addEventListener('keydown', (e) => {
       return
     }
     if (e.key === 'Tab') {
-      switchTo(mode === 'ethernet' ? 'wlan' : 'ethernet')
+      // A plugin with something running gets to ask for a second press first.
+      if (mode !== 'configure' || configureAllowsLeaving()) {
+        switchTo(TAB_ORDER[(TAB_ORDER.indexOf(mode) + 1) % TAB_ORDER.length])
+      }
       e.preventDefault()
       return
     }
   }
   if (mode === 'ethernet') handleEthernetKey(e)
   else if (mode === 'wlan') handleWlanKey(e)
+  else if (mode === 'configure') handleConfigureKey(e)
 })
 
 async function init(): Promise<void> {
   setRenderer(render)
   initWlan()
+  initConfigure()
   render()
   // Ethernet sets itself up behind the chooser. Everything it does on startup is a cheap read, and
   // doing it now means picking Ethernet shows a filled-in port rather than "waiting for a port…".

@@ -1,5 +1,7 @@
 // Shared types between main, preload and renderer.
 
+import type { KeyPress, PluginActivation, PluginManifest, PluginScreen } from './plugin'
+
 // --- Adapter identification (M1) ---
 
 export interface UsbInfo {
@@ -47,6 +49,7 @@ export interface DhcpInfo {
   state?: string // e.g. "BOUND"
 }
 
+/** Part of plugin API 1 through `PluginHost.readNetInfo()` (docs/PLUGINS.md): fields are only ever added. */
 export interface NetInfo {
   device: string
   linkUp: boolean
@@ -392,4 +395,12 @@ export interface MagicethApi {
   saveCurrentAsProfile(device: string, name: string): Promise<Profile[]>
   saveProfile(profile: Profile): Promise<Profile[]>
   deleteProfile(id: string): Promise<Profile[]>
+  // --- Configure mode: plugins (see shared/plugin.ts) ---
+  /** Manifests only; no plugin code runs until one is activated. */
+  listPlugins(): Promise<PluginManifest[]>
+  activatePlugin(id: string, device: string): Promise<PluginActivation>
+  deactivatePlugin(): Promise<void>
+  sendPluginKey(key: KeyPress): Promise<void>
+  submitPluginForm(formId: string, values: Record<string, string>): Promise<void>
+  onPluginView(cb: (screen: PluginScreen) => void): () => void
 }

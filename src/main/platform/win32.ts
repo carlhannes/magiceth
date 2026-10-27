@@ -6,7 +6,14 @@ import { cidrToDotted, isValidIpv4 } from '../../shared/net'
 import { psEscapeDouble, runElevatedPlan } from '../privilege'
 import { parseWifiHelper } from './wifi-helper'
 import type { ElevatedPlan } from '../privilege'
-import type { PingOptions, PingSpec, PlatformOps, RawAdapter, WifiScanOutcome } from './index'
+import type {
+  HeldAddress,
+  PingOptions,
+  PingSpec,
+  PlatformOps,
+  RawAdapter,
+  WifiScanOutcome
+} from './index'
 import type { NetInfo, Profile, WifiAccessResult } from '../../shared/types'
 
 // Windows. Format per documentation — verify on real hardware (spike):
@@ -232,6 +239,59 @@ async function buildProfilePlan(device: string, profile: Profile): Promise<Eleva
   return { interpreter: 'powershell', script: winProfileScript(device, profile) }
 }
 
+/** The three listeners a Configure session opens, each allowed for this executable only. */
+export const HOLD_FIREWALL_RULES: { name: string; protocol: 'UDP' | 'TCP'; port: number }[] = [
+  { name: 'magiceth DHCP', protocol: 'UDP', port: 67 },
+  { name: 'magiceth discovery', protocol: 'UDP', port: 10001 },
+  { name: 'magiceth inform relay', protocol: 'TCP', port: 8080 }
+]
+
+/**
+ * Hold an extra address on the adapter until the stop file appears or the cap runs out, with
+ * inbound firewall rules for the session's listeners — Defender drops unsolicited inbound UDP
+ * silently, and a DHCP DISCOVER is exactly that. The rules are scoped to this executable and
+ * profile Any, because an isolated link is classed Public. Unverified on hardware: `netsh add
+ * address` on a DHCP-configured adapter (see docs/BACKLOG.md).
+ */
+export function winAddressHoldScript(
+  device: string,
+  link: HeldAddress,
+  stopFile: string,
+  maxSeconds: number,
+  executable: string
+): string {
+  const dev = psEscapeDouble(device)
+  const stop = psEscapeDouble(stopFile)
+  const exe = psEscapeDouble(executable)
+  const mask = cidrToDotted(link.cidr)
+  const add = HOLD_FIREWALL_RULES.map(
+    (r) =>
+      `New-NetFirewallRule -DisplayName "${r.name}" -Direction Inbound -Action Allow -Protocol ${r.protocol} -LocalPort ${r.port} -Program "${exe}" -Profile Any | Out-Null`
+  ).join('; ')
+  const names = HOLD_FIREWALL_RULES.map((r) => `"${r.name}"`).join(',')
+  return (
+    `$ErrorActionPreference='SilentlyContinue'; ${add}; ` +
+    `netsh interface ipv4 add address name="${dev}" ${link.ip} ${mask} | Out-Null; ` +
+    `$n=0; while (-not (Test-Path "${stop}") -and $n -lt ${maxSeconds}) { ` +
+    `if ($n % 5 -eq 0) { netsh interface ipv4 add address name="${dev}" ${link.ip} ${mask} | Out-Null }; ` +
+    `Start-Sleep -Seconds 1; $n++ }; ` +
+    `netsh interface ipv4 delete address name="${dev}" ${link.ip} | Out-Null; ` +
+    `Remove-NetFirewallRule -DisplayName ${names}; Remove-Item "${stop}" -Force`
+  )
+}
+
+async function buildAddressHoldPlan(
+  device: string,
+  link: HeldAddress,
+  stopFile: string,
+  maxSeconds: number
+): Promise<ElevatedPlan> {
+  return {
+    interpreter: 'powershell',
+    script: winAddressHoldScript(device, link, stopFile, maxSeconds, process.execPath)
+  }
+}
+
 function speedTestBind(_device: string, srcIp?: string): string | undefined {
   // Windows has no bind-by-interface, and curl would try to resolve an adapter name like
   // "Ethernet 2" as a host. Without an address there is nothing to bind and no test to run.
@@ -371,6 +431,7 @@ export const win32: PlatformOps = {
   speedTestBind,
   buildSetMacPlan,
   buildProfilePlan,
+  buildAddressHoldPlan,
   scanWifi,
   requestWifiAccess,
   endWifiSession,
