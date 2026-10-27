@@ -91,3 +91,8 @@ with what is wrong, where, and why it is still open.
 - Keep PRs small and focused.
 - **State which platform/hardware you tested on** (e.g. "macOS 15 arm64, ASIX AX88179A").
 - Include/update tests and docs. Update [CHANGELOG.md](CHANGELOG.md) under `Unreleased`.
+
+## Releasing
+
+[docs/RELEASING.md](docs/RELEASING.md) is the order of operations: version, release commit, tag,
+the four builds, a smoke test, checksums, notes, the GitHub release.

@@ -330,7 +330,9 @@ A full release is four files, and all four build from macOS. The Windows ones ne
 Apple Silicon Mac, because electron-builder stamps the version into the `.exe` through an x86 Wine
 it fetches itself (`softwareupdate --install-rosetta`). Both Windows targets are listed in
 `electron-builder.yml`, so one command always builds the installer **and** the portable `.exe` —
-never build just one of them, a release is both:
+never build just one of them, a release is both. The order of operations around the builds —
+version, tag, smoke test, checksums, notes, the GitHub release — is in
+[docs/RELEASING.md](docs/RELEASING.md).
 
 | Artifact                    | Built by                   | For                              |
 | --------------------------- | -------------------------- | -------------------------------- |
