@@ -29,7 +29,7 @@ Done on 2026-10-13 on the development Mac, worth repeating after a change to `dh
 
 - `npm run ui-check` — builds the app and drives it over Electron's own debugging endpoints
   (window hidden, no system keyboard, nothing installed): chooser, the UniFi form with a bad and a good URL, edit, delete, a user plugin in
-  `Documents/magiceth/plugins/hello` (written by the script) with keys and a reload after editing
+  `Documents/magiceth/plugins/hello` (copied from `examples/plugins/hello` by the script) with keys, its form, and a reload after editing
   it, Esc all the way out. Screenshots land in a temp folder it names.
 - By hand (`npm run dev`, check `out/main/index.js` is newer than your edit): `3` → the chooser
   lists **UniFi adoption**; `Enter` → the empty controller list; `N` → the form; saving a bad URL

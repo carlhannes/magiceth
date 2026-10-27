@@ -49,6 +49,7 @@ export interface DhcpInfo {
   state?: string // e.g. "BOUND"
 }
 
+/** Part of plugin API 1 through `PluginHost.readNetInfo()` (docs/PLUGINS.md): fields are only ever added. */
 export interface NetInfo {
   device: string
   linkUp: boolean

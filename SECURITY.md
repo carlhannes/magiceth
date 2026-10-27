@@ -37,7 +37,8 @@ Only the latest released version receives security updates (the project is in an
   Node code loaded into the main process when — and only when — you open it from the Configure
   chooser; until then the app reads its `package.json` and nothing else. Treat the folder like a
   place you put programs: anything that can write there (including a cloud sync of your Documents)
-  can put code there, and the chooser shows a user plugin's folder and author before you open it.
+  can put code there, and the chooser shows every plugin's origin — `built in`, or the folder it
+  was found in — and its author before you open it.
 - **No telemetry.** The tool sends no data anywhere. Network traffic happens only when you
   start it yourself: ping (gateway, `1.1.1.1`/`8.8.8.8`), a DNS lookup, passive LLDP/CDP
   listening, the speed test, and in Configure mode whatever the plugin you opened does — the

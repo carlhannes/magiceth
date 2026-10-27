@@ -9,7 +9,6 @@
 //
 // Three screens: the saved controllers, the form for one, and a running session.
 
-import { ipToInt } from '../../shared/net'
 import type {
   Block,
   DhcpEvent,
@@ -73,6 +72,14 @@ function isTarget(value: unknown): value is Target {
   if (typeof value !== 'object' || value === null) return false
   const t = value as Record<string, unknown>
   return typeof t.id === 'string' && typeof t.name === 'string' && typeof t.informUrl === 'string'
+}
+
+/**
+ * A plugin is standalone by design: it may use Node built-ins and its own files, nothing from the
+ * app — the same rule a user plugin lives under, and the build enforces it. Hence a local copy.
+ */
+function ipToInt(ip: string): number {
+  return ip.split('.').reduce((acc, octet) => ((acc << 8) | (parseInt(octet, 10) & 0xff)) >>> 0, 0)
 }
 
 function inSubnet(ip: string, link: DhcpLink): boolean {

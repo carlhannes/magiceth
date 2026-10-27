@@ -101,10 +101,13 @@ literal or a distinctive expression instead.
 
 `npm run ui-check` builds the app and drives it with nothing installed (`scripts/ui-check.mjs`):
 Electron is started with `--remote-debugging-port=0 --inspect=0`, the page is reached over the
-Chrome DevTools Protocol (`Runtime.evaluate` for state and synthetic `KeyboardEvent`s,
-`Page.captureScreenshot` for pictures) and the main process over the Node inspector, which is how
-the window is hidden right after launch so the person at the machine can keep typing. Two
-gotchas it already handles: the inspector's global scope has no `require`, so Electron's `app` is
+Chrome DevTools Protocol (`Runtime.evaluate` for state and synthetic `KeyboardEvent`s) and the main
+process over the Node inspector, which is how the window is hidden so the person at the machine can
+keep typing, and how the screenshots are taken: `webContents.capturePage(undefined, { stayHidden:
+true })`, because CDP's `Page.captureScreenshot` never answers for a hidden window — hidden **after** it has shown
+and verified hidden, because a hide before the window's own `show()` is undone by it, and the test
+window then sits in front collecting whoever's keystrokes (seen on 2026-10-27 as junk in the plugin
+chooser's search). Two gotchas it already handles: the inspector's global scope has no `require`, so Electron's `app` is
 reached through `process.getBuiltinModule('node:module').createRequire(...)`; and `innerText`
 reflects CSS `text-transform`, so a section title reads as upper case. It walks Configure mode end
 to end and dumps a per-key trace of the screen key on failure. Extend it rather than reaching for
@@ -152,10 +155,18 @@ rather than implying coverage:
 
 ## Configure mode and plugins
 
-- **Plugins never import from `main/`.** A built-in plugin under `src/plugins/` must have the same
-  shape as one a user drops into `Documents/magiceth/plugins`: it gets everything through the
-  `PluginHost` it is handed. ESLint enforces it (`no-restricted-imports`); `import type` and pure
-  helpers from `src/shared/` are fine, and rollup puts anything shared into `out/main/chunks/`.
+- **A built-in plugin is a user plugin that happens to ship with the app.** Under `src/plugins/`
+  it may use Node built-ins, its own folder, and `import type` from `src/shared/` — nothing from
+  `main/`, `renderer/`, `preload/`, `electron`, or `shared/` at runtime. ESLint says so
+  (`@typescript-eslint/no-restricted-imports`), and `electron.vite.config.ts` fails the build if the
+  bundle under `out/main/plugins/<id>/` requires anything else. Need a helper from `shared/`? Copy
+  it into the plugin. Need something from the app? Add an optional member to `PluginHost`.
+- **The plugin API is locked.** `src/shared/plugin.ts` is version 1 and changes by addition only;
+  `docs/PLUGINS.md` embeds it verbatim and `test/plugin-docs.test.ts` fails when the two differ, so
+  an edit to the contract means editing the doc (and its change list) in the same commit.
+  `examples/plugins/hello` is the copyable plugin; `test/example-plugin.test.ts` holds it to the
+  contract and `ui-check` drives it, so keep its strings (`Hello from a user plugin.`, `Presses`,
+  `saying hello`) when editing it.
 - **Each `src/plugins/<id>/` is its own main-process entry.** `electron.vite.config.ts` discovers
   them by their `package.json` and copies that manifest next to the bundle, so
   `out/main/plugins/<id>/` has exactly what a user plugin folder has. A new built-in plugin needs no

@@ -51,10 +51,11 @@ Still open:
 - **The discovery row is a snapshot.** It still says "factory default" after adoption, because the
   device stops announcing; an age on the row, or dropping it after a minute of silence, would fix
   that.
-- **The plugin API is version 1 and may change.** `PluginHost` and the block vocabulary are the
-  minimum the UniFi plugin needed. Obvious next pieces: a way for a plugin to ask for a
-  confirmation in the notice bar, selection handled by the host rather than re-sent as arrow keys,
-  and a `run` that can elevate through a plan the host builds.
+- **The plugin API is locked at version 1** (`docs/PLUGINS.md`, "Stability"): additions only, which
+  a plugin feature-detects. Additions worth making when a second plugin needs them: a way for a
+  plugin to ask for a confirmation in the notice bar, an optional host-managed selection for `list`
+  blocks, a `run` that can elevate through a plan the host builds, and a shell-side safety where a
+  second `Esc` leaves a form the plugin kept open.
 - **Candidates for a second plugin:** `set-inform` over SSH for devices that have it (needs
   password automation — `ssh` alone cannot take `ubnt`/`ubnt` non-interactively), and adopting
   through the controller's API so the click in the controller goes away.

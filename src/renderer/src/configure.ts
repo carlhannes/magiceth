@@ -27,6 +27,8 @@ let adapters: Adapter[] = []
 let selected = 0
 let plugins: PluginManifest[] = []
 let pluginSel = 0
+// Typed in the chooser; narrows the list. Esc clears it before it leaves the mode.
+let pluginFilter = ''
 let screen: PluginScreen | null = null
 let activating = false
 let formOpen: { id: string; error?: string } | null = null
@@ -51,15 +53,27 @@ function portLine(): string {
   return `<div class="selector">${chips}<span class="selector-hint">← → port</span></div>`
 }
 
-function pluginRows(list: PluginManifest[], offset: number): string {
+/** The plugins the chooser shows: all of them, or those matching what was typed. */
+function visiblePlugins(): PluginManifest[] {
+  const q = pluginFilter.trim().toLowerCase()
+  if (!q) return plugins
+  return plugins.filter((m) =>
+    [m.title, m.id, m.description, m.author ?? ''].some((s) => s.toLowerCase().includes(q))
+  )
+}
+
+function pluginRows(list: PluginManifest[]): string {
   return list
     .map((m, i) => {
-      const idx = offset + i
+      // Every row says where the plugin comes from: a pill for the ones shipped with the app, the
+      // folder for a user's own, and the author when the manifest names one.
       const sub = m.problem ?? m.description
-      const by = m.origin === 'user' ? ` · ${m.dir}${m.author ? ` · by ${m.author}` : ''}` : ''
-      return `<li class="profile${idx === pluginSel ? ' sel' : ''}${m.problem ? ' muted' : ''}">
-        <span class="pi">${idx + 1}</span>
-        <span class="pn">${escapeHtml(m.title)}<br><span class="sub-line">${escapeHtml(sub)}${escapeHtml(by)}</span></span>
+      const where = m.origin === 'user' ? ` · ${m.dir}` : ''
+      const by = m.author ? ` · by ${m.author}` : ''
+      const pill = m.origin === 'built-in' ? '<span class="pill">built in</span>' : ''
+      return `<li class="profile${i === pluginSel ? ' sel' : ''}${m.problem ? ' muted' : ''}">
+        <span class="pi">${i + 1}</span>
+        <span class="pn">${escapeHtml(m.title)}${pill}<br><span class="sub-line">${escapeHtml(sub + where + by)}</span></span>
         <span class="pd">${escapeHtml(m.version)}</span>
       </li>`
     })
@@ -67,22 +81,21 @@ function pluginRows(list: PluginManifest[], offset: number): string {
 }
 
 function renderChooser(): string {
-  const builtIn = plugins.filter((m) => m.origin === 'built-in')
-  const user = plugins.filter((m) => m.origin === 'user')
-  const userList =
-    user.length > 0
-      ? `<ul class="profiles">${pluginRows(user, builtIn.length)}</ul>`
-      : `<p class="status-msg">None yet. A plugin is a folder with a package.json and an index.js in Documents/magiceth/plugins — see the README.</p>`
+  const list = visiblePlugins()
+  const search = !pluginFilter
+    ? ''
+    : list.length === 0
+      ? `<p class="status-msg">No plugin matches "${escapeHtml(pluginFilter)}".</p>`
+      : `<p class="status-msg">Search: ${escapeHtml(pluginFilter)}</p>`
   return renderShell({
     key: 'configure:chooser',
     busy: activating,
     status: portLine(),
-    footer: `<b>↑↓</b> select · <b>Enter</b> open · <b>←→</b> port · <b>Esc</b> back · <b>Tab</b> ethernet`,
+    footer: `<b>↑↓</b> select · <b>Enter</b> open · <b>←→</b> port · type to search · <b>Esc</b> back · <b>Tab</b> ethernet`,
     body: `<section class="panel-card">
-      <div class="section-title">Built in</div>
-      <ul class="profiles">${pluginRows(builtIn, 0)}</ul>
-      <div class="section-title">Your plugins — Documents/magiceth/plugins</div>
-      ${userList}
+      ${search}
+      <ul class="profiles">${pluginRows(list)}</ul>
+      <p class="notes">Your own plugins go in Documents/magiceth/plugins — see docs/PLUGINS.md.</p>
     </section>`
   })
 }
@@ -202,7 +215,7 @@ function applyScreen(next: PluginScreen): void {
 }
 
 async function activate(): Promise<void> {
-  const m = plugins[pluginSel]
+  const m = visiblePlugins()[pluginSel]
   const device = currentDevice()
   if (!m || activating) return
   if (m.problem) {
@@ -249,7 +262,7 @@ async function refreshPlugins(): Promise<void> {
     console.error('listing plugins failed', err)
     plugins = []
   }
-  pluginSel = Math.min(pluginSel, Math.max(0, plugins.length - 1))
+  pluginSel = Math.min(pluginSel, Math.max(0, visiblePlugins().length - 1))
   requestRender()
 }
 
@@ -309,7 +322,7 @@ export function handleConfigureKey(e: KeyboardEvent): void {
     return
   }
 
-  const n = plugins.length
+  const n = visiblePlugins().length
   if (e.key === 'ArrowDown') {
     if (n > 0) pluginSel = (pluginSel + 1) % n
   } else if (e.key === 'ArrowUp') {
@@ -321,7 +334,20 @@ export function handleConfigureKey(e: KeyboardEvent): void {
   } else if (e.key === 'Enter') {
     void activate()
   } else if (e.key === 'Escape') {
-    setMode('chooser')
+    if (pluginFilter) {
+      pluginFilter = ''
+      pluginSel = 0
+    } else {
+      setMode('chooser')
+    }
+  } else if (e.key === 'Backspace') {
+    pluginFilter = pluginFilter.slice(0, -1)
+    pluginSel = 0
+  } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    // Type to search. Letters and digits are free here: the mode shortcuts apply on the mode
+    // chooser only.
+    pluginFilter += e.key
+    pluginSel = 0
   } else {
     return
   }
@@ -336,6 +362,7 @@ export function leaveConfigure(): void {
 
 /** Entering re-reads the folders, so a plugin dropped in since last time is already in the list. */
 export function enterConfigure(): void {
+  pluginFilter = ''
   void refreshPlugins()
   void window.api
     .listAdapters()

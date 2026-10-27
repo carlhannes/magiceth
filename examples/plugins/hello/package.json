@@ -1,0 +1,11 @@
+{
+  "name": "hello",
+  "version": "0.1.0",
+  "description": "A user plugin that says hello.",
+  "author": "magiceth",
+  "main": "index.js",
+  "magiceth": {
+    "api": 1,
+    "title": "Hello plugin"
+  }
+}

@@ -1,8 +1,8 @@
 /* global document, setTimeout, WebSocket, Buffer, KeyboardEvent */
 // Drives the built app and checks Configure mode end to end — plugin chooser, the UniFi plugin's
 // form, a user plugin, unload and reload — straight over Electron's own debugging endpoints, with
-// nothing installed: the Chrome DevTools Protocol for the page (evaluate, screenshots) and the
-// Node inspector for the main process (to hide the window). Keys are synthetic KeyboardEvents
+// nothing installed: the Chrome DevTools Protocol for the page (evaluate) and the Node inspector
+// for the main process (to hide the window, and to take the screenshots while it is hidden). Keys are synthetic KeyboardEvents
 // dispatched inside the page, never the system keyboard, so whoever is at the machine can keep
 // typing. See AGENTS.md.
 //
@@ -10,50 +10,27 @@
 //
 // Writes screenshots to the folder named by UI_CHECK_SHOTS (default: a temp folder).
 import { spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
 const shots = process.env.UI_CHECK_SHOTS ?? mkdtempSync(join(tmpdir(), 'magiceth-ui-'))
 mkdirSync(shots, { recursive: true })
 
-// --- A user plugin to exercise, written where the app looks for them ---
+// --- The example plugin, copied to where the app looks for user plugins ---
+//
+// examples/plugins/hello is the plugin the docs tell people to copy, so it is the one exercised
+// here: the copy is what a user would have, and editing it on disk is the reload test.
 
+const repo = join(dirname(fileURLToPath(import.meta.url)), '..')
 const helloDir = join(homedir(), 'Documents', 'magiceth', 'plugins', 'hello')
-const helloPlugin = (text) => `let presses = 0
-module.exports = {
-  activate(host) {
-    host.log('hello activated on ' + host.device)
-    return {
-      render: () => ({
-        status: 'saying hello',
-        blocks: [
-          { kind: 'text', text: ${JSON.stringify(text)} },
-          { kind: 'table', rows: [['Port', host.device], ['Presses', String(presses)]] },
-          { kind: 'log', title: 'Log', lines: host.lines() }
-        ],
-        keys: [{ key: 'any', label: 'counts' }]
-      }),
-      onKey(k) { presses++; host.log('key ' + k.key) },
-      deactivate() { host.log('bye') }
-    }
-  }
-}
-`
-mkdirSync(helloDir, { recursive: true })
-writeFileSync(
-  join(helloDir, 'package.json'),
-  JSON.stringify({
-    name: 'hello',
-    version: '0.1.0',
-    description: 'A user plugin that says hello.',
-    author: 'ui-check',
-    magiceth: { api: 1, title: 'Hello plugin' }
-  })
-)
-writeFileSync(join(helloDir, 'index.js'), helloPlugin('Hello from a user plugin.'))
+rmSync(helloDir, { recursive: true, force: true })
+cpSync(join(repo, 'examples', 'plugins', 'hello'), helloDir, { recursive: true })
+/** The text the example shows; the reload step replaces it, so it must still be there. */
+const HELLO_MARKER = 'Hello from a user plugin.'
 
 // --- The smallest DevTools Protocol client that will do ---
 
@@ -150,16 +127,32 @@ const pageUrl = await until(async () => {
 }, 'the app page')
 
 const main = await Cdp.connect(inspectorUrl)
-// Keystrokes and screenshots go over the protocol, so the window need not be in front — and must
-// not be: a visible test window steals focus, and whatever is typed meanwhile lands in it.
 // The inspector's global scope has no `require`; a Module.createRequire from the app folder goes
-// through Electron's own loader, which is what resolves 'electron'.
-const electronApp = (what) =>
-  `process.getBuiltinModule('node:module').createRequire(process.cwd() + '/')('electron').app.${what}()`
-await main.send('Runtime.evaluate', { expression: electronApp('hide') }).then((r) => {
-  if (r.exceptionDetails)
-    throw new Error(`could not hide the window: ${r.exceptionDetails.exception?.description}`)
-})
+// through Electron's own loader, which is what resolves 'electron'. `e` is that module.
+const inMain = (expr) =>
+  main
+    .send('Runtime.evaluate', {
+      expression: `(() => { const e = process.getBuiltinModule('node:module').createRequire(process.cwd() + '/')('electron'); return ${expr} })()`,
+      returnByValue: true,
+      awaitPromise: true
+    })
+    .then((r) => {
+      if (r.exceptionDetails) throw new Error(`main: ${r.exceptionDetails.exception?.description}`)
+      return r.result.value
+    })
+// Keystrokes and screenshots go over the protocol, so the window need not be in front — and must
+// not be: a visible test window has focus, and whatever is typed at the machine meanwhile lands in
+// it. Hide only once the window has shown: a hide before the window's own show() on ready-to-show
+// is undone by it, which is how stray keystrokes once ended up in the plugin chooser's search.
+await until(
+  () => inMain('e.BrowserWindow.getAllWindows().some((w) => w.isVisible())'),
+  'the window to show'
+)
+await inMain('e.app.hide()')
+await until(() => inMain('e.app.isHidden()'), 'the app to hide')
+// A hidden renderer stops producing frames, and capturePage would then hand back the last one it
+// drew — the screen before the keys. Keep it rendering.
+await inMain('e.BrowserWindow.getAllWindows()[0].webContents.setBackgroundThrottling(false)')
 const page = await Cdp.connect(pageUrl)
 await page.send('Runtime.enable')
 page.ws.addEventListener('message', (m) => {
@@ -182,12 +175,17 @@ const text = () => evalIn(page, () => document.body.innerText)
 const view = () => evalIn(page, () => document.querySelector('.scroll')?.dataset.view ?? '')
 let step = 0
 const trace = []
+// Pictures come from the main process: Page.captureScreenshot over CDP never answers for a hidden
+// window, because Chromium does not paint one, while Electron's capturePage with `stayHidden`
+// renders a frame on demand and keeps the window out of the way.
 async function shot(name) {
   step++
-  const r = await page.send('Page.captureScreenshot', { format: 'png' })
+  const png = await inMain(
+    "e.BrowserWindow.getAllWindows()[0].webContents.capturePage(undefined, { stayHidden: true }).then((img) => img.toPNG().toString('base64'))"
+  )
   writeFileSync(
     join(shots, `${String(step).padStart(2, '0')}-${name}.png`),
-    Buffer.from(r.data, 'base64')
+    Buffer.from(png, 'base64')
   )
 }
 /** What the keyboard would do: the app listens for keydown on the document and reads e.key. */
@@ -244,7 +242,7 @@ async function selectPlugin(title) {
   for (let i = 0; i < 10; i++) {
     const selected = await evalIn(
       page,
-      () => document.querySelector('.profile.sel .pn')?.firstChild?.textContent ?? ''
+      () => document.querySelector('.profile.sel .pn')?.firstChild?.textContent?.trim() ?? ''
     )
     if (selected === title) return
     await press('ArrowDown')
@@ -261,6 +259,19 @@ async function run() {
   await expectText('Hello plugin')
   await shot('chooser')
 
+  // Type to search narrows the list; Backspace widens it again.
+  await press('u')
+  await press('n')
+  await press('i')
+  await expectText('Search: uni')
+  await expectNoText('Hello plugin')
+  await press('Backspace')
+  await press('Backspace')
+  await press('Backspace')
+  await expectText('Hello plugin')
+  await expectNoText('Search:')
+
+  await selectPlugin('UniFi adoption')
   await press('Enter')
   await expectText('No controller saved yet')
   await shot('unifi-empty')
@@ -310,10 +321,34 @@ async function run() {
   await expectText('key y')
   await shot('hello-plugin')
 
+  // The example's form: an empty name is refused, a real one is saved, Esc drops the form.
+  await press('n')
+  await expectSelector('#pf-0')
+  await fill('#pf-0', '')
+  await submitForm()
+  await until(
+    () =>
+      evalIn(page, () => (document.getElementById('f-error')?.textContent ?? '').includes('name')),
+    'the example form error',
+    5000
+  )
+  await fill('#pf-0', 'Ada')
+  await submitForm()
+  await expectText('named Ada')
+  await expectNoText('Your name')
+  await press('n')
+  await expectSelector('#pf-0')
+  await press('Escape')
+  await expectNoText('Your name')
+  await expectText('key y')
+
   await press('Escape')
   await expectChooser()
   // Edit the user plugin on disk; the next open must show the new text without a restart.
-  writeFileSync(join(helloDir, 'index.js'), helloPlugin('Hello again, reloaded.'))
+  const source = readFileSync(join(helloDir, 'index.js'), 'utf8')
+  if (!source.includes(HELLO_MARKER))
+    throw new Error(`the example plugin no longer says "${HELLO_MARKER}"`)
+  writeFileSync(join(helloDir, 'index.js'), source.replace(HELLO_MARKER, 'Hello again, reloaded.'))
   await selectPlugin('Hello plugin')
   await press('Enter')
   await expectText('Hello again, reloaded.')
@@ -337,7 +372,7 @@ try {
   )
 }
 
-await main.send('Runtime.evaluate', { expression: electronApp('quit') }).catch(() => undefined)
+await inMain('e.app.quit()').catch(() => undefined)
 page.close()
 main.close()
 await new Promise((r) => setTimeout(r, 500))

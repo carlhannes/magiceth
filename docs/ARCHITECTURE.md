@@ -88,6 +88,7 @@ resources/wifi-helper/     # the macOS helper .app (Swift + Info.plist) and the 
     plugin.ts              # the plugin contract: manifest, view blocks, PluginHost, PluginInstance
 resources/chipsets.json    # VID:PID -> chipset (single source of truth, bundled in at build)
 test/                      # vitest — pure parsers/functions
+examples/plugins/hello/    # the plugin the docs tell people to copy; held to the contract by a test, driven by ui-check
 ```
 
 ## Capability modules
@@ -254,12 +255,15 @@ it was started from.
 
 ## Configure mode: plugins
 
-A plugin is a folder with a `package.json` and an entry script. The app ships its own under
+A plugin is a folder with a `package.json` and a CommonJS entry script; [PLUGINS.md](PLUGINS.md)
+is the reference for the API, which is version 1 and locked. The app ships its own under
 `src/plugins/`, bundled by `electron.vite.config.ts` as extra main-process entries with the
 manifest copied next to each bundle; the user's live in `Documents/magiceth/plugins`. Both have
-exactly the same shape, which is the point: the built-in one is the worked example for writing
-another, and ESLint keeps it honest by forbidding imports from `main/` (`src/plugins/**` may use
-types and pure helpers from `shared/`, nothing else).
+exactly the same shape, and two checks keep it that way: ESLint lets `src/plugins/**` import
+nothing from `main/`, `renderer/`, `preload/` or `electron`, and from `shared/` only as
+`import type`; and the build fails if a built-in's bundle requires anything but Node built-ins
+and files in its own folder — the same freedom a user plugin has, no more. The chooser lists both
+origins in one list sorted by title, a `built in` pill on the ones shipped with the app.
 
 **Nothing runs until it is picked.** `loader.ts` reads manifests — `parseManifest` is pure and
 strict about the two fields that matter for safety, the id (it becomes a storage filename) and the
@@ -452,7 +456,9 @@ comes first, because the bandwidth being spent belongs to whoever owns the netwo
   output. Then verify on real hardware.
 - **New IPC:** add a handler in `src/main/index.ts`, a method in `MagicethApi` (`src/shared/types.ts`),
   and expose it in `src/preload/index.ts`.
-- **New Configure plugin:** a folder under `src/plugins/<id>/` with a `package.json` carrying
-  `"magiceth": { "api": 1 }` and an `index.ts` exporting `activate(host)` — the build finds it by
-  itself. A user's goes in `Documents/magiceth/plugins/<id>/` as plain JavaScript. The contract is
-  `src/shared/plugin.ts`; `src/plugins/unifi-adopt` is the example.
+- **New Configure plugin:** read [PLUGINS.md](PLUGINS.md). A user's is a folder in
+  `Documents/magiceth/plugins/` — copy `examples/plugins/hello`. A built-in is a folder under
+  `src/plugins/<id>/` with a `package.json` carrying `"magiceth": { "api": 1 }` and an `index.ts`
+  exporting `activate(host)`; the build finds it by itself and refuses a bundle that requires
+  anything outside the folder. Changing `src/shared/plugin.ts` is an API change: additive only,
+  mirrored into PLUGINS.md (a test enforces the copy) with a line in its change list.

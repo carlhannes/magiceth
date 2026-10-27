@@ -62,7 +62,11 @@ function scan(root: string, origin: PluginManifest['origin']): PluginManifest[] 
   return found
 }
 
-/** Every plugin folder with a manifest, built-in first. Reads manifests only. */
+/**
+ * Every plugin folder with a manifest, sorted by title: origin is a label, not a rank. Reads
+ * manifests only. A built-in's id is reserved, so a user plugin with the same id is listed with a
+ * problem rather than hidden.
+ */
 export function listPlugins(): PluginManifest[] {
   const builtIn = scan(builtInPluginsDir(), 'built-in')
   const taken = new Set(builtIn.map((m) => m.id))
@@ -71,7 +75,9 @@ export function listPlugins(): PluginManifest[] {
       ? { ...m, problem: `The name "${m.id}" belongs to a built-in plugin.` }
       : m
   )
-  return [...builtIn, ...user]
+  return [...builtIn, ...user].sort(
+    (a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id)
+  )
 }
 
 interface Active {
@@ -93,8 +99,14 @@ function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+// A plugin that calls host.log() or host.update() from inside render() would otherwise recurse
+// (log → refresh → render → log …); while a render is in progress, a refresh is a no-op. The log
+// line itself is kept, so nothing is lost.
+let rendering = false
+
 function screenOf(a: Active): PluginScreen {
   let view
+  rendering = true
   try {
     view = a.instance.render()
   } catch (err) {
@@ -108,6 +120,8 @@ function screenOf(a: Active): PluginScreen {
       ],
       keys: []
     }
+  } finally {
+    rendering = false
   }
   return {
     pluginId: a.manifest.id,
@@ -119,7 +133,7 @@ function screenOf(a: Active): PluginScreen {
 }
 
 function refresh(a: Active): void {
-  if (active !== a) return
+  if (active !== a || rendering) return
   pushScreen(screenOf(a))
 }
 
@@ -148,7 +162,10 @@ function resourceCounts(): Record<string, number> {
 
 export async function activatePlugin(id: string, device: string): Promise<PluginActivation> {
   await deactivatePlugin()
-  const manifest = listPlugins().find((m) => m.id === id)
+  // With the list sorted by title, a user plugin that clashes with a built-in's id may come first;
+  // the one without a problem is the one that can run.
+  const same = listPlugins().filter((m) => m.id === id)
+  const manifest = same.find((m) => !m.problem) ?? same[0]
   if (!manifest) return { ok: false, message: `There is no plugin called "${id}".` }
   if (manifest.problem) return { ok: false, message: manifest.problem }
 

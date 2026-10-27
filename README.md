@@ -235,9 +235,10 @@ against.
 ### Configure mode
 
 A list of plugins, each a small program that uses the selected port to set something up. `↑`/`↓`
-picks one, `←`/`→` picks the port (the dongle is preselected), `Enter` opens it and `Esc` leaves
-it — after a second press if the plugin has something running, because leaving stops it. Nothing
-in a plugin folder is read beyond its `package.json` until you open it.
+picks one, typing searches the list, `←`/`→` picks the port (the dongle is preselected), `Enter`
+opens it and `Esc` leaves it — after a second press if the plugin has something running, because
+leaving stops it. Plugins shipped with the app carry a `built in` mark; your own show their folder
+and author. Nothing in a plugin folder is read beyond its `package.json` until you open it.
 
 **UniFi adoption** (built in) points a factory-default UniFi device at a remote controller from
 this port, without SSH — which is the only way in for a USW-Flex-Mini, a USW-Ultra or the Power
@@ -279,16 +280,14 @@ server on it. Verified end to end on macOS with a USW-Flex-Mini and a UniFi OS g
 relayed informs, the adoption delivered back through the relay, Connected once moved to its real
 network. Linux and Windows follow the same procedure in [CONFIGURE-TEST.md](CONFIGURE-TEST.md).
 
-**Writing a plugin.** A folder in `Documents/magiceth/plugins` with a `package.json` carrying
-`"magiceth": { "api": 1, "title": "…" }` and an `index.js` that exports `activate(host)`. It runs
-as plain Node in the app's main process and describes its screen as blocks (text, table, list,
-log, form, raw html); the app draws them, sends every key back, and shows a bar with `Esc` to
-leave. The host gives it the port, a log, a JSON store, a way to run commands without a shell, and
-a DHCP server that answers only what the plugin allows. The contract is `src/shared/plugin.ts`,
-and the built-in plugin in `src/plugins/unifi-adopt` is the worked example — it has the same
-shape, so copying it is the quickest start. A plugin dropped into the folder appears in the list
-the next time the mode is opened; editing it takes effect the next time it is opened. See the
-security note below: a plugin runs with the app's own privileges.
+**Writing a plugin.** A folder in `Documents/magiceth/plugins` with a `package.json` and a
+CommonJS `index.js` exporting `activate(host)`; the app draws the blocks the plugin describes,
+sends every key to it, and gives it the port, a log, a JSON store, command running without a shell
+and a DHCP server that answers only what the plugin allows. [docs/PLUGINS.md](docs/PLUGINS.md) is
+the complete reference for plugin API 1, which is locked; `examples/plugins/hello` is a finished
+plugin to copy. A plugin dropped into the folder appears the next time the mode is opened, and an
+edit takes effect the next time the plugin is opened. See the security note below: a plugin runs
+with the app's own privileges.
 
 `M`, `U` and applying a profile change real network configuration. On a **dongle** they act on the
 first press — that is the one-handed point. On a **built-in** port they ask first and act on the

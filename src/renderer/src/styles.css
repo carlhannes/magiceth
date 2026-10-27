@@ -453,6 +453,19 @@ body {
   padding: 2px 8px;
 }
 
+/* A small origin marker on a list row, e.g. "built in" on a plugin shipped with the app. */
+.pill {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 999px;
+  padding: 0 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .chooser {
   display: flex;
   flex-direction: column;

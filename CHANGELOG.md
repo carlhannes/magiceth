@@ -29,9 +29,18 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   adoption delivered back through the relay, Connected once moved to its real network — and the
   switch's real packets are the test fixtures. Linux and Windows follow `CONFIGURE-TEST.md`.
 
+- **Plugin API 1, documented and locked** — [docs/PLUGINS.md](docs/PLUGINS.md) is the reference
+  for writing a plugin (manifest, module format, lifecycle, every block, the host member by member,
+  the DHCP service, stability policy), with the contract embedded and a test keeping the two
+  identical; `examples/plugins/hello` is a complete plugin to copy, held to the contract by a test
+  and driven by `npm run ui-check`.
+
 ### Changed
 
 - `Tab` cycles Ethernet → Wi-Fi → Configure instead of toggling two modes.
+- The plugin chooser is one list sorted by title with type-to-search; plugins shipped with the app
+  carry a `built in` mark and every row names its author. The built-in plugin shares nothing with
+  the app at runtime — the build fails if its bundle requires anything a user plugin could not.
 - The elevated PowerShell window on Windows is hidden; a fifteen-minute session with a console on
   screen read as something stuck.
 - Recordings and user plugins resolve the same `Documents/magiceth` folder through one helper.

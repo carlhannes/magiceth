@@ -44,6 +44,9 @@ export function renderBlock(block: Block): string {
       return ''
     case 'html':
       return block.html
+    default:
+      // A block kind this app does not know — from a plugin written for a newer app — draws nothing.
+      return ''
   }
 }
 
