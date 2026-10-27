@@ -24,9 +24,10 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   device's informs to the controller you saved, and discovery on UDP 10001 shows the device with
   model, firmware and whether it is still factory default. One admin prompt per session holds an
   extra address on the port; the same script removes it, caps the session at fifteen minutes, and
-  on Linux lowers `ip_unprivileged_port_start` to 67 meanwhile. **Not yet run on hardware** —
-  `CONFIGURE-TEST.md` is the procedure, and the DHCP and discovery fixtures are hand-built from
-  the documented formats until a Flex Mini capture replaces them.
+  on Linux lowers `ip_unprivileged_port_start` to 67 meanwhile. Verified end to end on macOS on
+  2026-10-26 with a USW-Flex-Mini against a UniFi OS gateway — lease, relayed informs, the
+  adoption delivered back through the relay, Connected once moved to its real network — and the
+  switch's real packets are the test fixtures. Linux and Windows follow `CONFIGURE-TEST.md`.
 
 ### Changed
 

@@ -117,11 +117,11 @@ what a "please add this chipset" issue or PR needs.
 
 ## Platform status
 
-| Platform                | Status                                                                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified; **Wi-Fi mode live-verified**                        |
-| **Windows 11** (x64)    | Identification, diagnostics, ping, DHCP/static profile switching, MAC rolling and **Wi-Fi mode** all verified on real hardware |
-| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**, Wi-Fi mode included         |
+| Platform                | Status                                                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified; **Wi-Fi mode** and **Configure mode** live-verified                         |
+| **Windows 11** (x64)    | Identification, diagnostics, ping, DHCP/static profile switching, MAC rolling and **Wi-Fi mode** all verified on real hardware; Configure mode not yet |
+| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**, Wi-Fi and Configure modes included                  |
 
 On Linux the DHCP-vs-static readout is inferred from the address lifetime that `ip -j addr`
 reports, which is the one part of the port readout that has not been checked against a live
@@ -275,8 +275,9 @@ elevated script that added it, even if the app has gone. On Linux the script als
 Windows it adds three firewall rules scoped to the app's executable and removes them. Port 8080 on
 this laptop must be free — a device derives `http://<address>:8080/inform` from option 43, so the
 port is not negotiable — and the start refuses, before any prompt, if the port already has a DHCP
-server on it. **Not yet verified on hardware**; the procedure is in
-[CONFIGURE-TEST.md](CONFIGURE-TEST.md).
+server on it. Verified end to end on macOS with a USW-Flex-Mini and a UniFi OS gateway: lease,
+relayed informs, the adoption delivered back through the relay, Connected once moved to its real
+network. Linux and Windows follow the same procedure in [CONFIGURE-TEST.md](CONFIGURE-TEST.md).
 
 **Writing a plugin.** A folder in `Documents/magiceth/plugins` with a `package.json` carrying
 `"magiceth": { "api": 1, "title": "…" }` and an `index.js` that exports `activate(host)`. It runs
