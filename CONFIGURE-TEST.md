@@ -97,38 +97,42 @@ Approve the prompt.
 - Plug the Flex Mini's cable in (link comes up): the alias is still there a few seconds later.
   This is the configd claim — if the alias vanishes and comes back within a second, the re-assert
   in the loop is doing its job; if it vanishes for good, that is a finding.
-- `S`: the alias is gone within two seconds, and `ls "$TMPDIR"magiceth-dhcp-*` shows no stop file (the session writes it to the OS temp dir, which on macOS is not `/tmp`).
+- While the session runs (macOS): `sysctl net.inet.ip.forwarding` is 1, `sudo pfctl -a com.apple/magiceth -s nat` shows the NAT rule for the link's /24 through your upstream interface, and `sudo pfctl -s References` is one higher than before the session.
+- `S`: the alias is gone within two seconds, forwarding is back to what it was, the anchor is empty and the reference count is back, and `ls "$TMPDIR"magiceth-dhcp-*` shows no stop file (the session writes it to the OS temp dir, which on macOS is not `/tmp`).
 - Start again and quit the app mid-session: the alias is gone within two seconds.
 - Start again and wait: the session ends by itself at fifteen minutes with the alias removed.
 
 ## 3. The lease and the inform
 
-Controller saved with its real inform URL, Flex Mini factory default and connected only to the
-dongle, session started and approved. Expected on screen, in order, within about a minute:
+Controller saved with its real inform URL (its Override Inform Host set once, to its hostname),
+the laptop online, Flex Mini factory default and connected only to the dongle, session started
+and approved. Expected on screen, in order, within about a minute:
 
-1. `Discovered … (USW-Flex-Mini …) at 192.168.1.20` (if the device announces before leasing) —
+1. `Controller <host> is <ip>: option 43 will carry that address.`, then `DHCP server on
+10.254.254.1/24, internet shared from <upstream> (DNS …) — plug the device in now.`
+2. `Discovered … (USW-Flex-Mini …) at 192.168.1.20` (if the device announces before leasing) —
    the discovery parser against a real packet.
-2. `DHCP discover from <mac> …, vendor class ubnt` → `Offered 10.254.254.10` → `Lease 10.254.254.10 → <mac>`.
+3. `DHCP discover from <mac> …, vendor class ubnt` → `Offered 10.254.254.10` → `Lease 10.254.254.10 → <mac>`.
    If the discover shows but no lease follows, the device did not take the OFFER: capture the
    exchange (`sudo tcpdump -i <dongle> -nn port 67 or port 68 -vvv`) and note the destination
    address of the OFFER and whether the device re-sends DISCOVER. That is the subnet-broadcast
    question in the backlog.
-3. `Inform from <mac> (… bytes) → controller answered 200 in … ms` repeating every ~10 s — the
-   relay. Save one inform body for `test/inform-relay.test.ts` by adding a temporary
-   `writeFileSync` in `inform-relay.ts`, or from a capture on port 8080.
-4. The device listed as **Pending Adoption** in the controller.
+4. The device's informs going straight to the controller through the laptop:
+   `sudo tcpdump -i <dongle> -n 'host <controller ip>'` shows `POST /inform` and `HTTP/1.1 200`
+   with the controller, and STUN on UDP 3478. Nothing on the laptop answers the device itself.
+5. The device listed as **Pending Adoption** in the controller.
 
 ## 4. Adopt
 
 Click Adopt in the controller.
 
-- The next relayed inform carries the adoption; the device shows **Adopting**.
-- Record what the device does next: keeps informing through the relay (controller shows it move
-  to Provisioning/Connected while still on the dongle) or goes quiet (it is now informing to the
-  override host, which it cannot reach). Both are fine; the status text assumes the second and
-  should be adjusted if the first is what happens.
-- `S`, unplug, cable the Flex Mini into its real network: it reaches **Connected** in the
-  controller within a few minutes.
+- The controller's log shows `adoption - completed` within seconds and the device moves to
+  Provisioning and then Online, still on the dongle.
+- The device's discovery row goes quiet (`quiet for … s`) and the note under the table says what
+  that means; the controller's record of the device carries the override host as its inform URL.
+- `S`: the session ends with the address, forwarding and NAT removed (section 2).
+- Power-cycle the device and cable it into another network with internet: it is **Online** in
+  the controller again within a couple of minutes, from that network's address.
 
 ## 5. Linux and Windows
 
@@ -137,7 +141,10 @@ The same steps 2–4 on each. In addition:
 - Linux: `sysctl net.ipv4.ip_unprivileged_port_start` is 67 during the session and back to its
   previous value after; `ip addr show <dongle>` has the alias; with NetworkManager managing the
   port, note whether it removes the alias when the link comes up (the loop re-adds it).
-- Windows: `Get-NetFirewallRule -DisplayName 'magiceth*'` shows three rules during the session
+- Both: sharing the internet is not implemented there yet, so the UniFi plugin's start refuses
+  with a message saying so; the steps below need a plugin that does not ask for it, or the
+  backlog's NAT work first.
+- Windows: `Get-NetFirewallRule -DisplayName 'magiceth*'` shows two rules during the session
   and none after; `netsh interface ipv4 show addresses "<adapter>"` has the extra address; if
   `netsh add address` refused on a DHCP-configured adapter (the session never reports
   `DHCP server on …`), that is the backlog's fallback case.
@@ -146,5 +153,6 @@ The same steps 2–4 on each. In addition:
 ## What to write down
 
 For each OS: the three outcomes above that are not yet verified (vendor class, OFFER acceptance,
-alias survival), the relay's HTTP status for an unadopted device's inform, and what the device did
-after adoption. Then: fixtures replaced, BACKLOG trimmed, and this file updated with dates.
+alias survival), whether the device's informs reached the controller directly, and what the device
+did after adoption and after the power cycle. Then: fixtures replaced, BACKLOG trimmed, and this
+file updated with dates.

@@ -31,8 +31,15 @@ Only the latest released version receives security updates (the project is in an
   office LAN, and a production device there must never get a lease from it. On Linux the script
   also lowers `net.ipv4.ip_unprivileged_port_start` to 67 for the session, which lets any user
   process on the machine bind ports 67–1023 until it is put back; on Windows it adds inbound
-  firewall rules for UDP 67, UDP 10001 and TCP 8080 scoped to the app's executable and removes
-  them.
+  firewall rules for UDP 67 and UDP 10001 scoped to the app's executable and removes them.
+- **A session can share this computer's internet with the port.** When the plugin asks for it
+  (the UniFi plugin does), the same script also turns on IP forwarding and a NAT rule in pf for
+  the session's /24 through the interface your default route uses, machine-wide, until the
+  session ends — then the rule is flushed, pf's reference released and forwarding put back to
+  what it was. A device on the port is a NAT client behind your laptop for that time: it can reach
+  whatever your laptop can reach, nothing can reach it from outside, and nothing else on your
+  laptop is exposed. macOS only; the script's own fifteen-minute cap is the backstop if the app
+  dies with a session open.
 - **Plugins run with the app's privileges.** A plugin in `Documents/magiceth/plugins` is plain
   Node code loaded into the main process when — and only when — you open it from the Configure
   chooser; until then the app reads its `package.json` and nothing else. Treat the folder like a
@@ -42,8 +49,9 @@ Only the latest released version receives security updates (the project is in an
 - **No telemetry.** The tool sends no data anywhere. Network traffic happens only when you
   start it yourself: ping (gateway, `1.1.1.1`/`8.8.8.8`), a DNS lookup, passive LLDP/CDP
   listening, the speed test, and in Configure mode whatever the plugin you opened does — the
-  built-in UniFi plugin relays the device's own encrypted inform packets to the controller URL you
-  saved. It reads local network configuration; nothing else is written outside your machine.
+  built-in UniFi plugin resolves the controller you saved and lets the device on the port talk to
+  it through your connection. It reads local network configuration; nothing else is written
+  outside your machine.
 - **Unsigned builds.** Release builds are unsigned, so macOS Gatekeeper and Windows SmartScreen
   warn the first time ("unknown developer" / "Windows protected your PC"). This is expected —
   verify that you obtained the build from the right source, or build it yourself from source.

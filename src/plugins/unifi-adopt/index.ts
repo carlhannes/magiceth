@@ -1,14 +1,16 @@
 // UniFi adoption: point a factory-default device at a remote controller from this port.
 //
-// The device gets a lease from this laptop with option 43 naming the laptop, so it POSTs its
-// informs here; the relay forwards each one to the controller the user saved and hands the
-// answer back. Clicking Adopt in the controller sends the adoption through the same path, and
-// the device then persists the controller's real inform host (its Override Inform Host), which it
-// reaches once it is cabled into its real network. Discovery on UDP 10001 shows the device as it
-// appears, with model, firmware and whether it is still factory default.
+// The device gets a lease from this laptop with option 43 naming the controller's address, and
+// the laptop shares its own internet with the link for the session, so the device talks to the
+// controller directly, exactly as it will from its final network. Clicking Adopt there completes
+// the adoption on the bench; the device keeps the controller's inform host (the Override Inform
+// Host set there once) and comes back online wherever it is cabled in afterwards. Discovery on
+// UDP 10001 shows the device as it appears, with model, firmware and whether it is still factory
+// default; it stops announcing once adopted, which is the sign the adoption took.
 //
 // Three screens: the saved controllers, the form for one, and a running session.
 
+import dns from 'node:dns'
 import type {
   Block,
   DhcpEvent,
@@ -21,8 +23,6 @@ import type {
 } from '../../shared/plugin'
 import { startDiscovery } from './discovery'
 import type { DiscoveredDevice, DiscoveryHandle } from './discovery'
-import { startInformRelay } from './inform-relay'
-import type { InformExchange, RelayHandle } from './inform-relay'
 import { normalizeInformUrl } from './inform-url'
 import { option43Hex } from './option43'
 
@@ -45,15 +45,16 @@ interface Form {
 interface Run {
   target: Target
   startedAt: number
+  /** The controller's hostname as saved, and the address it resolved to for option 43. */
+  controller?: { host: string; ip: string }
   session?: DhcpSession
   link?: DhcpLink
-  relay?: RelayHandle
+  /** Where the device's traffic leaves this laptop, once the host reports it. */
+  upstream?: { device: string; dnsServers: string[] }
   discovery?: DiscoveryHandle
   /** The address is on the port and port 67 is open. */
   listening: boolean
   leases: Map<string, string>
-  informs: number
-  lastInform?: InformExchange
   devices: Map<string, DiscoveredDevice & { from: string; seenAt: number }>
   /** Re-renders while the session runs, so the age on a device row keeps counting. */
   ticker?: NodeJS.Timeout
@@ -73,7 +74,7 @@ const UBNT_FALLBACK_IP = '192.168.1.20'
 const DISCOVERY_STALE_MS = 30_000
 
 const PREREQUISITES =
-  'Connect the device to this port and nothing else — power it from a PoE injector or USB-C. On the controller, set Override Inform Host to a hostname the device can reach from its final network, then click Adopt when the device shows up there.'
+  'Connect the device to this port and nothing else — power it from a PoE injector or USB-C. Keep this laptop online (Wi-Fi, a phone): the device gets its internet through it for the session and talks to the controller directly. On the controller, set Override Inform Host once, to its hostname, then click Adopt when the device shows up there.'
 
 function isTarget(value: unknown): value is Target {
   if (typeof value !== 'object' || value === null) return false
@@ -113,8 +114,11 @@ export function activate(host: PluginHost): PluginInstance {
     switch (event.kind) {
       case 'address':
         r.listening = true
+        r.upstream = event.upstream
         r.discovery?.setProbeTarget(r.link?.broadcast ?? '')
-        host.log(`DHCP server on ${event.serverIp}/${event.cidr} — plug the device in now.`)
+        host.log(
+          `DHCP server on ${event.serverIp}/${event.cidr}${event.upstream ? `, internet shared from ${event.upstream.device} (DNS ${event.upstream.dnsServers.join(', ')})` : ''} — plug the device in now.`
+        )
         break
       case 'discover':
         host.log(
@@ -132,7 +136,7 @@ export function activate(host: PluginHost): PluginInstance {
         if (renewal) host.update()
         else
           host.log(
-            `Lease ${event.ip} → ${event.mac}. It should inform through this laptop within a minute.`
+            `Lease ${event.ip} → ${event.mac}. It has the controller's address and a way out; it should show up there as pending within a minute.`
           )
         break
       }
@@ -151,18 +155,6 @@ export function activate(host: PluginHost): PluginInstance {
         if (!r.ended) void stop(r, event.reason)
         break
     }
-  }
-
-  function onInform(r: Run, x: InformExchange): void {
-    if (run !== r) return
-    r.informs++
-    r.lastInform = x
-    const who = x.mac ?? 'unknown device'
-    if (x.error) host.log(`Inform from ${who}: could not reach the controller — ${x.error}.`)
-    else
-      host.log(
-        `Inform from ${who} (${x.bytes} bytes) → controller answered ${x.status} in ${x.ms} ms.`
-      )
   }
 
   function onDiscovered(r: Run, device: DiscoveredDevice, from: string): void {
@@ -195,20 +187,34 @@ export function activate(host: PluginHost): PluginInstance {
       startedAt: Date.now(),
       listening: false,
       leases: new Map(),
-      informs: 0,
       devices: new Map()
     }
     run = r
     host.clearLog()
     host.update()
     try {
-      // The two unprivileged listeners first, so a taken port fails before any admin prompt.
+      // Option 43 carries an address, not a name, so the controller is resolved here, on the
+      // laptop; an address typed as the controller resolves to itself. Later the device gets the
+      // hostname from the controller and resolves it with the DNS the lease hands it.
+      const controllerHost = new URL(target.informUrl).hostname
+      const ip = await dns.promises
+        .lookup(controllerHost, { family: 4 })
+        .then((a) => a.address)
+        .catch(() => {
+          throw new Error(`Could not resolve ${controllerHost} — is this laptop online?`)
+        })
+      r.controller = { host: controllerHost, ip }
+      host.log(
+        controllerHost === ip
+          ? `Controller ${ip}: option 43 will carry that address.`
+          : `Controller ${controllerHost} is ${ip}: option 43 will carry that address.`
+      )
+      // The unprivileged listener first, so a taken port fails before any admin prompt.
       r.discovery = await startDiscovery((d, from) => onDiscovered(r, d, from))
-      r.relay = await startInformRelay(target.informUrl, (x) => onInform(r, x))
-      host.log(`Relaying informs on port ${r.relay.port} to ${target.informUrl}.`)
       r.session = await host.dhcp.start({
         vendorClassPrefix: VENDOR_CLASS,
-        options: (link) => [{ code: 43, hex: option43Hex({ ip: link.serverIp }) }],
+        shareInternet: true,
+        options: () => [{ code: 43, hex: option43Hex({ ip }) }],
         onEvent: (event) => onDhcp(r, event)
       })
       r.link = {
@@ -229,10 +235,11 @@ export function activate(host: PluginHost): PluginInstance {
     if (r.ended) return
     r.ended = reason
     if (r.ticker) clearInterval(r.ticker)
-    r.relay?.close()
     r.discovery?.close()
     r.session?.stop()
-    host.log(`Session ended: ${reason}.`)
+    host.log(
+      `Session ended: ${reason}.${r.upstream ? ' Internet sharing and the address are being removed.' : ''}`
+    )
   }
 
   // --- Screens ---
@@ -318,37 +325,42 @@ export function activate(host: PluginHost): PluginInstance {
       })
   }
 
-  /** The device stopped announcing after the controller accepted an inform: the adoption took. */
-  function wentQuietAfterAccept(r: Run): boolean {
-    const status = r.lastInform?.status
-    if (status === undefined || status < 200 || status >= 300) return false
+  /** A leased device stopped announcing itself: it is adopted and talking to the controller. */
+  function wentQuiet(r: Run): boolean {
+    if (r.leases.size === 0) return false
     return [...r.devices.values()].some((d) => quietSeconds(d.seenAt) * 1000 > DISCOVERY_STALE_MS)
   }
 
   function renderRunning(r: Run): PluginView {
     const live = !r.ended
     const where = r.link ? `${r.link.serverIp}/${r.link.cidr}` : 'choosing a subnet…'
-    const informs =
-      r.informs === 0
-        ? 'none yet'
-        : `${r.informs} · last ${r.lastInform?.error ? `failed: ${r.lastInform.error}` : `HTTP ${r.lastInform?.status}`}`
+    const controller = r.controller
+      ? r.controller.host === r.controller.ip
+        ? r.controller.ip
+        : `${r.controller.host} = ${r.controller.ip}`
+      : r.target.informUrl
+    const internet = r.upstream
+      ? `shared from ${r.upstream.device} (NAT) · DNS ${r.upstream.dnsServers.join(', ')}`
+      : live
+        ? 'shared once the address is up'
+        : 'was shared for the session'
     const blocks: Block[] = [
       {
         kind: 'table',
         title: r.target.name,
         rows: [
-          ['Controller', r.target.informUrl],
+          ['Controller', controller],
           [
             'This laptop',
             r.listening ? where : live ? `${where} — waiting for admin approval` : where
           ],
+          ['Internet', internet],
           [
             'Leases',
             r.leases.size === 0
               ? 'none yet'
               : [...r.leases.entries()].map(([mac, ip]) => `${ip} ${mac}`).join(', ')
-          ],
-          ['Informs relayed', informs]
+          ]
         ]
       },
       {
@@ -362,36 +374,32 @@ export function activate(host: PluginHost): PluginInstance {
     if (r.ended) {
       blocks.splice(1, 0, {
         kind: 'text',
-        text: `Ended: ${r.ended}. A device adopted through this laptop goes Offline in the controller until it is cabled into its real network, then comes back by itself.`,
+        text: `Ended: ${r.ended}. A device adopted here keeps the controller's address and comes back online in the controller wherever it has internet.`,
         tone: r.error ? 'warn' : 'muted'
       })
-    } else if (r.informs > 0) {
-      const status = r.lastInform?.status
-      const accepted = status !== undefined && status >= 200 && status < 300
+    } else if (r.leases.size > 0) {
       blocks.splice(
         1,
         0,
-        accepted && wentQuietAfterAccept(r)
+        wentQuiet(r)
           ? {
               kind: 'text',
-              text: 'The device took the adoption and went quiet here: it now informs to the controller’s own address, which it cannot reach from this port. Once the controller shows it provisioned, stop the session and cable the device into its real network.',
+              text: 'The device went quiet here, which is what adoption looks like: it now talks to the controller directly through this laptop. Once the controller shows it online and provisioned, stop the session and ship it.',
               tone: 'muted'
             }
-          : accepted
-            ? {
-                kind: 'text',
-                text: 'The device is talking to the controller. Click Adopt there; the reply comes back through this relay, and the device keeps informing here until it has the whole configuration.',
-                tone: 'muted'
-              }
-            : {
-                kind: 'text',
-                text: `The controller answered ${r.lastInform?.error ? 'nothing' : `HTTP ${status}`} to the last inform, so it has not accepted the device yet. Check that the inform URL is the controller's own and whether the device is listed there as pending.`,
-                tone: 'warn'
-              }
+          : {
+              kind: 'text',
+              text: 'The device has an address, the controller’s address and a way out through this laptop. It should appear in the controller as pending within a minute; click Adopt there.',
+              tone: 'muted'
+            }
       )
     }
     return {
-      status: live ? (r.listening ? `serving ${where}` : 'starting…') : 'ended',
+      status: live
+        ? r.listening
+          ? `serving ${where}${r.upstream ? ` · internet via ${r.upstream.device}` : ''}`
+          : 'starting…'
+        : 'ended',
       busy: live && !r.listening,
       running: live,
       blocks,
@@ -401,8 +409,7 @@ export function activate(host: PluginHost): PluginInstance {
 
   function render(): PluginView {
     if (form) return renderForm(form)
-    if (run && (!run.ended || run.leases.size > 0 || run.informs > 0 || run.error))
-      return renderRunning(run)
+    if (run && (!run.ended || run.leases.size > 0 || run.error)) return renderRunning(run)
     return renderTargets()
   }
 

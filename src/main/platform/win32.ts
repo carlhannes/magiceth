@@ -239,11 +239,10 @@ async function buildProfilePlan(device: string, profile: Profile): Promise<Eleva
   return { interpreter: 'powershell', script: winProfileScript(device, profile) }
 }
 
-/** The three listeners a Configure session opens, each allowed for this executable only. */
+/** The two listeners a Configure session opens, each allowed for this executable only. */
 export const HOLD_FIREWALL_RULES: { name: string; protocol: 'UDP' | 'TCP'; port: number }[] = [
   { name: 'magiceth DHCP', protocol: 'UDP', port: 67 },
-  { name: 'magiceth discovery', protocol: 'UDP', port: 10001 },
-  { name: 'magiceth inform relay', protocol: 'TCP', port: 8080 }
+  { name: 'magiceth discovery', protocol: 'UDP', port: 10001 }
 ]
 
 /**

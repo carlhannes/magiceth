@@ -173,7 +173,13 @@ export interface DhcpLink {
  *   and the address is being removed.
  */
 export type DhcpEvent =
-  | { kind: 'address'; serverIp: string; cidr: number }
+  | {
+      kind: 'address'
+      serverIp: string
+      cidr: number
+      /** With `shareInternet`: the interface the link's traffic leaves through, and the DNS servers handed out. */
+      upstream?: { device: string; dnsServers: string[] }
+    }
   | { kind: 'discover'; mac: string; vendorClass?: string; hostname?: string }
   | { kind: 'offer'; mac: string; ip: string }
   | { kind: 'ack'; mac: string; ip: string }
@@ -185,14 +191,25 @@ export type DhcpEvent =
 /** What the plugin asks the DHCP server to do. */
 export interface DhcpSpec {
   /**
-   * The options every OFFER and ACK carries beyond the standard ones (53, 54, 51, 1, 3, 28).
-   * Called once, when the link is known and before the admin prompt. `code` is 1–254; `hex` is the
-   * raw value as hex digits, separators such as `:` allowed. A bad code or an odd number of digits
-   * rejects `start()` before anything is prompted for.
+   * The options every OFFER and ACK carries beyond the standard ones (53, 54, 51, 1, 3, 28, and
+   * 6 with `shareInternet`). Called once, when the link is known and before the admin prompt.
+   * `code` is 1–254; `hex` is the raw value as hex digits, separators such as `:` allowed. A bad
+   * code or an odd number of digits rejects `start()` before anything is prompted for.
    */
   options(link: DhcpLink): { code: number; hex: string }[]
   /** Only clients whose vendor class (option 60) starts with this are answered; everything else gets silence. */
   vendorClassPrefix?: string
+  /**
+   * Also give the link this computer's internet for the session: the host forwards and NATs the
+   * link's network out through its default-route interface and hands that interface's DNS
+   * servers out as option 6, so a device on the port can reach anything this computer can.
+   * `start()` rejects before any prompt when there is no default route, when the port is that
+   * interface, when it has no DNS servers, or on an OS where this is not done yet (Linux,
+   * Windows). Forwarding and NAT are machine-wide while the session runs; the same elevated
+   * script that added the address takes them away again. The `address` event says which
+   * interface and servers were used.
+   */
+  shareInternet?: boolean
   /** Default 120 s — short, so a device forgets this link quickly once it is moved. */
   leaseSeconds?: number
   /** Where the events go. */

@@ -256,6 +256,11 @@ nothing else. What it does, and will not do:
   `spec.options(link)` returns: `{ code, hex }` pairs, `code` 1–254, `hex` the raw value as hex
   digits (separators such as `:` allowed). `options` is called once, when the link is known and
   before the prompt; a bad option rejects the start before anything is prompted for.
+- With `spec.shareInternet`, the link also gets this computer's internet for the session: the
+  same elevated script turns on IP forwarding and a NAT rule for the link's network through the
+  interface this computer's default route uses, and every lease carries that interface's DNS
+  servers as option 6. Forwarding and NAT are **machine-wide** while the session runs and are
+  taken away with the address. macOS only so far; Linux and Windows reject the start.
 - Leases last `spec.leaseSeconds`, default 120 s.
 - Ends on `session.stop()`, when the plugin is closed, or after **fifteen minutes**, whichever
   comes first. The same elevated script that added the address removes it, even if the app is gone.
@@ -263,19 +268,21 @@ nothing else. What it does, and will not do:
 
 `start` resolves as soon as the address has been asked for, with a `DhcpSession` (`serverIp`,
 `cidr`, `broadcast`, `stop()`). It **rejects**, with a message fit for the screen, when it cannot
-start at all: the port already holds a DHCP lease from another server, no private /24 is free, or
-an option is malformed. Everything after that arrives as events through `spec.onEvent`:
+start at all: the port already holds a DHCP lease from another server, no private /24 is free, an
+option is malformed, or sharing was asked for and this computer has no default route, the port is
+that very interface, the interface has no DNS servers, or the OS cannot share yet. Everything
+after that arrives as events through `spec.onEvent`:
 
-| Event      | Meaning                                                                                                          |
-| ---------- | ---------------------------------------------------------------------------------------------------------------- |
-| `address`  | The address is on the port and port 67 is bound: the server is listening. `serverIp`, `cidr`.                    |
-| `discover` | A client the spec allows asked. `mac`, and its `vendorClass` and `hostname` when it sent them.                   |
-| `offer`    | `ip` was offered to `mac`.                                                                                       |
-| `ack`      | A lease was granted or renewed. Renewals repeat every half lease.                                                |
-| `release`  | The client gave `ip` back.                                                                                       |
-| `ignored`  | A packet got silence: `reason` says why (another vendor class, relayed, a declined address).                     |
-| `error`    | Something went wrong without ending the session (a full pool), or why a start failed.                            |
-| `stopped`  | The session is over — `stop()`, the plugin closed, the cap, a refused prompt — and the address is being removed. |
+| Event      | Meaning                                                                                                                                             |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`  | The address is on the port and port 67 is bound: the server is listening. `serverIp`, `cidr`, and with sharing `upstream` (`device`, `dnsServers`). |
+| `discover` | A client the spec allows asked. `mac`, and its `vendorClass` and `hostname` when it sent them.                                                      |
+| `offer`    | `ip` was offered to `mac`.                                                                                                                          |
+| `ack`      | A lease was granted or renewed. Renewals repeat every half lease.                                                                                   |
+| `release`  | The client gave `ip` back.                                                                                                                          |
+| `ignored`  | A packet got silence: `reason` says why (another vendor class, relayed, a declined address).                                                        |
+| `error`    | Something went wrong without ending the session (a full pool), or why a start failed.                                                               |
+| `stopped`  | The session is over — `stop()`, the plugin closed, the cap, a refused prompt — and the address is being removed.                                    |
 
 A refused admin prompt, or no address within three minutes, arrives as `error` followed by
 `stopped`, not as a rejection.
@@ -520,7 +527,13 @@ export interface DhcpLink {
  *   and the address is being removed.
  */
 export type DhcpEvent =
-  | { kind: 'address'; serverIp: string; cidr: number }
+  | {
+      kind: 'address'
+      serverIp: string
+      cidr: number
+      /** With `shareInternet`: the interface the link's traffic leaves through, and the DNS servers handed out. */
+      upstream?: { device: string; dnsServers: string[] }
+    }
   | { kind: 'discover'; mac: string; vendorClass?: string; hostname?: string }
   | { kind: 'offer'; mac: string; ip: string }
   | { kind: 'ack'; mac: string; ip: string }
@@ -532,14 +545,25 @@ export type DhcpEvent =
 /** What the plugin asks the DHCP server to do. */
 export interface DhcpSpec {
   /**
-   * The options every OFFER and ACK carries beyond the standard ones (53, 54, 51, 1, 3, 28).
-   * Called once, when the link is known and before the admin prompt. `code` is 1–254; `hex` is the
-   * raw value as hex digits, separators such as `:` allowed. A bad code or an odd number of digits
-   * rejects `start()` before anything is prompted for.
+   * The options every OFFER and ACK carries beyond the standard ones (53, 54, 51, 1, 3, 28, and
+   * 6 with `shareInternet`). Called once, when the link is known and before the admin prompt.
+   * `code` is 1–254; `hex` is the raw value as hex digits, separators such as `:` allowed. A bad
+   * code or an odd number of digits rejects `start()` before anything is prompted for.
    */
   options(link: DhcpLink): { code: number; hex: string }[]
   /** Only clients whose vendor class (option 60) starts with this are answered; everything else gets silence. */
   vendorClassPrefix?: string
+  /**
+   * Also give the link this computer's internet for the session: the host forwards and NATs the
+   * link's network out through its default-route interface and hands that interface's DNS
+   * servers out as option 6, so a device on the port can reach anything this computer can.
+   * `start()` rejects before any prompt when there is no default route, when the port is that
+   * interface, when it has no DNS servers, or on an OS where this is not done yet (Linux,
+   * Windows). Forwarding and NAT are machine-wide while the session runs; the same elevated
+   * script that added the address takes them away again. The `address` event says which
+   * interface and servers were used.
+   */
+  shareInternet?: boolean
   /** Default 120 s — short, so a device forgets this link quickly once it is moved. */
   leaseSeconds?: number
   /** Where the events go. */
@@ -634,6 +658,8 @@ export interface PluginModule {
 
 ## Changes to this API
 
+- **1, addition** — 2026-10-27. `DhcpSpec.shareInternet`, and `upstream` on the `address` event:
+  the host shares this computer's internet with the link for the session (macOS).
 - **1** — 2026-10-27. Initial version, locked. `PluginHost`: `device`, `readNetInfo`, `log`,
   `lines`, `clearLog`, `update`, `storage`, `run`, `dhcp.start`. Blocks: `text`, `table`, `list`,
   `log`, `form`, `html`.
