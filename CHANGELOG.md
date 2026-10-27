@@ -17,6 +17,11 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   stayed factory default and the controller sat on "Adopting" (2026-10-27, against a self-hosted
   UniFi OS Server). The relay now sends the answer whole, with its length, as the controller
   does. A socket-level test holds it to that.
+- **UniFi adoption: a device row no longer claims "factory default" forever.** A device announces
+  itself only while unadopted, so the row kept the flag it last sent. After thirty seconds of
+  silence the row now says how long the device has been quiet, the screen re-renders every few
+  seconds so that counts, and the note under the relay says what the silence after an accepted
+  inform means: the device took the adoption and now informs to the controller's own address.
 
 ### Added
 

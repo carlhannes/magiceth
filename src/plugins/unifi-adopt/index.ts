@@ -55,6 +55,8 @@ interface Run {
   informs: number
   lastInform?: InformExchange
   devices: Map<string, DiscoveredDevice & { from: string; seenAt: number }>
+  /** Re-renders while the session runs, so the age on a device row keeps counting. */
+  ticker?: NodeJS.Timeout
   ended?: string
   error?: string
 }
@@ -64,6 +66,11 @@ const FORM_ID = 'controller'
 const VENDOR_CLASS = 'ubnt'
 /** Where a UniFi device puts itself when no DHCP server answers; its discovery packets come from here. */
 const UBNT_FALLBACK_IP = '192.168.1.20'
+/**
+ * A device announces itself every few seconds only while it is unadopted, so a row this old is
+ * history: the flag it last sent no longer says what the device is now.
+ */
+const DISCOVERY_STALE_MS = 30_000
 
 const PREREQUISITES =
   'Connect the device to this port and nothing else — power it from a PoE injector or USB-C. On the controller, set Override Inform Host to a hostname the device can reach from its final network, then click Adopt when the device shows up there.'
@@ -209,6 +216,7 @@ export function activate(host: PluginHost): PluginInstance {
         cidr: r.session.cidr,
         broadcast: r.session.broadcast
       }
+      r.ticker = setInterval(() => host.update(), 5000)
       host.log(`Waiting for admin approval to put ${r.session.serverIp} on ${host.device}…`)
     } catch (err) {
       r.error = err instanceof Error ? err.message : String(err)
@@ -220,6 +228,7 @@ export function activate(host: PluginHost): PluginInstance {
   async function stop(r: Run, reason: string): Promise<void> {
     if (r.ended) return
     r.ended = reason
+    if (r.ticker) clearInterval(r.ticker)
     r.relay?.close()
     r.discovery?.close()
     r.session?.stop()
@@ -286,16 +295,34 @@ export function activate(host: PluginHost): PluginInstance {
     }
   }
 
+  function quietSeconds(seenAt: number): number {
+    return Math.round((Date.now() - seenAt) / 1000)
+  }
+
   function deviceRows(r: Run): string[] {
     return [...r.devices.values()]
       .sort((a, b) => a.seenAt - b.seenAt)
       .map((d) => {
         const name = d.model ?? d.product ?? d.hostname ?? 'UniFi device'
+        const quiet = quietSeconds(d.seenAt)
         const state =
-          d.isDefault === undefined ? '' : d.isDefault ? ' · factory default' : ' · adopted'
+          quiet * 1000 > DISCOVERY_STALE_MS
+            ? ` · quiet for ${quiet} s`
+            : d.isDefault === undefined
+              ? ''
+              : d.isDefault
+                ? ' · factory default'
+                : ' · adopted'
         const fw = d.version ?? d.firmware
         return `${name} · ${d.mac ?? d.from} · ${d.ip ?? d.from}${fw ? ` · ${fw}` : ''}${state}`
       })
+  }
+
+  /** The device stopped announcing after the controller accepted an inform: the adoption took. */
+  function wentQuietAfterAccept(r: Run): boolean {
+    const status = r.lastInform?.status
+    if (status === undefined || status < 200 || status >= 300) return false
+    return [...r.devices.values()].some((d) => quietSeconds(d.seenAt) * 1000 > DISCOVERY_STALE_MS)
   }
 
   function renderRunning(r: Run): PluginView {
@@ -335,7 +362,7 @@ export function activate(host: PluginHost): PluginInstance {
     if (r.ended) {
       blocks.splice(1, 0, {
         kind: 'text',
-        text: `Ended: ${r.ended}. A device adopted through this laptop shows "Adopting" in the controller until it is cabled into its real network.`,
+        text: `Ended: ${r.ended}. A device adopted through this laptop goes Offline in the controller until it is cabled into its real network, then comes back by itself.`,
         tone: r.error ? 'warn' : 'muted'
       })
     } else if (r.informs > 0) {
@@ -344,17 +371,23 @@ export function activate(host: PluginHost): PluginInstance {
       blocks.splice(
         1,
         0,
-        accepted
+        accepted && wentQuietAfterAccept(r)
           ? {
               kind: 'text',
-              text: 'The device is talking to the controller. Click Adopt there; the reply comes back through this relay.',
+              text: 'The device took the adoption and went quiet here: it now informs to the controller’s own address, which it cannot reach from this port. Once the controller shows it provisioned, stop the session and cable the device into its real network.',
               tone: 'muted'
             }
-          : {
-              kind: 'text',
-              text: `The controller answered ${r.lastInform?.error ? 'nothing' : `HTTP ${status}`} to the last inform, so it has not accepted the device yet. Check that the inform URL is the controller's own and whether the device is listed there as pending.`,
-              tone: 'warn'
-            }
+          : accepted
+            ? {
+                kind: 'text',
+                text: 'The device is talking to the controller. Click Adopt there; the reply comes back through this relay, and the device keeps informing here until it has the whole configuration.',
+                tone: 'muted'
+              }
+            : {
+                kind: 'text',
+                text: `The controller answered ${r.lastInform?.error ? 'nothing' : `HTTP ${status}`} to the last inform, so it has not accepted the device yet. Check that the inform URL is the controller's own and whether the device is listed there as pending.`,
+                tone: 'warn'
+              }
       )
     }
     return {
