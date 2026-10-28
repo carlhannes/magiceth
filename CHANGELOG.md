@@ -9,6 +9,8 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ## [Unreleased]
 
+## [0.7.0] – 2026-10-28
+
 ### Fixed
 
 - **macOS builds open again when downloaded.** 0.5.0 and 0.6.0 shipped `magiceth.app` with
@@ -295,7 +297,8 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 - Platform support for Windows/macOS/Linux (arm64 + amd64); packaging via electron-builder (unsigned).
 - macOS live-verified; Linux/Windows implemented against documented format with unit-tested parsers.
 
-[Unreleased]: https://github.com/carlhannes/magiceth/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/carlhannes/magiceth/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/carlhannes/magiceth/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/carlhannes/magiceth/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/carlhannes/magiceth/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/carlhannes/magiceth/compare/v0.3.0...v0.4.0
