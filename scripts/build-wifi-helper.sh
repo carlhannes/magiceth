@@ -30,8 +30,9 @@ lipo -create "$out/magiceth-wifi-arm64" "$out/magiceth-wifi-x64" -output "$app/C
 rm -f "$out/magiceth-wifi-arm64" "$out/magiceth-wifi-x64"
 
 # Ad-hoc signature. TCC keys a Location grant to the code signature, so an unsigned bundle would be
-# re-prompted far more aggressively. The outer app is deliberately unsigned (identity: null), which
-# does not prevent signing this one.
+# re-prompted far more aggressively. This signs the copy that `npm run dev` launches; in a packaged
+# app electron-builder re-signs the helper ad-hoc along with the rest of the bundle (see
+# electron-builder.yml).
 codesign --force --sign - "$app"
 
 echo "built $app"

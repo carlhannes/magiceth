@@ -52,10 +52,13 @@ Only the latest released version receives security updates (the project is in an
   built-in UniFi plugin resolves the controller you saved and lets the device on the port talk to
   it through your connection. It reads local network configuration; nothing else is written
   outside your machine.
-- **Unsigned builds.** Release builds are unsigned, so macOS Gatekeeper and Windows SmartScreen
-  warn the first time ("unknown developer" / "Windows protected your PC"). This is expected —
-  verify that you obtained the build from the right source, or build it yourself from source.
-  Signing can be added by whoever distributes it.
+- **No developer certificate.** Release builds are ad-hoc signed and not notarized, so macOS
+  Gatekeeper and Windows SmartScreen warn the first time: "Apple could not verify…" (then System
+  Settings → Privacy & Security → Open Anyway) and "Windows protected your PC" (More info → Run
+  anyway). This is expected — verify that you obtained the build from the right source, check it
+  against the `SHA256SUMS.txt` on the release, or build it yourself from source. A macOS copy that
+  is refused as "damaged" is a 0.5.0 or 0.6.0 download, whose bundle shipped with a broken seal; use
+  a newer release. Developer ID signing and notarization can be added by whoever distributes it.
 
 ## What to keep in mind
 

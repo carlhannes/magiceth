@@ -117,11 +117,11 @@ what a "please add this chipset" issue or PR needs.
 
 ## Platform status
 
-| Platform                | Status                                                                                                                                                 |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **macOS** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified; **Wi-Fi mode** and **Configure mode** live-verified                         |
-| **Windows 11** (x64)    | Identification, diagnostics, ping, DHCP/static profile switching, MAC rolling and **Wi-Fi mode** all verified on real hardware; Configure mode not yet |
-| **Linux** (arm64/amd64) | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**, Wi-Fi and Configure modes included                  |
+| Platform                    | Status                                                                                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **macOS 13+** (arm64/amd64) | Read-only diagnostics live-verified; privileged actions manually verified; **Wi-Fi mode** and **Configure mode** live-verified                         |
+| **Windows 11** (x64)        | Identification, diagnostics, ping, DHCP/static profile switching, MAC rolling and **Wi-Fi mode** all verified on real hardware; Configure mode not yet |
+| **Linux** (arm64/amd64)     | Implemented against documented command formats; parsers unit-tested — **verify on real hardware**, Wi-Fi and Configure modes included                  |
 
 On Linux the DHCP-vs-static readout is inferred from the address lifetime that `ip -j addr`
 reports, which is the one part of the port readout that has not been checked against a live
@@ -132,8 +132,18 @@ machine yet.
 ### Prebuilt binary
 
 Download the latest build for your platform from [Releases](https://github.com/carlhannes/magiceth/releases).
-The builds are **unsigned** (internal tool) — see [SECURITY.md](SECURITY.md) regarding warnings from
-Gatekeeper/SmartScreen.
+The builds are ad-hoc signed and not notarized (internal tool, no developer certificate), so the
+first launch asks for a confirmation — see [SECURITY.md](SECURITY.md).
+
+- **macOS 13 or later.** Drag magiceth from the disk image into Applications first — opened
+  straight from the image, the approval below cannot be saved and macOS asks again every time.
+  Opening the app says "Apple could not verify…". Click Done, then System Settings → Privacy &
+  Security → scroll to Security → **Open Anyway**; the button is there for about an hour after the
+  attempt. Right-click → Open no longer works since macOS 15. The 0.5.0 and 0.6.0 downloads are
+  refused as "damaged" instead, because their bundle shipped with a broken seal: fetch a newer
+  build, or strip the quarantine flag before opening —
+  `xattr -d com.apple.quarantine ~/Downloads/magiceth-0.6.0-arm64.dmg`.
+- **Windows.** SmartScreen says "Windows protected your PC": More info → **Run anyway**.
 
 ### From source
 
@@ -327,8 +337,11 @@ npm run lint       # eslint
 npm test           # vitest (pure parsers/functions)
 ```
 
-Everything is unsigned — no macOS notarization, no Windows certificate — so macOS needs
-right-click → Open and Windows shows SmartScreen → More info → Run anyway.
+There is no Developer ID and no Windows certificate. electron-builder ad-hoc signs the macOS bundle
+as a whole (`identity: '-'` in `electron-builder.yml`), which is what gets a downloaded copy the
+Open Anyway route instead of "damaged"; [docs/RELEASING.md](docs/RELEASING.md) has the checks that
+prove the seal is complete before anything is published. Windows shows SmartScreen → More info →
+Run anyway.
 
 A full release is four files, and all four build from macOS. The Windows ones need Rosetta on an
 Apple Silicon Mac, because electron-builder stamps the version into the `.exe` through an x86 Wine

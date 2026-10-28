@@ -16,9 +16,17 @@ files:
 # scripts/build-wifi-helper.sh; see docs/WIFI-FINDINGS.md for why it has to work this way.
 # Windows: a PowerShell script calling the native WLAN API, run as-is.
 
-# Internal tool -> unsigned. No macOS notarization, no Windows certificate.
+# No Developer ID and no notarization (internal tool), but the bundle must still carry a complete
+# ad-hoc seal. Skipping signing (identity: null) left Electron's own ad-hoc signature on the binary
+# with its resource seal stripped, which Gatekeeper reads as tampering: a downloaded copy was
+# "damaged and can't be opened" with no way past (0.5.0 and 0.6.0 shipped like that). A whole-bundle
+# ad-hoc signature gets "Apple could not verify" and System Settings → Open Anyway instead. "-" is
+# electron-builder 26's explicit opt-in for ad-hoc signing. Hardened runtime only matters for
+# notarization and would need resource-access entitlements for the helper's Location use, so it
+# stays off. Windows: no certificate; SmartScreen → More info → Run anyway.
 mac:
-  identity: null
+  identity: '-'
+  hardenedRuntime: false
   target:
     - target: dmg
       arch: [arm64, x64]
