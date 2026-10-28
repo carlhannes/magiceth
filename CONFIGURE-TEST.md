@@ -80,10 +80,11 @@ hostname, the session sharing the laptop's internet.** Steps 2 to 4 with the shi
   after `S`: forwarding 0, the anchor empty and the session's pf reference released. One
   reference from the previous day's hand test, whose `pfctl -X` had answered "token invalid",
   was still listed; harmless, released by hand.
-- Step 3: `Controller unifi.carelabs.se is <ip>` and `DHCP server on 10.254.254.1/24, internet
-  shared from en0 (DNS …)` before the device was plugged in; lease 10.254.254.10; pending in the
-  controller within a minute. The controller's log at Adopt: `discovered via L3 inform, skip SSH
-  adoption`, which is how it treats a device it only knows through inform.
+- Step 3: the controller line (`Controller unifi.carelabs.se is <ip>`) and the server line
+  (`DHCP server on 10.254.254.1/24, internet shared from en0 (DNS …)`) before the device was
+  plugged in; lease 10.254.254.10; pending in the controller within a minute. The controller's
+  log at Adopt, `discovered via L3 inform, skip SSH adoption`, is how it treats a device it only
+  knows through inform.
 - Step 4: `initial mgmt_cfg sent` and `adoption - completed` 35 s after the click; the device's
   record carried the override hostname as its inform URL from then on, and it kept informing
   through the laptop about once a minute until `S`. Its discovery announcements stopped, so the
