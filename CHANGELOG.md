@@ -9,6 +9,33 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **UniFi adoption: the device talks to the controller itself, through the laptop.** A session
+  can now share this computer's internet with the link (`DhcpSpec.shareInternet`): the elevated
+  script that holds the address also turns on IP forwarding and a NAT rule in pf for the link's
+  /24 through the default-route interface, and the lease hands out that interface's DNS servers
+  as option 6; all of it undone with the address. The UniFi plugin asks for that, resolves the
+  saved controller on the laptop and puts its address in option 43, so a factory-default switch
+  on the dongle is adopted and provisioned on the bench exactly as it would be in the field, and
+  keeps the controller's Override Inform Host. macOS only so far. Verified 2026-10-27 with a
+  USW-Flex-2.5G-8-PoE against a self-hosted UniFi OS Server on the internet, including a power
+  cycle and a return from another network.
+- **UniFi adoption: a device row no longer claims "factory default" forever.** A device announces
+  itself only while unadopted, so the row kept the flag it last sent. After thirty seconds of
+  silence the row now says how long the device has been quiet, the screen re-renders every few
+  seconds so that counts, and the note under the table says what the silence means: the device
+  took the adoption and now talks to the controller directly.
+
+### Removed
+
+- **The inform relay.** The plugin used to hand the device option 43 naming the laptop and relay
+  its informs to the controller on port 8080. A switch adopted that way kept the laptop's address
+  as its inform URL, because it could never reach the controller's own address from the dongle,
+  and so never called home from the field (2026-10-27, USW-Flex-2.5G-8-PoE). Sharing the internet
+  makes the relay unnecessary, and with it go the TCP 8080 listener and the Windows firewall rule
+  for it. (The relay's chunked-encoding bug, found the same day, went with it.)
+
 ### Added
 
 - **Configure mode** — a third mode (`3`/`C`) that uses the port to set a device up, built as a
@@ -19,15 +46,13 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   `src/shared/plugin.ts`.
 - **UniFi adoption plugin** — points a factory-default UniFi device, the SSH-less Flex Mini
   included, at a remote controller from the dongle: an in-process DHCP server on the port hands
-  out option 43 naming the laptop (answering only the `ubnt` vendor class, only from its own pool,
-  only on the port's own broadcast, never a NAK), an inform relay on port 8080 forwards the
-  device's informs to the controller you saved, and discovery on UDP 10001 shows the device with
-  model, firmware and whether it is still factory default. One admin prompt per session holds an
-  extra address on the port; the same script removes it, caps the session at fifteen minutes, and
-  on Linux lowers `ip_unprivileged_port_start` to 67 meanwhile. Verified end to end on macOS on
-  2026-10-26 with a USW-Flex-Mini against a UniFi OS gateway — lease, relayed informs, the
-  adoption delivered back through the relay, Connected once moved to its real network — and the
-  switch's real packets are the test fixtures. Linux and Windows follow `CONFIGURE-TEST.md`.
+  out option 43 naming the controller (answering only the `ubnt` vendor class, only from its own
+  pool, only on the port's own broadcast, never a NAK), the laptop shares its internet with the
+  device for the session, and discovery on UDP 10001 shows the device with model, firmware and
+  whether it is still factory default. One admin prompt per session holds an extra address on the
+  port; the same script removes it, caps the session at fifteen minutes, and on Linux lowers
+  `ip_unprivileged_port_start` to 67 meanwhile. The switch's real packets are the test fixtures.
+  Linux and Windows follow `CONFIGURE-TEST.md`.
 
 - **Plugin API 1, documented and locked** — [docs/PLUGINS.md](docs/PLUGINS.md) is the reference
   for writing a plugin (manifest, module format, lifecycle, every block, the host member by member,

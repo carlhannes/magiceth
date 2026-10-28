@@ -36,6 +36,8 @@ export interface LeaseConfig {
   poolEnd: number
   leaseSeconds: number
   vendorClassPrefix?: string
+  /** Option 6, when the session shares this computer's internet: the resolvers the device gets. */
+  dnsServers?: string[]
   /** The plugin's options, appended to the standard ones on every OFFER and ACK. */
   extraOptions: DhcpOption[]
 }
@@ -77,10 +79,14 @@ function reply(msg: DhcpMessage, cfg: LeaseConfig, type: number, ip: string): Bu
     { code: OPT.SERVER_ID, data: ipToBytes(cfg.serverIp) },
     { code: OPT.LEASE_TIME, data: u32(cfg.leaseSeconds) },
     { code: OPT.SUBNET_MASK, data: ipToBytes(cfg.netmask) },
-    // The router is this machine. Nothing is forwarded, so it costs nothing, and a client that
-    // insists on a default route gets one that goes nowhere rather than no lease at all.
+    // The router is this machine. When the session shares this computer's internet it forwards
+    // and NATs the link's traffic; otherwise nothing is forwarded, and a client that insists on a
+    // default route gets one that goes nowhere rather than no lease at all.
     { code: OPT.ROUTER, data: ipToBytes(cfg.serverIp) },
     { code: OPT.BROADCAST, data: ipToBytes(cfg.broadcast) },
+    ...(cfg.dnsServers?.length
+      ? [{ code: OPT.DNS, data: Buffer.concat(cfg.dnsServers.map(ipToBytes)) }]
+      : []),
     ...cfg.extraOptions
   ]
   return buildReply({

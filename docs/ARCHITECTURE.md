@@ -113,8 +113,9 @@ timeout and `windowsHide`.
 \* Location consent on macOS and Windows; nothing on Linux with NetworkManager, one `pkexec`
 prompt without it. See [reading the air](#reading-the-air-on-each-os).
 
-† One prompt per session, for the address hold only; the DHCP server, the relay and discovery run
-unprivileged. See [Configure mode](#configure-mode-plugins).
+† One prompt per session, for the address hold, which on macOS also shares the laptop's internet
+with the link; the DHCP server and discovery run unprivileged. See
+[Configure mode](#configure-mode-plugins).
 
 ## Platform layer (`PlatformOps`)
 
@@ -295,16 +296,27 @@ must come out of it with silence. Replies go to the subnet-directed broadcast ra
 255.255.255.255 because Node cannot pick the egress interface for the latter on a multi-homed Mac,
 and embedded DHCP clients accept either.
 
-**The UniFi plugin** (`src/plugins/unifi-adopt/`) is three unprivileged pieces on top of that:
-option 43 (`01 04 <this laptop>`, Ubiquiti's documented sub-option 1), an HTTP relay on port 8080
-that forwards each inform POST verbatim to the saved controller URL (the port is what a device
-derives from option 43, so it is fixed), and a UDP 10001 discovery listener that decodes the TLV
-announcement for the screen. The relay and discovery bind before the session is requested, so a
-taken port fails before any password prompt. The adoption reply reaches the device through the
-relay and makes it persist the controller's Override Inform Host, which it then reaches from its
-real network — the status text says so, because on the dongle it looks stuck at "Adopting".
-None of this has met a Flex Mini yet; [CONFIGURE-TEST.md](../CONFIGURE-TEST.md) is the procedure
-and `docs/BACKLOG.md` lists what it has to settle.
+**Sharing the internet** (`DhcpSpec.shareInternet`) is the same script doing two more things
+while it holds the address: `net.inet.ip.forwarding=1` (the previous value is put back) and a NAT
+rule for the link's /24 through the interface the default route uses, loaded into pf's
+`com.apple/magiceth` anchor from stdin and enabled by reference (`pfctl -E`, released with `-X`;
+never `-d`, because a VPN may hold pf up too). The upstream interface and its DNS servers come
+from `route -n get default` and `ipconfig getsummary`, read unprivileged before the prompt, and
+the lease hands the servers out as option 6. The routing table is still never touched. The
+reason is what a UniFi switch does after adoption: it informs to the controller's own address,
+and if it cannot reach that address from the bench it keeps whatever it adopted through — a
+relay on the laptop, in the first version of the plugin — as its inform URL for good.
+
+**The UniFi plugin** (`src/plugins/unifi-adopt/`) is two unprivileged pieces on top of that:
+option 43 (`01 04 <controller>`, Ubiquiti's documented sub-option 1, the saved controller's
+hostname resolved on the laptop because the option takes an address) and a UDP 10001 discovery
+listener that decodes the TLV announcement for the screen. With the shared internet the device
+reaches the controller directly, is adopted and provisioned on the bench, and keeps the
+controller's Override Inform Host, which it resolves wherever it is cabled in afterwards; it
+stops announcing on discovery once adopted, and the screen says what that silence means.
+Verified 2026-10-27 with a USW-Flex-2.5G-8-PoE against a self-hosted UniFi OS Server on the
+internet; [CONFIGURE-TEST.md](../CONFIGURE-TEST.md) is the procedure and `docs/BACKLOG.md`
+lists what is still open.
 
 ## Reading the spectrum
 

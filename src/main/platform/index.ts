@@ -24,6 +24,14 @@ export interface PingSpec {
 export interface HeldAddress {
   ip: string
   cidr: number
+  /** Set when the session shares this computer's internet: the link's network is NATed out through this interface. */
+  upstream?: string
+}
+
+/** Where this computer's own traffic leaves, and the DNS servers it uses there. */
+export interface Upstream {
+  device: string
+  dnsServers: string[]
 }
 
 export interface PingOptions {
@@ -94,7 +102,9 @@ export interface PlatformOps {
    * `stopFile` appears or `maxSeconds` pass, remove it. One prompt for the whole session, and the
    * removal is in the same script so it happens even if the app is gone. An alias rather than a
    * static profile on purpose — the port's own configuration is never touched, and no router is
-   * set, so the machine's default route cannot move onto the dongle. Linux also lowers
+   * set, so the machine's default route cannot move onto the dongle. With `link.upstream` set
+   * (macOS), the same script also turns on IP forwarding and a NAT rule for the link's network
+   * through that interface, and takes both away with the address. Linux also lowers
    * `net.ipv4.ip_unprivileged_port_start` to 67 for the session (restored after); Windows adds
    * program-scoped firewall rules for the listeners (removed after).
    */
@@ -104,6 +114,12 @@ export interface PlatformOps {
     stopFile: string,
     maxSeconds: number
   ): Promise<ElevatedPlan>
+  /**
+   * The interface this computer reaches the internet through (its default route) and the DNS
+   * servers it uses there, for a session that shares that connection with the port. Undefined
+   * when there is no default route. Absent on an OS where sharing is not implemented yet.
+   */
+  readUpstream?(): Promise<Upstream | undefined>
   /**
    * One fresh sweep of the air on `device` ('' = the default wireless interface). Resolves only
    * once the OS has *new* results — the recording loop assumes one call takes about one sweep.

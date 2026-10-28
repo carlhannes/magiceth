@@ -26,7 +26,7 @@ you walk a site, writing CSVs you can open in a spreadsheet.
 **Configure mode** uses the port to set a device up rather than to look at it. It is a small
 plugin system; the plugin it ships with adopts a factory-default UniFi switch or access point —
 the SSH-less Flex Mini included — to a remote controller, by serving DHCP option 43 on the port
-and relaying the device's informs to the controller you saved. Your own plugins go in
+and sharing this laptop's internet with the device for the session. Your own plugins go in
 `Documents/magiceth/plugins`.
 
 The app opens on a chooser between the three; `Tab` cycles through them at any time.
@@ -245,16 +245,16 @@ this port, without SSH — which is the only way in for a USW-Flex-Mini, a USW-U
 devices. Save a controller once (`N`, its inform URL or just its hostname), connect the device to
 the port and **nothing else** (power it from a PoE injector or USB-C), and press `Enter`:
 
-1. The app puts an address on the port (one admin prompt) and answers the device's DHCP request
-   with option 43 naming this laptop. Only clients that identify as Ubiquiti (`ubnt` vendor
-   class) ever get a lease, and only this port's own broadcast ever carries one.
-2. The device POSTs its informs to this laptop on port 8080; the relay forwards each one to the
-   controller you saved and hands the answer back. The device appears in the controller as
-   pending — click **Adopt** there.
-3. The adoption travels back the same way. The device then stores the controller's **Override
-   Inform Host**, which it cannot reach from this port, so it shows _Adopting_ until it is cabled
-   into its real network. Set that override on the controller **before** adopting, to a hostname
-   the device can reach from where it will live.
+1. The app resolves the controller's address, puts an address on the port and shares this
+   laptop's internet with it (one admin prompt), and answers the device's DHCP request with
+   option 43 naming the controller and this laptop's DNS servers. Only clients that identify as
+   Ubiquiti (`ubnt` vendor class) ever get a lease, and only this port's own broadcast ever
+   carries one.
+2. The device talks to the controller directly, through this laptop. It appears in the controller
+   as pending — click **Adopt** there. It is adopted and provisioned while still on the bench.
+3. The device keeps the controller's **Override Inform Host** and comes back online in the
+   controller wherever it is cabled in afterwards. Set that override on the controller **once**,
+   to its hostname.
 
 | Key     | Action                                                          |
 | ------- | --------------------------------------------------------------- |
@@ -265,20 +265,23 @@ the port and **nothing else** (power it from a PoE injector or USB-C), and press
 | `D`     | Delete the selected controller (asks for a second press)        |
 | `Esc`   | Leave the plugin (asks for a second press while a session runs) |
 
-While it runs the screen shows the address being served, every lease handed out, every inform
-relayed with the controller's HTTP status, and each UniFi device heard by discovery on UDP 10001 —
-model, firmware, address and whether it is still factory default — so you can see the device
-arrive before it has even asked for an address.
+While it runs the screen shows the controller and its address, the address being served, which
+interface the device's traffic leaves through, every lease handed out, and each UniFi device heard
+by discovery on UDP 10001 — model, firmware, address and whether it is still factory default — so
+you can see the device arrive before it has even asked for an address. A device that goes quiet on
+discovery after its lease has taken the adoption; the screen says so.
 
-The session caps itself at fifteen minutes, and the address is removed from the port by the same
-elevated script that added it, even if the app has gone. On Linux the script also lowers
-`net.ipv4.ip_unprivileged_port_start` to 67 for the session, machine-wide, and puts it back; on
-Windows it adds three firewall rules scoped to the app's executable and removes them. Port 8080 on
-this laptop must be free — a device derives `http://<address>:8080/inform` from option 43, so the
-port is not negotiable — and the start refuses, before any prompt, if the port already has a DHCP
-server on it. Verified end to end on macOS with a USW-Flex-Mini and a UniFi OS gateway: lease,
-relayed informs, the adoption delivered back through the relay, Connected once moved to its real
-network. Linux and Windows follow the same procedure in [CONFIGURE-TEST.md](CONFIGURE-TEST.md).
+The session caps itself at fifteen minutes, and the address, the forwarding and the NAT rule are
+removed by the same elevated script that added them, even if the app has gone. Forwarding and NAT
+are machine-wide while the session runs (see [SECURITY.md](SECURITY.md)); the laptop must be
+online, and the start refuses, before any prompt, if it is not, if the selected port is the
+laptop's own internet connection, or if the port already has a DHCP server on it. On Linux the
+script also lowers `net.ipv4.ip_unprivileged_port_start` to 67 for the session, machine-wide, and
+puts it back; on Windows it adds two firewall rules scoped to the app's executable and removes
+them; sharing the internet is macOS-only so far, and those two refuse the start. Verified end to
+end on macOS on 2026-10-27 with a USW-Flex-2.5G-8-PoE and a self-hosted UniFi OS Server on the
+internet: lease, adopted and provisioned on the bench, Online again from another network after a
+power cycle. Linux and Windows follow the same procedure in [CONFIGURE-TEST.md](CONFIGURE-TEST.md).
 
 **Writing a plugin.** A folder in `Documents/magiceth/plugins` with a `package.json` and a
 CommonJS `index.js` exporting `activate(host)`; the app draws the blocks the plugin describes,

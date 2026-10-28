@@ -37,6 +37,59 @@ describe('macAddressHoldScript', () => {
   })
 })
 
+// The commands here are the ones run by hand on 2026-10-27, when a Flex switch on the dongle
+// adopted itself straight against a controller on the internet through the laptop.
+describe('macAddressHoldScript sharing the internet', () => {
+  const s = macAddressHoldScript('en7', { ...link, upstream: 'en0' }, '/tmp/hold.stop', 900)
+  const plain = macAddressHoldScript('en7', link, '/tmp/hold.stop', 900)
+
+  it('still starts with the alias and ends by removing it', () => {
+    expect(
+      s.startsWith("ifconfig 'en7' inet '10.254.254.1' netmask '255.255.255.0' alias && ")
+    ).toBe(true)
+    expect(
+      s.endsWith("ifconfig 'en7' inet '10.254.254.1' -alias; rm -f '/tmp/hold.stop'; true")
+    ).toBe(true)
+  })
+
+  it('turns forwarding on, remembering what it was, and puts it back after the loop', () => {
+    expect(s).toContain('fwd=$(sysctl -n net.inet.ip.forwarding 2>/dev/null)')
+    expect(s).toContain('sysctl -q -w net.inet.ip.forwarding=1')
+    expect(s).toContain('sysctl -q -w net.inet.ip.forwarding="${fwd:-0}"')
+    expect(s.indexOf('forwarding=1')).toBeLessThan(s.indexOf('while ['))
+    expect(s.indexOf('while [')).toBeLessThan(s.indexOf('${fwd:-0}'))
+  })
+
+  it("NATs the link's network through the upstream, in its own anchor, from stdin", () => {
+    expect(s).toContain("'nat on en0 inet from 10.254.254.0/24 to any -> (en0)'")
+    expect(s).toContain("'pass in quick on en7 inet from 10.254.254.0/24 to any keep state'")
+    expect(s).toContain("'pass out quick on en0 inet from 10.254.254.0/24 to any keep state'")
+    expect(s).toContain("printf '%s\\n' 'nat on en0")
+    expect(s).toContain('| pfctl -q -a com.apple/magiceth -f -;')
+  })
+
+  it('enables pf by reference and releases that reference, never disabling pf', () => {
+    expect(s).toContain("tok=$(pfctl -E 2>&1 | sed -n 's/.*Token : //p')")
+    expect(s).toContain(
+      'pfctl -q -a com.apple/magiceth -F all; [ -n "$tok" ] && pfctl -q -X "$tok";'
+    )
+    expect(s).not.toContain('pfctl -d')
+    expect(s.indexOf('while [')).toBeLessThan(s.indexOf('-F all'))
+    expect(s.indexOf('-F all')).toBeLessThan(s.indexOf('pfctl -q -X'))
+    expect(s.indexOf('pfctl -q -X')).toBeLessThan(s.indexOf('${fwd:-0}'))
+    expect(s.indexOf('${fwd:-0}')).toBeLessThan(s.indexOf('-alias'))
+  })
+
+  it('leaves the routing table alone; NAT is the way out', () => {
+    expect(s).not.toMatch(/networksetup|route/)
+  })
+
+  it('is the plain script when nothing is shared', () => {
+    expect(plain).not.toContain('pfctl')
+    expect(plain).not.toContain('forwarding')
+  })
+})
+
 describe('linuxAddressHoldScript', () => {
   const s = linuxAddressHoldScript('eth1', link, '/tmp/hold.stop', 900)
 
@@ -71,20 +124,17 @@ describe('winAddressHoldScript', () => {
     expect(s).toContain('netsh interface ipv4 delete address name="Ethernet 2" 10.254.254.1')
   })
 
-  it('opens the three listeners for this executable only, and closes them again', () => {
+  it('opens the two listeners for this executable only, and closes them again', () => {
     expect(HOLD_FIREWALL_RULES.map((r) => `${r.protocol} ${r.port}`)).toEqual([
       'UDP 67',
-      'UDP 10001',
-      'TCP 8080'
+      'UDP 10001'
     ])
     for (const r of HOLD_FIREWALL_RULES) {
       expect(s).toContain(
         `New-NetFirewallRule -DisplayName "${r.name}" -Direction Inbound -Action Allow -Protocol ${r.protocol} -LocalPort ${r.port} -Program "${exe}" -Profile Any`
       )
     }
-    expect(s).toContain(
-      'Remove-NetFirewallRule -DisplayName "magiceth DHCP","magiceth discovery","magiceth inform relay"'
-    )
+    expect(s).toContain('Remove-NetFirewallRule -DisplayName "magiceth DHCP","magiceth discovery"')
     expect(s.indexOf('New-NetFirewallRule')).toBeLessThan(s.indexOf('Remove-NetFirewallRule'))
   })
 

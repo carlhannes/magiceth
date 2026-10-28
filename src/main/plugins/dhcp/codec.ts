@@ -25,6 +25,7 @@ export const OPT = {
   PAD: 0,
   SUBNET_MASK: 1,
   ROUTER: 3,
+  DNS: 6,
   HOSTNAME: 12,
   BROADCAST: 28,
   VENDOR_SPECIFIC: 43,

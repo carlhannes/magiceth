@@ -45,12 +45,22 @@ Still open:
   and the sysctl being put back; Windows `netsh interface ipv4 add address` on a DHCP-configured
   adapter (it may refuse, in which case the fallback is `winProfileScript` static → restore) and
   the firewall rules coming and going. Steps 2–4 of CONFIGURE-TEST.md on each.
-- **A remote controller.** The run above used a gateway on the home LAN; a self-hosted controller
-  behind a public hostname with Override Inform Host set is the real use and has not been tried.
-  The mechanism is the same; the hostname and port 8080 reachability are the new variables.
-- **The discovery row is a snapshot.** It still says "factory default" after adoption, because the
-  device stops announcing; an age on the row, or dropping it after a minute of silence, would fix
-  that.
+- **A remote controller, done: the laptop shares its internet.** On 2026-10-27 a
+  USW-Flex-2.5G-8-PoE adopted through the plugin's first design (an HTTP relay on the laptop)
+  kept the laptop's address as its inform URL for good, because it could not reach the
+  controller's own address from the dongle; the controller's log said `inform ip changed` the
+  moment forwarding and NAT were turned on by hand, and the device came back Online from another
+  network after a power cycle. That is why the session now shares the laptop's internet and
+  option 43 names the controller; the relay is gone. Still to try: the override set to the
+  controller's hostname (the run used its address; the lease now hands out DNS for exactly that),
+  and a Flex Mini against this controller.
+- **Sharing the internet on Linux and Windows** is not written: `net.ipv4.ip_forward` plus an
+  `iptables -t nat … MASQUERADE` rule in the hold loop on Linux, Internet Connection Sharing or a
+  NAT rule on Windows. Until then `shareInternet` refuses the start there, and so does the UniFi
+  plugin.
+- **Sharing through a VPN** whose `utun` holds the default route is unverified; the session
+  allows it. And the upstream's DNS servers come from `ipconfig getsummary`, which sees what DHCP
+  handed the interface and not a statically set or VPN-pushed resolver; `scutil --dns` would.
 - **The plugin API is locked at version 1** (`docs/PLUGINS.md`, "Stability"): additions only, which
   a plugin feature-detects. Additions worth making when a second plugin needs them: a way for a
   plugin to ask for a confirmation in the notice bar, an optional host-managed selection for `list`

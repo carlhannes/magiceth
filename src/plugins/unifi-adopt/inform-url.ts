@@ -1,9 +1,9 @@
-// Pure: what someone types as "the controller" → the inform URL the relay posts to.
-// Tested in test/inform-url.test.ts.
+// Pure: what someone types as "the controller" → the inform URL whose host the device is pointed
+// at. Tested in test/inform-url.test.ts.
 //
 // Accepts a bare hostname, a host with a port, or a full URL. The device-side URL is always
 // `http://<something>:8080/inform`, so that is the shape a bare host becomes; a full URL is kept
-// as written, because a hosted controller may front its inform endpoint differently.
+// as written, so the saved entry reads the way the controller shows it.
 
 export type InformUrlResult = { ok: true; url: string } | { ok: false; error: string }
 

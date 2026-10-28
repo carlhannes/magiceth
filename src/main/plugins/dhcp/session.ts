@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { getPlatform } from '../../platform'
+import type { Upstream } from '../../platform'
 import { runElevatedPlan } from '../../privilege'
 import { isLinkLocalIpv4 } from '../../../shared/net'
 import type { DhcpEvent, DhcpSession, DhcpSpec } from '../../../shared/plugin'
@@ -28,6 +29,8 @@ const POLL_MS = 500
 interface ActiveSession {
   device: string
   subnet: LinkSubnet
+  /** Set when the session shares this computer's internet with the link. */
+  upstream?: Upstream
   stopFile: string
   startedAt: number
   server?: DhcpServerHandle
@@ -87,6 +90,7 @@ async function bindServer(
         poolEnd: POOL_END,
         leaseSeconds,
         vendorClassPrefix,
+        dnsServers: s.upstream?.dnsServers,
         extraOptions: options
       },
       (event) => {
@@ -98,7 +102,12 @@ async function bindServer(
       return
     }
     s.server = server
-    s.onEvent({ kind: 'address', serverIp: s.subnet.serverIp, cidr: s.subnet.cidr })
+    s.onEvent({
+      kind: 'address',
+      serverIp: s.subnet.serverIp,
+      cidr: s.subnet.cidr,
+      ...(s.upstream ? { upstream: s.upstream } : {})
+    })
     s.cap = setTimeout(() => finish(s, 'the 15-minute cap was reached'), MAX_SECONDS * 1000)
   } catch (err) {
     finish(s, 'could not start', err instanceof Error ? err.message : String(err))
@@ -130,10 +139,38 @@ export async function startDhcpSession(device: string, spec: DhcpSpec): Promise<
   const options = toOptions(spec, subnet)
   const leaseSeconds = spec.leaseSeconds ?? DEFAULT_LEASE_SECONDS
 
+  // Sharing needs somewhere to send the traffic. Every way that can fail is checked here, before
+  // the prompt, so a refusal costs no password.
+  let upstream: Upstream | undefined
+  if (spec.shareInternet) {
+    const readUpstream = getPlatform().readUpstream
+    if (!readUpstream) {
+      throw new Error(
+        "Sharing this computer's internet with the port is not available on this OS yet."
+      )
+    }
+    upstream = await readUpstream()
+    if (!upstream) {
+      throw new Error(
+        'This computer has no internet connection to share — connect it (Wi-Fi, a phone) first.'
+      )
+    }
+    if (upstream.device === device) {
+      throw new Error(
+        `${device} is this computer's own internet connection; use another port for the device.`
+      )
+    }
+    if (upstream.dnsServers.length === 0) {
+      throw new Error(
+        `No DNS servers are known on ${upstream.device}, so the device would have none.`
+      )
+    }
+  }
+
   const stopFile = path.join(os.tmpdir(), `magiceth-dhcp-${process.pid}-${Date.now()}.stop`)
   const plan = await getPlatform().buildAddressHoldPlan(
     device,
-    { ip: subnet.serverIp, cidr: subnet.cidr },
+    { ip: subnet.serverIp, cidr: subnet.cidr, upstream: upstream?.device },
     stopFile,
     MAX_SECONDS
   )
@@ -143,6 +180,7 @@ export async function startDhcpSession(device: string, spec: DhcpSpec): Promise<
   const s: ActiveSession = {
     device,
     subnet,
+    upstream,
     stopFile,
     startedAt: Date.now(),
     onEvent: spec.onEvent

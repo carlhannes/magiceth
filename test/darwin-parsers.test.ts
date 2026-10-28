@@ -4,8 +4,34 @@ import {
   parseIoregUsbMacs,
   joinDarwinAdapters,
   parseNetworkServiceDevices,
-  builtinDarwinAdapters
+  builtinDarwinAdapters,
+  parseDefaultRouteInterface
 } from '../src/main/platform/darwin'
+
+// Real output of `route -n get default` on macOS (Apple Silicon, Wi-Fi), captured 2026-10-27.
+const ROUTE_GET_DEFAULT = `   route to: default
+destination: default
+       mask: default
+    gateway: 10.5.92.1
+  interface: en0
+      flags: <UP,GATEWAY,DONE,STATIC,PRCLONING,GLOBAL>
+ recvpipe  sendpipe  ssthresh  rtt,msec    rttvar  hopcount      mtu     expire
+       0         0         0         0         0         0      1500         0
+`
+
+describe('parseDefaultRouteInterface', () => {
+  it('reads the interface the default route leaves through', () => {
+    expect(parseDefaultRouteInterface(ROUTE_GET_DEFAULT)).toBe('en0')
+  })
+
+  // Without a default route the command prints its complaint on stderr and nothing on stdout.
+  it('is undefined when there is no default route', () => {
+    expect(parseDefaultRouteInterface('')).toBeUndefined()
+    expect(parseDefaultRouteInterface('route: writing to routing socket: not in table\n')).toBe(
+      undefined
+    )
+  })
+})
 
 // Real output captured on macOS (Apple Silicon) with an ASIX AX88179A dongle plugged in.
 const NETWORKSETUP = `

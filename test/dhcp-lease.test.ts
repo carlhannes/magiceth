@@ -63,6 +63,19 @@ describe('decide: the happy path', () => {
     expect(bytesToHex(offer.options.get(OPT.VENDOR_SPECIFIC)!)).toBe('01:04:0a:fe:fe:01')
   })
 
+  it('hands out DNS servers as option 6 only when the session shares the internet', () => {
+    const shared = send(
+      { type: DHCP.DISCOVER, mac: UBNT_MAC, vendorClass: 'ubnt' },
+      {},
+      { ...cfg, dnsServers: ['10.5.92.1', '1.1.1.1'] }
+    )
+    expect(bytesToHex(parseDhcp(shared.reply!)!.options.get(OPT.DNS)!)).toBe(
+      '0a:05:5c:01:01:01:01:01'
+    )
+    const plain = send({ type: DHCP.DISCOVER, mac: UBNT_MAC, vendorClass: 'ubnt' })
+    expect(parseDhcp(plain.reply!)!.options.has(OPT.DNS)).toBe(false)
+  })
+
   it('gives the next address to the next device and the same one to a returning device', () => {
     const first = send({ type: DHCP.DISCOVER, mac: UBNT_MAC, vendorClass: 'ubnt' })
     const second = send({ type: DHCP.DISCOVER, mac: OTHER_MAC, vendorClass: 'ubnt' }, first.table)

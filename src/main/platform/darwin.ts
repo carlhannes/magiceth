@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { run } from '../util/run-command'
 import { normalizeMac } from '../../shared/mac'
-import { cidrToDotted, isValidIpv4 } from '../../shared/net'
+import { cidrToDotted, intToIp, ipToInt, isValidIpv4 } from '../../shared/net'
 import { shQuote } from '../privilege'
 import { parseWifiHelper } from './wifi-helper'
 import type { ElevatedPlan } from '../privilege'
@@ -12,6 +12,7 @@ import type {
   PingSpec,
   PlatformOps,
   RawAdapter,
+  Upstream,
   WifiScanOutcome
 } from './index'
 import type { NetInfo, Profile } from '../../shared/types'
@@ -330,6 +331,25 @@ async function readNetInfo(device: string): Promise<NetInfo> {
   }
 }
 
+/** The `interface:` line of `route -n get default`; undefined when there is no default route. */
+export function parseDefaultRouteInterface(output: string): string | undefined {
+  return output.match(/^\s*interface:\s*([a-z0-9]+)\s*$/m)?.[1]
+}
+
+/**
+ * Where this computer's own traffic leaves, and the resolvers it got there. `ipconfig getsummary`
+ * reports what DHCP handed the interface, which is the common case for Wi-Fi and a phone; a
+ * statically configured or VPN-pushed resolver is not seen, and the session then says so rather
+ * than guess.
+ */
+async function readUpstream(): Promise<Upstream | undefined> {
+  const r = await run('route', ['-n', 'get', 'default'], { timeoutMs: 4000 })
+  const device = parseDefaultRouteInterface(r.stdout)
+  if (!device) return undefined
+  const sum = await run('ipconfig', ['getsummary', device], { timeoutMs: 6000 })
+  return { device, dnsServers: parseIpconfigSummary(sum.stdout).dnsServers }
+}
+
 function pingCommand(target: string, opts: PingOptions): PingSpec {
   // macOS: -c count, -i interval in seconds, -W response time in ms, -b binds to interface.
   // 0.2 s spacing is the fastest an ordinary user may ask for (macOS reserves anything under
@@ -391,12 +411,50 @@ async function buildProfilePlan(device: string, profile: Profile): Promise<Eleva
   return { interpreter: 'sh', script: macProfileScript(device, service, profile) }
 }
 
+/** pf keeps our rules apart from everything else under the system's `com.apple/*` anchors. */
+const PF_ANCHOR = 'com.apple/magiceth'
+
+/**
+ * The two halves of sharing this computer's internet with the held link, for the hold script:
+ * forwarding on and a NAT rule for the link's network through the upstream interface, then both
+ * undone. The previous forwarding value is kept and put back. pf is enabled by reference
+ * (`-E` hands out a token, `-X` returns it), never `-d`, because a VPN may be holding pf up too;
+ * a token pf no longer knows is let go. The rules travel through `printf` into `pfctl -f -`, so
+ * nothing is written to disk.
+ */
+function macInternetShare(
+  device: string,
+  link: HeldAddress,
+  upstream: string
+): { up: string; down: string } {
+  const mask = link.cidr === 0 ? 0 : (0xffffffff << (32 - link.cidr)) >>> 0
+  const network = `${intToIp((ipToInt(link.ip) & mask) >>> 0)}/${link.cidr}`
+  const rules = [
+    `nat on ${upstream} inet from ${network} to any -> (${upstream})`,
+    `pass in quick on ${device} inet from ${network} to any keep state`,
+    `pass out quick on ${upstream} inet from ${network} to any keep state`
+  ]
+    .map(shQuote)
+    .join(' ')
+  return {
+    up:
+      `fwd=$(sysctl -n net.inet.ip.forwarding 2>/dev/null); sysctl -q -w net.inet.ip.forwarding=1; ` +
+      `printf '%s\\n' ${rules} | pfctl -q -a ${PF_ANCHOR} -f -; ` +
+      `tok=$(pfctl -E 2>&1 | sed -n 's/.*Token : //p'); `,
+    down:
+      `pfctl -q -a ${PF_ANCHOR} -F all; [ -n "$tok" ] && pfctl -q -X "$tok"; ` +
+      `sysctl -q -w net.inet.ip.forwarding="\${fwd:-0}"; `
+  }
+}
+
 /**
  * Hold an alias address on the port until the stop file appears or the cap runs out. The alias
  * is re-asserted every second — a no-op while it is there — because configd reconfigures a port
  * when its link comes up, which is exactly when the device being configured gets plugged in.
  * `ifconfig`, not `networksetup`: the latter needs a router, and a router on the dongle can take
- * the default route with it.
+ * the default route with it. With `link.upstream`, the same script shares this computer's
+ * internet with the link for as long as it holds the address (macInternetShare); the routing
+ * table is still never touched, NAT is the way out.
  */
 export function macAddressHoldScript(
   device: string,
@@ -408,10 +466,13 @@ export function macAddressHoldScript(
   const ip = shQuote(link.ip)
   const mask = shQuote(cidrToDotted(link.cidr))
   const stop = shQuote(stopFile)
+  const share = link.upstream ? macInternetShare(device, link, link.upstream) : undefined
   return (
     `ifconfig ${d} inet ${ip} netmask ${mask} alias && ` +
+    (share?.up ?? '') +
     `n=0; while [ ! -f ${stop} ] && [ $n -lt ${maxSeconds} ]; do ` +
     `ifconfig ${d} inet ${ip} netmask ${mask} alias 2>/dev/null; sleep 1; n=$((n+1)); done; ` +
+    (share?.down ?? '') +
     `ifconfig ${d} inet ${ip} -alias; rm -f ${stop}; true`
   )
 }
@@ -497,6 +558,7 @@ export const darwin: PlatformOps = {
   buildSetMacPlan,
   buildProfilePlan,
   buildAddressHoldPlan,
+  readUpstream,
   scanWifi,
   requestWifiAccess,
   endWifiSession
