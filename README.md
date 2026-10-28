@@ -135,11 +135,13 @@ Download the latest build for your platform from [Releases](https://github.com/c
 The builds are ad-hoc signed and not notarized (internal tool, no developer certificate), so the
 first launch asks for a confirmation — see [SECURITY.md](SECURITY.md).
 
-- **macOS 13 or later.** Opening the app says "Apple could not verify…". Click Done, then System
-  Settings → Privacy & Security → scroll to Security → **Open Anyway**; the button is there for
-  about an hour after the attempt. Right-click → Open no longer works since macOS 15. The 0.5.0 and
-  0.6.0 downloads are refused as "damaged" instead, because their bundle shipped with a broken seal:
-  fetch a newer build, or strip the quarantine flag before opening —
+- **macOS 13 or later.** Drag magiceth from the disk image into Applications first — opened
+  straight from the image, the approval below cannot be saved and macOS asks again every time.
+  Opening the app says "Apple could not verify…". Click Done, then System Settings → Privacy &
+  Security → scroll to Security → **Open Anyway**; the button is there for about an hour after the
+  attempt. Right-click → Open no longer works since macOS 15. The 0.5.0 and 0.6.0 downloads are
+  refused as "damaged" instead, because their bundle shipped with a broken seal: fetch a newer
+  build, or strip the quarantine flag before opening —
   `xattr -d com.apple.quarantine ~/Downloads/magiceth-0.6.0-arm64.dmg`.
 - **Windows.** SmartScreen says "Windows protected your PC": More info → **Run anyway**.
 

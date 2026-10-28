@@ -101,11 +101,14 @@ xattr -w com.apple.quarantine "0081;$(printf %x "$(date +%s)");Chrome;$(uuidgen)
 open /tmp/gk-test.dmg
 ```
 
+Drag the app into Applications (the approval is stored in the file's quarantine attribute, which a
+read-only image cannot hold, so from the image macOS asks every time) and open it from there.
 Expected: "Apple could not verify…" → Done → System Settings → Privacy & Security → Open Anyway →
 the app starts. "Damaged" means the seal is broken: stop. Then the topbar shows the new version;
 each mode opens; Configure mode lists the built-in plugin; a WLAN-mode scan raises the Location
 prompt (once per build — an ad-hoc signature changes every time) and shows BSSIDs afterwards. A
-build that fails this is not published, whatever the checks said.
+build that fails this is not published, whatever the checks said. Verified this way on 2026-10-28
+with the first ad-hoc signed build: "Apple could not verify", Open Anyway, and the app ran.
 
 ## 5. Checksums and notes
 
