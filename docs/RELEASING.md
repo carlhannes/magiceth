@@ -70,10 +70,41 @@ Windows targets come out of the one command; a release is always both. Everythin
 `dist/`, which is git-ignored; the `.yml` files electron-builder writes next to them are not part of
 the release.
 
-## 4. Try one before publishing
+Then prove the macOS seal is complete. electron-builder ad-hoc signs the bundle as a whole; a bundle
+without a complete seal is "damaged and can't be opened" for everyone who downloads it, and nothing
+on the build machine notices, because a local copy carries no quarantine flag (0.5.0 and 0.6.0
+shipped that way). Every line must pass for both apps, or nothing is published:
 
-Open `dist/magiceth-X.Y.Z-arm64.dmg`, drag nothing, right-click the app → Open (it is unsigned).
-The topbar shows the new version; each mode opens; Configure mode lists the built-in plugin. A
+```sh
+for app in dist/mac-arm64/magiceth.app dist/mac/magiceth.app; do
+  codesign --verify --deep --strict "$app"     # silent = good; any message = stop
+  codesign -dv "$app" 2>&1 | grep -E '^(Identifier|Signature)'   # io.github.carlhannes.magiceth, adhoc
+  codesign -dv "$app/Contents/Resources/wifi-helper/magiceth-wifi.app" 2>&1 | grep '^Identifier'   # …magiceth.wifi
+done
+gktool scan dist/mac-arm64/magiceth.app                    # must not say "altered"
+syspolicy_check distribution dist/mac-arm64/magiceth.app   # see below
+```
+
+`syspolicy_check` is written for notarization, so two of its findings are expected here: the
+"Adhoc Signed App" warning and the fatal "Notary Ticket Missing". A "Codesign Error" is the one that
+matters — it is what the broken 0.6.0 bundle reported. `spctl --assess` rejects every ad-hoc app and
+tells you nothing here.
+
+## 4. Try one before publishing, the way a download arrives
+
+A locally built app skips Gatekeeper, so give a copy of the dmg the quarantine flag a browser
+would write, and open the app from the mounted image:
+
+```sh
+cp dist/magiceth-X.Y.Z-arm64.dmg /tmp/gk-test.dmg
+xattr -w com.apple.quarantine "0081;$(printf %x "$(date +%s)");Chrome;$(uuidgen)" /tmp/gk-test.dmg
+open /tmp/gk-test.dmg
+```
+
+Expected: "Apple could not verify…" → Done → System Settings → Privacy & Security → Open Anyway →
+the app starts. "Damaged" means the seal is broken: stop. Then the topbar shows the new version;
+each mode opens; Configure mode lists the built-in plugin; a WLAN-mode scan raises the Location
+prompt (once per build — an ad-hoc signature changes every time) and shows BSSIDs afterwards. A
 build that fails this is not published, whatever the checks said.
 
 ## 5. Checksums and notes

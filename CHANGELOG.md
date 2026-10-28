@@ -9,6 +9,17 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **macOS builds open again when downloaded.** 0.5.0 and 0.6.0 shipped `magiceth.app` with
+  Electron's own ad-hoc signature but no resource seal — electron-builder had been told to skip
+  signing — which Gatekeeper reads as tampering: a copy that came through a browser was "damaged
+  and can't be opened", with no Open Anyway on offer. A locally built app carries no quarantine
+  flag, so nothing on the build machine noticed. electron-builder (now 26) ad-hoc signs the whole
+  bundle, Wi-Fi helper included; a download now gets "Apple could not verify" and System Settings →
+  Privacy & Security → Open Anyway runs it. Still no Developer ID and no notarization. The release
+  checklist now proves the seal before anything is published.
+
 ## [0.6.0] – 2026-10-28
 
 ### Added

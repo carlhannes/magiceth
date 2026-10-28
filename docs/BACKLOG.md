@@ -154,8 +154,11 @@ is still open:
   picture, which needs the channel/width pairs drawn rather than listed.
 - **Unverified against enterprise networks, captive portals, or WPS-broadcasting access points.**
   The AKM parser handles 802.1X suites but has never met one.
-- **A TCC grant is keyed to a code signature.** The helper is ad-hoc signed, so a rebuild may
-  re-prompt for Location access. This has not been measured across a version bump.
+- **A TCC grant is keyed to a code signature.** The app and the helper are ad-hoc signed, and an
+  ad-hoc signature changes with every build, so an upgrade may re-prompt for Location access once.
+  Not measured across a version bump yet. A designated requirement by bundle identifier
+  (`mac.requirements` in electron-builder) would keep the grant across builds; a Developer ID would
+  too.
 - **Recordings are never pruned or deleted from the app.** They accumulate in
   `~/Documents/magiceth` until removed by hand. Each is small — a ten-minute walk with twenty
   access points is well under a megabyte — so this is untidiness rather than a problem, but a
@@ -264,6 +267,20 @@ against a real machine across dhclient / NetworkManager / dhcpcd.
 The failure mode is bounded: if the flag never appears the result is `false`, which is what the
 code did before the inference existed. If it turns out unreliable, `ip -j route show default` also
 carries `"protocol": "dhcp"` as a second signal.
+
+## Distribution: ad-hoc signed, not notarized
+
+- **No Developer ID.** Downloads get "Apple could not verify" and need Open Anyway; SmartScreen warns
+  on Windows. Fixing that on macOS means the Apple Developer Program, a "Developer ID Application"
+  certificate in the build machine's keychain (electron-builder finds it on its own once
+  `identity: '-'` is removed), `notarize: true` with an App Store Connect API key in the
+  environment, hardened runtime back on with the Location entitlement
+  (`com.apple.security.personal-information.location`) for the Wi-Fi helper, and a
+  `syspolicy_check distribution` that comes back clean. Windows needs an Authenticode certificate or
+  Azure Artifact Signing; SmartScreen reputation builds over time either way.
+- **The dev toolchain is a generation behind.** electron-vite 2 and vite 5 still build the app, but
+  electron-vite 6 wants vite 6–8, and the bundle check in `electron.vite.config.ts` has to be
+  re-verified against whichever bundler that brings.
 
 ## Notices never clear on their own
 

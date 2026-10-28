@@ -132,8 +132,16 @@ machine yet.
 ### Prebuilt binary
 
 Download the latest build for your platform from [Releases](https://github.com/carlhannes/magiceth/releases).
-The builds are **unsigned** (internal tool) — see [SECURITY.md](SECURITY.md) regarding warnings from
-Gatekeeper/SmartScreen.
+The builds are ad-hoc signed and not notarized (internal tool, no developer certificate), so the
+first launch asks for a confirmation — see [SECURITY.md](SECURITY.md).
+
+- **macOS.** Opening the app says "Apple could not verify…". Click Done, then System Settings →
+  Privacy & Security → scroll to Security → **Open Anyway**; the button is there for about an hour
+  after the attempt. Right-click → Open no longer works since macOS 15. The 0.5.0 and 0.6.0
+  downloads are refused as "damaged" instead, because their bundle shipped with a broken seal: fetch
+  a newer build, or strip the quarantine flag before opening —
+  `xattr -d com.apple.quarantine ~/Downloads/magiceth-0.6.0-arm64.dmg`.
+- **Windows.** SmartScreen says "Windows protected your PC": More info → **Run anyway**.
 
 ### From source
 
@@ -327,8 +335,11 @@ npm run lint       # eslint
 npm test           # vitest (pure parsers/functions)
 ```
 
-Everything is unsigned — no macOS notarization, no Windows certificate — so macOS needs
-right-click → Open and Windows shows SmartScreen → More info → Run anyway.
+There is no Developer ID and no Windows certificate. electron-builder ad-hoc signs the macOS bundle
+as a whole (`identity: '-'` in `electron-builder.yml`), which is what gets a downloaded copy the
+Open Anyway route instead of "damaged"; [docs/RELEASING.md](docs/RELEASING.md) has the checks that
+prove the seal is complete before anything is published. Windows shows SmartScreen → More info →
+Run anyway.
 
 A full release is four files, and all four build from macOS. The Windows ones need Rosetta on an
 Apple Silicon Mac, because electron-builder stamps the version into the `.exe` through an x86 Wine
