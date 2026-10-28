@@ -10,10 +10,12 @@ file only covers what is specific to driving this repo from an agent session.
 npm run typecheck && npm run lint && npm test && npx prettier --check .
 ```
 
-CI installs with `ELECTRON_SKIP_BINARY_DOWNLOAD=1`, so a test may only import modules whose import
-chain never reaches `electron` — `recordings.ts`, `profiles.ts`, `index.ts` and anything importing
-them are out. The symptom is one suite failing with "Electron failed to install correctly" while
-everything passes locally. Reproduce it by hiding `node_modules/electron/path.txt` for a run.
+CI never has the Electron binary — the npm package fetches it on first use, and CI only runs the
+checks — so a test may only import modules whose import chain never reaches `electron`:
+`recordings.ts`, `profiles.ts`, `index.ts` and anything importing them are out. `require('electron')`
+without the binary starts a download, so the symptom is a suite that prints "Downloading Electron
+binary..." in CI and then stalls or fails, while everything passes locally. Check a new suite's
+import chain rather than waiting for CI to show it.
 
 The load-bearing test surface is the pure parsers in `test/`. If you change a parser, feed it
 **real captured output** rather than output you invented — the two multi-dongle bugs found on

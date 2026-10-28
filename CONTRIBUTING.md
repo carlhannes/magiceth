@@ -6,7 +6,7 @@ agree to our [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Development environment
 
-Requires Node.js 20+ and npm.
+Requires Node.js 24 (what CI runs; Electron 45 embeds the same major) and npm.
 
 ```sh
 git clone https://github.com/carlhannes/magiceth.git

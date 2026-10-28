@@ -278,9 +278,10 @@ carries `"protocol": "dhcp"` as a second signal.
   (`com.apple.security.personal-information.location`) for the Wi-Fi helper, and a
   `syspolicy_check distribution` that comes back clean. Windows needs an Authenticode certificate or
   Azure Artifact Signing; SmartScreen reputation builds over time either way.
-- **The dev toolchain is a generation behind.** electron-vite 2 and vite 5 still build the app, but
-  electron-vite 6 wants vite 6–8, and the bundle check in `electron.vite.config.ts` has to be
-  re-verified against whichever bundler that brings.
+- **The dev toolchain is a generation behind.** electron-vite 2, vite 5 and vitest 2 still build and
+  test the app, and `npm audit` flags all three (dev-time only; nothing of theirs ships). Moving on
+  means electron-vite 6 with vite 6–8 and vitest 5, and the bundle check in
+  `electron.vite.config.ts` has to be re-verified against whichever bundler that brings.
 
 ## Notices never clear on their own
 

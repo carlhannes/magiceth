@@ -20,6 +20,13 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   Privacy & Security → Open Anyway runs it. Still no Developer ID and no notarization. The release
   checklist now proves the seal before anything is published.
 
+### Changed
+
+- **Electron 33 → 45** (Chromium 156, Node 24). Electron 33 had been out of support since
+  April 2025. macOS 13 or later is now required (was 11). CI runs on Node 24, and `npm ci` no
+  longer downloads Electron, which fetches its binary on first use since Electron 42.
+- Upgrading may ask for Location access once more: an ad-hoc signature changes with every build.
+
 ## [0.6.0] – 2026-10-28
 
 ### Added
