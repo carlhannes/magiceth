@@ -108,7 +108,8 @@ the app starts. "Damaged" means the seal is broken: stop. Then the topbar shows 
 each mode opens; Configure mode lists the built-in plugin; a WLAN-mode scan raises the Location
 prompt (once per build — an ad-hoc signature changes every time) and shows BSSIDs afterwards. A
 build that fails this is not published, whatever the checks said. Verified this way on 2026-10-28
-with the first ad-hoc signed build: "Apple could not verify", Open Anyway, and the app ran.
+with the first ad-hoc signed build: "Apple could not verify", Open Anyway, the app ran, and a
+WLAN scan showed the networks after the Location prompt and a rescan.
 
 ## 5. Checksums and notes
 
