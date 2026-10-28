@@ -26,13 +26,13 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   device for the session, and discovery on UDP 10001 shows the device with model, firmware and
   whether it is still factory default. One admin prompt per session holds an extra address on the
   port; the same script removes it, caps the session at fifteen minutes, and on Linux lowers
-  `ip_unprivileged_port_start` to 67 meanwhile. The switch's real packets are the test fixtures. A device that goes quiet on discovery after
-  its lease has taken the adoption, and the screen says so. Sharing the internet is macOS-only in
-  this release — on Windows and Linux the plugin refuses to start, and the backlog has the work.
-  Verified end to end on macOS on 2026-10-27 with a USW-Flex-2.5G-8-PoE against a self-hosted
-  UniFi OS Server on the internet: lease, adopted and provisioned on the bench, Online again from
-  another network after a power cycle.
-
+  `ip_unprivileged_port_start` to 67 meanwhile. The switch's real packets are the test fixtures.
+  A device that goes quiet on discovery after its lease has taken the adoption, and the screen
+  says so. Sharing the internet is macOS-only in this release — on Windows and Linux the plugin
+  refuses to start, and the backlog has the work.
+  Verified end to end on macOS on 2026-10-28 with a USW-Flex-Mini against a self-hosted UniFi OS
+  Server on the internet, its Override Inform Host set to its hostname: lease, adopted and
+  provisioned on the bench, Online again from another network after a power cycle.
 - **Plugin API 1, documented and locked** — [docs/PLUGINS.md](docs/PLUGINS.md) is the reference
   for writing a plugin (manifest, module format, lifecycle, every block, the host member by member,
   the DHCP service, stability policy), with the contract embedded and a test keeping the two
