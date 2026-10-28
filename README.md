@@ -279,9 +279,10 @@ laptop's own internet connection, or if the port already has a DHCP server on it
 script also lowers `net.ipv4.ip_unprivileged_port_start` to 67 for the session, machine-wide, and
 puts it back; on Windows it adds two firewall rules scoped to the app's executable and removes
 them; sharing the internet is macOS-only so far, and those two refuse the start. Verified end to
-end on macOS on 2026-10-27 with a USW-Flex-2.5G-8-PoE and a self-hosted UniFi OS Server on the
-internet: lease, adopted and provisioned on the bench, Online again from another network after a
-power cycle. Linux and Windows follow the same procedure in [CONFIGURE-TEST.md](CONFIGURE-TEST.md).
+end on macOS on 2026-10-28 with a USW-Flex-Mini and a self-hosted UniFi OS Server on the
+internet, its Override Inform Host set to its hostname: lease, adopted and provisioned on the
+bench, Online again from another network after a power cycle. Linux and Windows follow the same
+procedure in [CONFIGURE-TEST.md](CONFIGURE-TEST.md).
 
 **Writing a plugin.** A folder in `Documents/magiceth/plugins` with a `package.json` and a
 CommonJS `index.js` exporting `activate(host)`; the app draws the blocks the plugin describes,

@@ -314,8 +314,9 @@ listener that decodes the TLV announcement for the screen. With the shared inter
 reaches the controller directly, is adopted and provisioned on the bench, and keeps the
 controller's Override Inform Host, which it resolves wherever it is cabled in afterwards; it
 stops announcing on discovery once adopted, and the screen says what that silence means.
-Verified 2026-10-27 with a USW-Flex-2.5G-8-PoE against a self-hosted UniFi OS Server on the
-internet; [CONFIGURE-TEST.md](../CONFIGURE-TEST.md) is the procedure and `docs/BACKLOG.md`
+Verified 2026-10-28 with a USW-Flex-Mini against a self-hosted UniFi OS Server on the internet,
+after a hand test of the same commands with a USW-Flex-2.5G-8-PoE the day before;
+[CONFIGURE-TEST.md](../CONFIGURE-TEST.md) is the procedure and its log, and `docs/BACKLOG.md`
 lists what is still open.
 
 ## Reading the spectrum

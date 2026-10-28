@@ -9,32 +9,7 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ## [Unreleased]
 
-### Changed
-
-- **UniFi adoption: the device talks to the controller itself, through the laptop.** A session
-  can now share this computer's internet with the link (`DhcpSpec.shareInternet`): the elevated
-  script that holds the address also turns on IP forwarding and a NAT rule in pf for the link's
-  /24 through the default-route interface, and the lease hands out that interface's DNS servers
-  as option 6; all of it undone with the address. The UniFi plugin asks for that, resolves the
-  saved controller on the laptop and puts its address in option 43, so a factory-default switch
-  on the dongle is adopted and provisioned on the bench exactly as it would be in the field, and
-  keeps the controller's Override Inform Host. macOS only so far. Verified 2026-10-27 with a
-  USW-Flex-2.5G-8-PoE against a self-hosted UniFi OS Server on the internet, including a power
-  cycle and a return from another network.
-- **UniFi adoption: a device row no longer claims "factory default" forever.** A device announces
-  itself only while unadopted, so the row kept the flag it last sent. After thirty seconds of
-  silence the row now says how long the device has been quiet, the screen re-renders every few
-  seconds so that counts, and the note under the table says what the silence means: the device
-  took the adoption and now talks to the controller directly.
-
-### Removed
-
-- **The inform relay.** The plugin used to hand the device option 43 naming the laptop and relay
-  its informs to the controller on port 8080. A switch adopted that way kept the laptop's address
-  as its inform URL, because it could never reach the controller's own address from the dongle,
-  and so never called home from the field (2026-10-27, USW-Flex-2.5G-8-PoE). Sharing the internet
-  makes the relay unnecessary, and with it go the TCP 8080 listener and the Windows firewall rule
-  for it. (The relay's chunked-encoding bug, found the same day, went with it.)
+## [0.6.0] – 2026-10-28
 
 ### Added
 
@@ -51,8 +26,12 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   device for the session, and discovery on UDP 10001 shows the device with model, firmware and
   whether it is still factory default. One admin prompt per session holds an extra address on the
   port; the same script removes it, caps the session at fifteen minutes, and on Linux lowers
-  `ip_unprivileged_port_start` to 67 meanwhile. The switch's real packets are the test fixtures.
-  Linux and Windows follow `CONFIGURE-TEST.md`.
+  `ip_unprivileged_port_start` to 67 meanwhile. The switch's real packets are the test fixtures. A device that goes quiet on discovery after
+  its lease has taken the adoption, and the screen says so. Sharing the internet is macOS-only in
+  this release — on Windows and Linux the plugin refuses to start, and the backlog has the work.
+  Verified end to end on macOS on 2026-10-27 with a USW-Flex-2.5G-8-PoE against a self-hosted
+  UniFi OS Server on the internet: lease, adopted and provisioned on the bench, Online again from
+  another network after a power cycle.
 
 - **Plugin API 1, documented and locked** — [docs/PLUGINS.md](docs/PLUGINS.md) is the reference
   for writing a plugin (manifest, module format, lifecycle, every block, the host member by member,
@@ -298,7 +277,8 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 - Platform support for Windows/macOS/Linux (arm64 + amd64); packaging via electron-builder (unsigned).
 - macOS live-verified; Linux/Windows implemented against documented format with unit-tested parsers.
 
-[Unreleased]: https://github.com/carlhannes/magiceth/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/carlhannes/magiceth/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/carlhannes/magiceth/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/carlhannes/magiceth/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/carlhannes/magiceth/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/carlhannes/magiceth/releases/tag/v0.3.0
