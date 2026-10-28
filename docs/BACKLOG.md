@@ -31,13 +31,15 @@ notices are their own open question further down this file.
 
 ## Configure mode: verified on macOS, open elsewhere
 
-On 2026-10-26 a factory-default USW-Flex-Mini (firmware 2.1.6.762) was adopted end to end through
-the plugin on macOS: lease with option 43 from the dongle, informs relayed to a UniFi OS gateway,
-the adoption delivered back through the relay, Connected once cabled into its real network.
-CONFIGURE-TEST.md has the run; the captures are in `test/fixtures/flexmini-capture.ts`. Worth
-knowing from it: the controller answers **404** to an unadopted device's inform while listing it
-as pending, and **200** once it has something to say; the device goes quiet on the dongle about
-half a minute after adoption because it now informs to the controller's own address.
+On 2026-10-28 a factory-default USW-Flex-Mini was adopted end to end through the plugin on macOS
+against a self-hosted controller on the internet, with the laptop sharing its internet and the
+controller's Override Inform Host set to its hostname: lease with option 43 from the dongle,
+adopted and provisioned on the bench, Online from another network after a power cycle. (The first
+run, 2026-10-26, went through the relay the plugin had then, against a gateway on the home LAN.)
+CONFIGURE-TEST.md has the runs; the captures are in `test/fixtures/flexmini-capture.ts`. Worth
+knowing from them: the controller answers **404** to an unadopted device's inform while listing
+it as pending, and **200** once it has something to say; once adopted the device stops announcing
+on discovery but keeps informing through the laptop until the session ends.
 
 Still open:
 
@@ -51,9 +53,8 @@ Still open:
   controller's own address from the dongle; the controller's log said `inform ip changed` the
   moment forwarding and NAT were turned on by hand, and the device came back Online from another
   network after a power cycle. That is why the session now shares the laptop's internet and
-  option 43 names the controller; the relay is gone. Still to try: the override set to the
-  controller's hostname (the run used its address; the lease now hands out DNS for exactly that),
-  and a Flex Mini against this controller.
+  option 43 names the controller; the relay is gone. The shipped script did the same for a Flex
+  Mini on 2026-10-28, with the override set to the controller's hostname.
 - **Sharing the internet on Linux and Windows** is not written: `net.ipv4.ip_forward` plus an
   `iptables -t nat … MASQUERADE` rule in the hold loop on Linux, Internet Connection Sharing or a
   NAT rule on Windows. Until then `shareInternet` refuses the start there, and so does the UniFi

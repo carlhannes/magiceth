@@ -65,6 +65,35 @@ the home LAN.** Steps 1–5 run; the device ended up Connected in the controller
   powered by PoE from the previous switch is dead when moved to the dongle — it needs its own
   power (USB-C PD worked).
 
+**2026-10-27, macOS, USW-Flex-2.5G-8-PoE, controller = a self-hosted UniFi OS Server on the
+internet, Override Inform Host set to its address.** Through the relay the plugin had then: the
+switch adopted but kept the laptop's address as its inform URL and never called home from another
+network. With forwarding and the pf NAT rule turned on by hand during a second session, the
+controller logged `inform ip changed (10.254.254.1 -> <controller>)` a second after Adopt, the
+switch was provisioned on the bench and came back Online from the router network after a power
+cycle. That hand test is what the session now does itself.
+
+**2026-10-28, macOS, USW-Flex-Mini, the same controller with Override Inform Host set to its
+hostname, the session sharing the laptop's internet.** Steps 2 to 4 with the shipped script:
+
+- Step 2: forwarding 1 and the NAT rule in the `com.apple/magiceth` anchor during the session;
+  after `S`: forwarding 0, the anchor empty and the session's pf reference released. One
+  reference from the previous day's hand test, whose `pfctl -X` had answered "token invalid",
+  was still listed; harmless, released by hand.
+- Step 3: the controller line (`Controller unifi.carelabs.se is <ip>`) and the server line
+  (`DHCP server on 10.254.254.1/24, internet shared from en0 (DNS …)`) before the device was
+  plugged in; lease 10.254.254.10; pending in the controller within a minute. The controller's
+  log at Adopt, `discovered via L3 inform, skip SSH adoption`, is how it treats a device it only
+  knows through inform.
+- Step 4: `initial mgmt_cfg sent` and `adoption - completed` 35 s after the click; the device's
+  record carried the override hostname as its inform URL from then on, and it kept informing
+  through the laptop about once a minute until `S`. Its discovery announcements stopped, so the
+  row said `quiet for … s`. It does not go silent on the dongle the way it did through the relay.
+- Step 4, after the power cycle, cabled into the router network (PoE and USB-C power both
+  tried): Online again within two minutes from that network's address, inform URL still the
+  hostname. The record showed the device's fallback 192.168.1.20 for a moment before the new
+  lease.
+
 ## 1. Capture the device before the plugin sees it
 
 The one step that produces the fixtures. Dongle in the laptop, Flex Mini powered, port 2 of the
