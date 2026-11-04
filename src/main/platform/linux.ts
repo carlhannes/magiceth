@@ -6,13 +6,22 @@ import { normalizeMac } from '../../shared/mac'
 import { cidrToDotted, isValidIpv4 } from '../../shared/net'
 import { elevationRefused, linuxElevator, runElevatedShell, shQuote } from '../privilege'
 import { channelFromMhz } from '../capabilities/wifi-model'
-import { LOOP_MAX_SECONDS, iwScanLoopScript, parseIwScan } from './iw'
+import {
+  LOOP_MAX_SECONDS,
+  iwScanLoopScript,
+  linuxMonitorScript,
+  parseIwPhy,
+  parseIwScan,
+  parseIwWiphy
+} from './iw'
 import type { IwBss } from './iw'
 import { nmProfileScript, parseNmDevice } from './nm'
 import type { NmDevice } from './nm'
 import type { ElevatedPlan } from '../privilege'
 import type {
   HeldAddress,
+  MonitorSpec,
+  MonitorSupport,
   PingOptions,
   PingSpec,
   PlatformOps,
@@ -556,6 +565,31 @@ async function scanWifi(device: string): Promise<WifiScanOutcome> {
   return scanElevated(iface)
 }
 
+/**
+ * Whether this card can listen, read without privileges: `iw dev <if> info` names the wiphy,
+ * `iw phy phyN info` lists its modes and channels. Monitor mode, iw, tcpdump and a way to elevate
+ * must all be there; if any is not, the key that starts a session is simply not offered.
+ */
+async function monitorSupport(device: string): Promise<MonitorSupport | undefined> {
+  const iface = wifiInterface(device)
+  const iw = toolPath('iw')
+  if (!iface || !iw || !toolPath('tcpdump')) return undefined
+  if (!toolPath('pkexec') && (await linuxElevator()) !== 'sudo') return undefined
+  const info = await run(iw, ['dev', iface, 'info'], { timeoutMs: 5000 })
+  const wiphy = info.code === 0 ? parseIwWiphy(info.stdout) : undefined
+  if (wiphy === undefined) return undefined
+  const phy = await run(iw, ['phy', `phy${wiphy}`, 'info'], { timeoutMs: 5000 })
+  if (phy.code !== 0) return undefined
+  const { monitor, channels } = parseIwPhy(phy.stdout)
+  if (!monitor) return undefined
+  const nm = await nmDevice(iface)
+  return { channels, networkManager: nm?.managed === true }
+}
+
+function buildMonitorPlan(spec: MonitorSpec): ElevatedPlan {
+  return { interpreter: 'sh', script: linuxMonitorScript(spec) }
+}
+
 /** Nothing on Linux gates the scan behind a consent dialog; the privilege path asks by itself. */
 function requestWifiAccess(): void {}
 
@@ -574,5 +608,7 @@ export const linux: PlatformOps = {
   buildAddressHoldPlan,
   scanWifi,
   requestWifiAccess,
-  endWifiSession
+  endWifiSession,
+  monitorSupport,
+  buildMonitorPlan
 }

@@ -35,3 +35,31 @@ export function planHops(channels: PhyChannel[]): number[] {
   for (const c of channels) if (!c.disabled) freqs.add(c.freqMhz)
   return [...freqs].sort((a, b) => a - b)
 }
+
+/**
+ * Where to hold the radio to see one access point properly: its primary channel, its width, and
+ * the centre of the block it spreads over — the three numbers `iw set freq` wants. The centre is
+ * the middle of the aligned block of 20 MHz channels the primary sits in (36–48 is the 80 MHz
+ * block centred on 42, 100–128 the 160 MHz block centred on 114). 2.4 GHz is held at 20 MHz,
+ * where "40 MHz" would also need to say which side of the primary the second half lies.
+ */
+export function pinTarget(
+  channel: number,
+  band: string,
+  widthMhz: number | undefined
+): { freqMhz: number; widthMhz: number; centreMhz: number } | undefined {
+  if (band === '2.4') {
+    const freqMhz = channel === 14 ? 2484 : 2407 + 5 * channel
+    return channel >= 1 && channel <= 14 ? { freqMhz, widthMhz: 20, centreMhz: freqMhz } : undefined
+  }
+  if (band !== '5' || channel < 36 || channel > 177) return undefined
+  const freqMhz = 5000 + 5 * channel
+  const width = widthMhz === 40 || widthMhz === 80 || widthMhz === 160 ? widthMhz : 20
+  if (width === 20) return { freqMhz, widthMhz: 20, centreMhz: freqMhz }
+  // The aligned blocks run from channel 36, from 100 and from 149; each starts a new alignment.
+  const base = channel >= 149 ? 149 : channel >= 100 ? 100 : 36
+  const channelsIn = width / 20
+  const first = base + Math.floor((channel - base) / 4 / channelsIn) * channelsIn * 4
+  const centreChannel = first + (channelsIn - 1) * 2
+  return { freqMhz, widthMhz: width, centreMhz: 5000 + 5 * centreChannel }
+}

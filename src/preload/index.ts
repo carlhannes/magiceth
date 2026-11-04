@@ -53,6 +53,11 @@ const api: MagicethApi = {
   startWifiScan: (device: string, mode: 'once' | 'record'): Promise<WifiScanResult> =>
     ipcRenderer.invoke('wifi:start', device, mode),
   stopWifiScan: (): Promise<WifiScanResult | null> => ipcRenderer.invoke('wifi:stop'),
+  startMonitor: (device: string): Promise<WifiScanResult> =>
+    ipcRenderer.invoke('wifi:monitor:start', device),
+  stopMonitor: (): Promise<WifiScanResult | null> => ipcRenderer.invoke('wifi:monitor:stop'),
+  pinMonitor: (bssid: string | null): Promise<WifiScanResult | null> =>
+    ipcRenderer.invoke('wifi:monitor:pin', bssid),
   enableWifiAccess: (): Promise<WifiAccessResult> => ipcRenderer.invoke('wifi:enableAccess'),
   onWifiUpdate: (cb: (result: WifiScanResult) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: WifiScanResult): void => cb(data)

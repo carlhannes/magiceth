@@ -13,7 +13,7 @@ import {
 } from '../src/main/capabilities/monitor/model'
 import type { MonitorState } from '../src/main/capabilities/monitor/model'
 import { createPcapReader, feedPcap } from '../src/main/capabilities/monitor/pcap'
-import { FALLBACK_CHANNELS, planHops } from '../src/main/capabilities/monitor/plan'
+import { FALLBACK_CHANNELS, pinTarget, planHops } from '../src/main/capabilities/monitor/plan'
 import { AP_24_BUSY, AP_5G_4X4, AP_6E_2X2 } from './fixtures/beacons'
 import {
   beaconBody,
@@ -184,7 +184,7 @@ describe('air and association churn', () => {
 describe('the hop journal', () => {
   it('reports a new sweep only when the pass number rises', () => {
     const state = createMonitorState()
-    expect(foldHop(state, 'ok 1 2412')).toBe(true) // the first sweep begins
+    expect(foldHop(state, 'ok 1 2412')).toBe(false) // the first sweep begins; nothing to close
     expect(foldHop(state, 'ok 1 2417')).toBe(false)
     expect(foldHop(state, 'fail 1 5500')).toBe(false)
     expect(foldHop(state, 'ok 2 2412')).toBe(true)
@@ -223,5 +223,36 @@ describe('planHops', () => {
   it('has a fallback that every entry of is a real channel', () => {
     expect(planHops(FALLBACK_CHANNELS)).toHaveLength(FALLBACK_CHANNELS.length)
     expect(planHops(FALLBACK_CHANNELS)[0]).toBe(2412)
+  })
+})
+
+describe('pinTarget', () => {
+  it.each([
+    // channel, band, width → freq, width, centre
+    [36, '5', 80, 5180, 80, 5210], // 36–48 centred on 42
+    [48, '5', 80, 5240, 80, 5210],
+    [40, '5', 40, 5200, 40, 5190], // 36+40
+    [44, '5', 40, 5220, 40, 5230], // 44+48
+    [128, '5', 160, 5640, 160, 5570], // 100–128 centred on 114
+    [100, '5', 160, 5500, 160, 5570],
+    [149, '5', 80, 5745, 80, 5775], // 149–161 centred on 155
+    [157, '5', 80, 5785, 80, 5775],
+    [52, '5', 80, 5260, 80, 5290], // 52–64 centred on 58
+    [36, '5', 20, 5180, 20, 5180],
+    [36, '5', undefined, 5180, 20, 5180],
+    [6, '2.4', 40, 2437, 20, 2437],
+    [14, '2.4', 20, 2484, 20, 2484]
+  ] as const)('holds channel %i (%s, %s MHz)', (channel, band, width, freq, w, centre) => {
+    expect(pinTarget(channel, band, width)).toEqual({
+      freqMhz: freq,
+      widthMhz: w,
+      centreMhz: centre
+    })
+  })
+
+  it('has nothing for a band or channel it cannot tune to', () => {
+    expect(pinTarget(1, '6', 80)).toBeUndefined()
+    expect(pinTarget(0, '2.4', 20)).toBeUndefined()
+    expect(pinTarget(20, '5', 20)).toBeUndefined()
   })
 })

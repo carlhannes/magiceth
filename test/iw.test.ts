@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { decodeIwSsid, iwScanLoopScript, parseIwScan } from '../src/main/platform/iw'
+import {
+  decodeIwSsid,
+  iwScanLoopScript,
+  parseIwPhy,
+  parseIwScan,
+  parseIwWiphy
+} from '../src/main/platform/iw'
 
 // Documented format, NOT live-verified: assembled from iw's own scan.c print statements and public
 // real dumps, with the values modelled on the access points in the real beacon captures so the two
@@ -299,5 +305,84 @@ describe('iwScanLoopScript', () => {
     expect(iwScanLoopScript("wl'an", '/tmp/o', '/tmp/s', '/tmp/k')).toContain(
       "iw dev 'wl'\\''an' scan"
     )
+  })
+})
+
+// Documented format, NOT live-verified: the layout of `iw phy phyN info` as iw's info.c prints it.
+// Replace with the AX201's own output when LINUX-TEST.md section 7 has produced one.
+const IW_PHY = `Wiphy phy0
+	wiphy index: 0
+	max # scan SSIDs: 20
+	Supported interface modes:
+		 * IBSS
+		 * managed
+		 * AP
+		 * AP/VLAN
+		 * monitor
+		 * P2P-client
+		 * P2P-GO
+	Band 1:
+		Capabilities: 0x19ef
+		Frequencies:
+			* 2412 MHz [1] (22.0 dBm)
+			* 2467 MHz [12] (22.0 dBm) (no IR)
+			* 2472 MHz [13] (disabled)
+			* 2484 MHz [14] (disabled)
+		Bitrates (non-HT):
+			* 1.0 Mbps
+	Band 2:
+		Frequencies:
+			* 5180 MHz [36] (22.0 dBm)
+			* 5260 MHz [52] (22.0 dBm) (no IR, radar detection)
+			* 5825 MHz [165] (disabled)
+	valid interface combinations:
+		 * #{ managed } <= 1, #{ AP, P2P-client, P2P-GO } <= 1, #{ P2P-device } <= 1,
+		   total <= 3, #channels <= 2
+`
+
+describe('parseIwPhy', () => {
+  it('finds monitor among the interface modes and lists every channel with its flags', () => {
+    const phy = parseIwPhy(IW_PHY)
+    expect(phy.monitor).toBe(true)
+    expect(phy.channels).toEqual([
+      { freqMhz: 2412, disabled: false },
+      { freqMhz: 2467, disabled: false }, // no IR only forbids transmitting
+      { freqMhz: 2472, disabled: true },
+      { freqMhz: 2484, disabled: true },
+      { freqMhz: 5180, disabled: false },
+      { freqMhz: 5260, disabled: false }, // radar detection only matters to an access point
+      { freqMhz: 5825, disabled: true }
+    ])
+  })
+
+  it('does not take a monitor mention outside the mode list for support', () => {
+    const without = IW_PHY.replace('\t\t * monitor\n', '').replace(
+      'valid interface combinations:',
+      'valid interface combinations: monitor'
+    )
+    expect(parseIwPhy(without).monitor).toBe(false)
+  })
+
+  it('reads the decimal frequencies newer iw prints', () => {
+    const phy = parseIwPhy('\t\t\t* 5955.0 MHz [1] (12.0 dBm)\n\t\t\t* 2412.0 MHz [1] (20.0 dBm)')
+    expect(phy.channels.map((c) => c.freqMhz)).toEqual([5955, 2412])
+  })
+
+  it('returns nothing for text that is not iw output', () => {
+    expect(parseIwPhy('')).toEqual({ monitor: false, channels: [] })
+    expect(parseIwPhy('command failed: No such device (-19)')).toEqual({
+      monitor: false,
+      channels: []
+    })
+  })
+})
+
+describe('parseIwWiphy', () => {
+  it('reads the wiphy index from iw dev info', () => {
+    expect(parseIwWiphy('Interface wlp0s20f3\n\tifindex 3\n\ttype managed\n\twiphy 1\n')).toBe(1)
+  })
+
+  it('is undefined when there is none', () => {
+    expect(parseIwWiphy('Interface wlan0\n\ttype managed\n')).toBeUndefined()
   })
 })

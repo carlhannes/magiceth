@@ -139,7 +139,7 @@ export function foldFrame(state: MonitorState, frame: DecodedFrame): void {
 /**
  * Add one line of the session's hop journal: `ok <pass> <freq>` for a dwell that began,
  * `fail <pass> <freq>` for a channel the card would not tune to. Returns true when the line
- * starts a new sweep, which is the moment the previous one can be closed. Anything that is not a
+ * starts a sweep after the first, which is the moment the previous one can be closed. Anything that is not a
  * journal line is ignored.
  */
 export function foldHop(state: MonitorState, line: string): boolean {
@@ -149,8 +149,9 @@ export function foldHop(state: MonitorState, line: string): boolean {
   const c = channelCounts(state, Number(m[3]))
   if (m[1] === 'ok') c.visits++
   else c.failed++
-  const started = pass > state.pass
-  if (started) state.pass = pass
+  // The first sweep beginning closes nothing: what was heard so far belongs to it.
+  const started = state.pass > 0 && pass > state.pass
+  if (pass > state.pass) state.pass = pass
   return started
 }
 

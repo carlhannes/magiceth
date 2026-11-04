@@ -8,7 +8,7 @@
 // message on every degraded path rather than a thrown error.
 
 import { getPlatform } from '../platform'
-import type { PlatformOps, WifiScanOutcome, WifiSighting } from '../platform'
+import type { MonitorSupport, PlatformOps, WifiScanOutcome, WifiSighting } from '../platform'
 import {
   channelBuckets,
   channelSummary,
@@ -20,6 +20,10 @@ import {
 import type { TrackStore } from './wifi-model'
 import { appendSnapshot, beginRecording, finishRecording } from './recordings'
 import type { RecordingPaths } from './recordings'
+import { apAir, channelAir } from './monitor/model'
+import { pinTarget } from './monitor/plan'
+import { replayFile, startMonitor as startMonitorSession } from './monitor/session'
+import type { MonitorRun } from './monitor/session'
 import type { WifiAccessResult, WifiBss, WifiScanResult } from '../../shared/types'
 
 /**
@@ -64,6 +68,18 @@ interface ActiveScan {
   snapshots: number
   lastSnapshotAt: number
   timer?: NodeJS.Timeout
+  /**
+   * Where sightings come from: the periodic scan, or a listening session. While listening the
+   * station is down and scanning would fail, so the scan loop stands aside.
+   */
+  source: 'scan' | 'monitor'
+  /** Whether this computer can listen; decided when the run starts. */
+  canMonitor: boolean
+  monitor?: MonitorRun
+  /** Why a listening session ended by itself, kept for the status line. */
+  monitorNote?: string
+  /** The sweep before the latest: an access point shows for two sweeps so a weak one does not flicker. */
+  previousWindow: WifiBss[]
   onUpdate: (result: WifiScanResult) => void
 }
 
@@ -81,22 +97,37 @@ function elapsed(s: ActiveScan): number {
   return Math.round((Date.now() - s.startedAt) / 1000)
 }
 
+/** Each access point with what listening counted for it: deauthentications, and its share of the air. */
+function withAir(list: WifiBss[], run: MonitorRun): WifiBss[] {
+  const air = apAir(run.state)
+  return list.map((bss) => {
+    const a = air.get(bss.bssid)
+    return a
+      ? { ...bss, deauths: a.deauths, airFramesPerSec: a.framesPerSec, airRetryPct: a.retryPct }
+      : bss
+  })
+}
+
 function snapshot(s: ActiveScan, running: boolean): WifiScanResult {
   // A plain one-off scan answers "what is here now", so it shows only what it just heard. A
   // recording answers "what did I pass", so it shows everything since it started.
-  const shown = s.hasRecorded ? [...s.seen.values()] : s.latest
+  const heard = s.hasRecorded ? [...s.seen.values()] : s.latest
+  const shown = s.monitor ? withAir(heard, s.monitor) : heard
   const tracks = toTracks(s.store)
+  const status = s.monitor?.status()
   return {
     status: 'ok',
     running,
     device: s.device,
     networks: groupBySsid(shown),
     tracks,
-    channels: channelSummary(tracks),
+    channels: channelSummary(tracks, s.monitor ? channelAir(s.monitor.state) : []),
     buckets: channelBuckets(tracks),
     scans: s.scans,
     elapsedSec: elapsed(s),
-    savedTo: s.paths?.aggregate
+    savedTo: s.paths?.aggregate,
+    canMonitor: s.canMonitor,
+    monitor: status && { ...status, message: s.monitorNote ?? status.message }
   }
 }
 
@@ -135,7 +166,13 @@ async function scanOnce(p: PlatformOps, device: string): Promise<WifiScanOutcome
 
 function ingest(s: ActiveScan, sightings: WifiSighting[]): void {
   const seen = sightings.map(toBss)
-  s.latest = seen
+  if (s.source === 'monitor') {
+    const current = new Set(seen.map((b) => b.bssid))
+    s.latest = [...seen, ...s.previousWindow.filter((b) => !current.has(b.bssid))]
+    s.previousWindow = seen
+  } else {
+    s.latest = seen
+  }
   s.scans++
   const at = elapsed(s)
   for (const bss of seen) {
@@ -154,7 +191,7 @@ function ingest(s: ActiveScan, sightings: WifiSighting[]): void {
 
 /** Schedule the next scan of a recording, unless this run has been superseded or capped. */
 function loop(s: ActiveScan): void {
-  if (active !== s || !s.recording) return
+  if (active !== s || !s.recording || s.source !== 'scan') return
   if (elapsed(s) >= MAX_SECONDS) {
     stopWifiScan()
     return
@@ -162,7 +199,8 @@ function loop(s: ActiveScan): void {
   s.timer = setTimeout(() => {
     if (active !== s) return
     void scanOnce(s.platform, s.device).then((out) => {
-      if (active !== s) return
+      // A listening session that began while this scan was in the air owns the radio now.
+      if (active !== s || s.source !== 'scan') return
       if (out.status === 'ok') {
         ingest(s, out.sightings)
         // Report the state as it is now, not as it was when this scan was launched. A stop that
@@ -185,6 +223,9 @@ export async function startWifiScan(
   onUpdate: (result: WifiScanResult) => void
 ): Promise<WifiScanResult> {
   const previous = active
+  if (previous?.source === 'monitor' && previous.monitor?.status().running) {
+    return startWhileListening(previous, mode, onUpdate)
+  }
   if (previous?.recording) stopWifiScan()
   const mine = ++generation
 
@@ -193,7 +234,7 @@ export async function startWifiScan(
     return fail(device, 'unsupported', `Wi-Fi scanning is not available on ${process.platform}.`)
   }
 
-  const out = await scanOnce(p, device)
+  const [out, canMonitor] = await Promise.all([scanOnce(p, device), listenSupport(p, device)])
   // Someone pressed again while this scan was in the air; that call owns the state now.
   if (mine !== generation)
     return active
@@ -223,11 +264,152 @@ export async function startWifiScan(
     paths: mode === 'record' ? beginRecording(new Date()) : undefined,
     snapshots: 0,
     lastSnapshotAt: 0,
+    source: 'scan',
+    canMonitor: canMonitor !== undefined,
+    previousWindow: [],
     onUpdate
   }
   active = s
   ingest(s, out.sightings)
   if (s.recording) loop(s)
+  return snapshot(s, s.recording)
+}
+
+/** What this computer can listen on, if anything; a replayed capture counts anywhere. */
+async function listenSupport(p: PlatformOps, device: string): Promise<MonitorSupport | undefined> {
+  if (replayFile()) return { channels: [], networkManager: false }
+  try {
+    return await p.monitorSupport?.(device)
+  } catch {
+    return undefined
+  }
+}
+
+/** R or L pressed while listening: R has nothing to scan with, L starts a recording on what is heard. */
+function startWhileListening(
+  s: ActiveScan,
+  mode: 'once' | 'record',
+  onUpdate: (result: WifiScanResult) => void
+): WifiScanResult {
+  s.onUpdate = onUpdate
+  if (mode === 'record' && !s.recording) {
+    // A recording starts from nothing, as it does after a scan.
+    s.recording = true
+    s.hasRecorded = true
+    s.startedAt = Date.now()
+    s.scans = 0
+    s.seen = new Map()
+    s.store = new Map()
+    s.snapshots = 0
+    s.lastSnapshotAt = 0
+    s.paths = beginRecording(new Date())
+  }
+  return snapshot(s, s.recording)
+}
+
+/**
+ * Start listening: the station is put aside and the card hears every channel in turn. The access
+ * points it hears arrive as sightings exactly as scans produce them, so every screen and the
+ * recording work unchanged; what is new rides along in the result (`monitor`, air per channel).
+ */
+export async function startMonitor(
+  device: string,
+  onUpdate: (result: WifiScanResult) => void
+): Promise<WifiScanResult> {
+  const p = platform()
+  if (!p) return fail(device, 'unsupported', `Listening is not available on ${process.platform}.`)
+  const support = await listenSupport(p, device)
+  if (!support) {
+    return fail(
+      device,
+      'unsupported',
+      'This Wi-Fi card cannot listen to the air, or iw or tcpdump is missing.'
+    )
+  }
+  // A scan that was in the air when this was pressed must not install itself over the session.
+  ++generation
+  let s = active
+  if (s?.monitor?.status().running) return snapshot(s, s.recording)
+  if (!s || s.device !== device) {
+    s = {
+      platform: p,
+      device,
+      startedAt: Date.now(),
+      scans: 0,
+      latest: [],
+      seen: new Map(),
+      store: new Map(),
+      recording: false,
+      hasRecorded: false,
+      snapshots: 0,
+      lastSnapshotAt: 0,
+      source: 'scan',
+      canMonitor: true,
+      previousWindow: [],
+      onUpdate
+    }
+    active = s
+  }
+  const run = s
+  run.onUpdate = onUpdate
+  // The elevated scan loop would fight the monitor for the card.
+  endWifiSession()
+  if (run.timer) clearTimeout(run.timer)
+  run.timer = undefined
+  run.source = 'monitor'
+  run.canMonitor = true
+  run.monitorNote = undefined
+  run.previousWindow = []
+  run.monitor = startMonitorSession(p, device, support, {
+    onWindow: (sightings) => {
+      if (active !== run) return
+      ingest(run, sightings)
+      run.onUpdate(snapshot(run, run.recording))
+    },
+    onTick: () => {
+      if (active === run) run.onUpdate(snapshot(run, run.recording))
+    },
+    onEnd: (outcome) => {
+      if (active !== run) return
+      run.monitorNote = outcome.message
+      backToScanning(run)
+      run.onUpdate(snapshot(run, run.recording))
+    }
+  })
+  return snapshot(run, run.recording)
+}
+
+/** The station is back (or on its way): scanning resumes for a recording that was running. */
+function backToScanning(s: ActiveScan): void {
+  s.source = 'scan'
+  if (s.recording) loop(s)
+}
+
+/** Stop listening and give the card back. Safe to call when nothing is listening. */
+export function stopMonitor(): WifiScanResult | null {
+  const s = active
+  if (!s?.monitor) return null
+  s.monitor.stop()
+  backToScanning(s)
+  return snapshot(s, s.recording)
+}
+
+/**
+ * Hold the radio on one access point's channel and width, or let go (null). The renderer names the
+ * access point; main knows its track and so its channel. Undefined when the access point is not
+ * known or sits where the card cannot be held.
+ */
+export function pinMonitor(bssid: string | null): WifiScanResult | null {
+  const s = active
+  if (!s?.monitor) return null
+  if (bssid === null) {
+    s.monitor.pin(null)
+  } else {
+    const track = toTracks(s.store).find((t) => t.bssid === bssid)
+    const target = track && pinTarget(track.channel, track.band, track.widthMhz)
+    if (!target) return snapshot(s, s.recording)
+    s.monitor.pin(target)
+  }
   return snapshot(s, s.recording)
 }
 

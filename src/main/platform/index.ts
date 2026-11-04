@@ -6,6 +6,7 @@ import { linux } from './linux'
 import { win32 } from './win32'
 import type { ElevatedPlan } from '../privilege'
 import type { BeaconFacts } from '../capabilities/ie80211'
+import type { PhyChannel } from '../capabilities/monitor/plan'
 import type {
   AdapterKind,
   NetInfo,
@@ -78,6 +79,32 @@ export type WifiScanOutcome =
       message: string
     }
 
+/** What a card can be asked to listen on, and what else has to be put aside while it does. */
+export interface MonitorSupport {
+  /** Every channel the card reports, flagged where the regulatory domain forbids it. */
+  channels: PhyChannel[]
+  /** True when NetworkManager runs the interface and must be told to let go of it, and to take it back. */
+  networkManager: boolean
+}
+
+/** Everything the listening script needs, decided by the session so the script stays a pure function of it. */
+export interface MonitorSpec {
+  device: string
+  support: MonitorSupport
+  /** Frequencies to visit, in order, from planHops(). */
+  freqs: number[]
+  dwellMs: number
+  /** Files in the user's scratch directory; the script, running as root, creates all but the last two. */
+  pcapFile: string
+  hopsFile: string
+  logFile: string
+  /** The session creates this to stop the script, and creates or removes the pin file to hold a channel. */
+  stopFile: string
+  pinFile: string
+  maxSeconds: number
+  maxBytes: number
+}
+
 export interface PlatformOps {
   readonly id: NodeJS.Platform
   /** List connected USB ethernet adapters with device, port name, MAC and (if possible) VID:PID. */
@@ -136,6 +163,14 @@ export interface PlatformOps {
    * re-reading. Absent on an OS where the user has to answer a prompt themselves.
    */
   enableWifiAccess?(): Promise<WifiAccessResult>
+  /**
+   * Whether this computer can listen to the air, and on what. Undefined where it cannot — the OS
+   * has no way to (Windows), the card has no monitor mode, or a tool is missing — and the key that
+   * starts a session is then not offered. Read-only and unprivileged.
+   */
+  monitorSupport?(device: string): Promise<MonitorSupport | undefined>
+  /** The elevated script for one listening session. Only where monitorSupport can say yes. */
+  buildMonitorPlan?(spec: MonitorSpec): ElevatedPlan
 }
 
 export function getPlatform(): PlatformOps {

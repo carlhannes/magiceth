@@ -13,7 +13,9 @@
 
 import { phyLabel, securityLabel, vhtWidth, withPrivacyBit } from '../capabilities/ie80211'
 import type { BeaconFacts } from '../capabilities/ie80211'
+import type { PhyChannel } from '../capabilities/monitor/plan'
 import { shQuote } from '../privilege'
+import type { MonitorSpec } from '.'
 
 export interface IwBss {
   bssid: string
@@ -231,4 +233,136 @@ export function iwScanLoopScript(
     `iw dev ${shQuote(device)} scan > ${tmp} 2>&1; mv -f ${tmp} ${out}; ` +
     `sleep 5; n=$((n+5)); done; rm -f ${shQuote(stopFile)}; true`
   )
+}
+
+// --- Listening: the card's monitor mode ---------------------------------------------------------
+
+/** The second interface the session adds next to the station; the station is left in place, down. */
+export const MONITOR_INTERFACE = 'magicmon0'
+
+/** A listening session ends by itself after this long, whatever else happens. */
+export const MONITOR_MAX_SECONDS = 900
+
+/** ...or when the capture file reaches this size, which a dense office can do in minutes. */
+export const MONITOR_MAX_BYTES = 256 * 1024 * 1024
+
+/** `iw dev <if> info` names the wiphy the interface belongs to: `wiphy 0`. */
+export function parseIwWiphy(text: string): number | undefined {
+  const m = /^\s*wiphy (\d+)\s*$/m.exec(text)
+  return m ? Number(m[1]) : undefined
+}
+
+/**
+ * `iw phy phyN info`: whether the card lists monitor among its interface modes, and every
+ * frequency it reports. A frequency line reads `* 5180 MHz [36] (22.0 dBm)`, newer iw adds a
+ * decimal (`5180.0 MHz`), and the flags follow in parentheses: `(disabled)`, `(no IR)`,
+ * `(radar detection)`. Only disabled keeps a channel out — receiving where transmitting is
+ * forbidden is allowed, and listening is all this does.
+ */
+export function parseIwPhy(text: string): { monitor: boolean; channels: PhyChannel[] } {
+  let monitor = false
+  let inModes = false
+  const channels: PhyChannel[] = []
+  for (const line of text.split('\n')) {
+    if (/^\s*Supported interface modes:/.test(line)) {
+      inModes = true
+      continue
+    }
+    if (inModes) {
+      const mode = /^\s*\* (\S+)\s*$/.exec(line)
+      if (mode) {
+        if (mode[1] === 'monitor') monitor = true
+        continue
+      }
+      inModes = false
+    }
+    const freq = /^\s*\* (\d{4})(?:\.\d+)? MHz \[\d+\](.*)$/.exec(line)
+    if (freq) channels.push({ freqMhz: Number(freq[1]), disabled: /\(disabled\)/.test(freq[2]) })
+  }
+  return { monitor, channels }
+}
+
+/**
+ * The elevated listening session, as a POSIX shell script (the helper runs it with /bin/sh, which
+ * is dash on Ubuntu). In order: remember how to get the network back, put the card aside, add a
+ * monitor interface, start tcpdump, and hop between channels until told to stop — a stop file, the
+ * time and size caps, or tcpdump dying. Every way out, including SIGTERM, runs `restore`.
+ *
+ * Why it is shaped like this:
+ *  - tcpdump's output goes through this shell's own redirection. Ubuntu's tcpdump drops to the
+ *    `tcpdump` user and is confined by AppArmor, so letting it open the file fails; root's shell
+ *    opens it, and creates it (`umask 022`) where the app may read and delete it.
+ *  - `kill -9`, as the port survey's script: SIGTERM does not stop tcpdump while its read is blocked.
+ *  - The hop journal says what the radio really did. The app cannot see the channel from the
+ *    outside, and without it a channel the card refused looks the same as a silent one.
+ *  - A pin file holds the radio on one channel (and width) in place of the sweep.
+ *  - Errors from every command land in the log file, which the app shows when a session ends early.
+ *  - Exit codes are 0 (asked to stop, or capped), 1 (could not start) and 128+signal; never 126
+ *    or 127, which the app reads as "the admin prompt was refused".
+ *  - SIGKILL on the shell itself cannot be caught. The interface then stays down and the monitor
+ *    interface stays; the next session removes a leftover first, and a reboot clears the rest.
+ */
+export function linuxMonitorScript(spec: MonitorSpec): string {
+  if (!spec.freqs.every((f) => Number.isInteger(f) && f > 0)) {
+    throw new Error('Monitor frequencies must be positive integers.')
+  }
+  if (spec.freqs.length === 0) throw new Error('A listening session needs at least one channel.')
+  const q = shQuote
+  const nm = spec.support.networkManager
+  const [stop, pin, pcap, hops] = [spec.stopFile, spec.pinFile, spec.pcapFile, spec.hopsFile].map(q)
+  const lines = [
+    'umask 022',
+    `exec 2>> ${q(spec.logFile)}`,
+    `D=${q(spec.device)}`,
+    `M=${MONITOR_INTERFACE}`,
+    'P=',
+    nm ? 'C=$(nmcli -g GENERAL.CONNECTION device show "$D" 2>/dev/null)' : 'C=',
+    'restore() {',
+    '  trap "" INT TERM HUP',
+    '  [ -n "$P" ] && kill -9 "$P" 2>/dev/null',
+    '  iw dev "$M" del 2>/dev/null',
+    '  ip link set "$D" up 2>/dev/null',
+    ...(nm
+      ? [
+          '  nmcli device set "$D" managed yes 2>/dev/null',
+          '  [ -n "$C" ] && [ "$C" != -- ] && nmcli -w 20 connection up id "$C" >/dev/null 2>&1'
+        ]
+      : []),
+    `  rm -f ${stop} ${pin}`,
+    '  true',
+    '}',
+    'trap restore EXIT',
+    "trap 'exit 130' INT",
+    "trap 'exit 143' TERM",
+    "trap 'exit 129' HUP",
+    'iw dev "$M" del 2>/dev/null',
+    ...(nm ? ['nmcli device set "$D" managed no || exit 1'] : []),
+    'ip link set "$D" down || exit 1',
+    'iw dev "$D" interface add "$M" type monitor || exit 1',
+    'ip link set "$M" up || exit 1',
+    `tcpdump -i "$M" -nn -U -s 1024 -w - ${q('not type ctl')} >> ${pcap} &`,
+    'P=$!',
+    'T=$(date +%s)',
+    'visit() {',
+    `  [ -e ${stop} ] && exit 0`,
+    `  [ $(( $(date +%s) - T )) -ge ${spec.maxSeconds} ] && exit 0`,
+    `  [ "$(stat -c %s ${pcap})" -ge ${spec.maxBytes} ] && exit 0`,
+    '  kill -0 "$P" 2>/dev/null || exit 1',
+    `  if iw dev "$M" set freq "$@" 2>/dev/null; then echo "ok $pass $1" >> ${hops}`,
+    `  elif [ $# -gt 1 ] && iw dev "$M" set freq "$1" 2>/dev/null; then echo "ok $pass $1" >> ${hops}`,
+    `  else echo "fail $pass $1" >> ${hops}; fi`,
+    `  sleep ${(spec.dwellMs / 1000).toFixed(3)}`,
+    '}',
+    'pass=0',
+    'while :; do',
+    '  pass=$((pass + 1))',
+    `  if [ -f ${pin} ] && read -r pf pw pc < ${pin} && [ -n "$pc" ]; then`,
+    '    n=0',
+    '    while [ $n -lt 5 ]; do visit "$pf" "$pw" "$pc"; n=$((n + 1)); done',
+    '  else',
+    `    for f in ${spec.freqs.join(' ')}; do visit "$f"; done`,
+    '  fi',
+    'done'
+  ]
+  return lines.join('\n')
 }

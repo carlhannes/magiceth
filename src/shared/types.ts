@@ -466,6 +466,15 @@ export interface MagicethApi {
   /** Resolves with everything the scan collected, or null when none was running. */
   stopWifiScan(): Promise<WifiScanResult | null>
   onWifiUpdate(cb: (result: WifiScanResult) => void): () => void
+  /**
+   * Linux, where the card can listen: put Wi-Fi aside and hear every channel (admin; Wi-Fi is off
+   * until it is stopped). Updates arrive through onWifiUpdate with `monitor` set.
+   */
+  startMonitor(device: string): Promise<WifiScanResult>
+  /** Give the card back. Resolves with what was heard, or null when nothing was listening. */
+  stopMonitor(): Promise<WifiScanResult | null>
+  /** Hold the radio on this access point's channel and width, or null to sweep again. */
+  pinMonitor(bssid: string | null): Promise<WifiScanResult | null>
   /** Windows only: remove the policies that block Location and turn it on, after a UAC prompt. */
   enableWifiAccess(): Promise<WifiAccessResult>
   listRecordings(): Promise<RecordingSummary[]>

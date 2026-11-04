@@ -9,7 +9,10 @@ import { startSpeedTest, stopSpeedTest } from './capabilities/speedtest'
 import {
   enableWifiAccess,
   endWifiSession,
+  pinMonitor,
+  startMonitor,
   startWifiScan,
+  stopMonitor,
   stopWifiScan
 } from './capabilities/wifiscan'
 import { listRecordings, readRecording, revealRecording } from './capabilities/recordings'
@@ -173,6 +176,17 @@ app.whenReady().then(() => {
     })
   )
   ipcMain.handle('wifi:stop', () => stopWifiScan())
+  // Listening disconnects Wi-Fi and asks for admin; the renderer confirms before it asks. Updates
+  // arrive on the same channel as the scan's.
+  ipcMain.handle('wifi:monitor:start', (_event, device: string) =>
+    startMonitor(device, (result) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('wifi:update', result)
+      }
+    })
+  )
+  ipcMain.handle('wifi:monitor:stop', () => stopMonitor())
+  ipcMain.handle('wifi:monitor:pin', (_event, bssid: string | null) => pinMonitor(bssid))
   // Privileged and opt-in (UAC on Windows): the renderer asks for a confirming second press first.
   ipcMain.handle('wifi:enableAccess', () => enableWifiAccess())
 
@@ -234,6 +248,8 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   stopSurvey()
   stopSpeedTest()
+  // Listening first: its stop file is what makes the root script put the Wi-Fi back.
+  stopMonitor()
   stopWifiScan()
   endWifiSession()
   // The parts that matter — the address-hold stop file and the DHCP socket — go before its first
