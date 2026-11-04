@@ -17,8 +17,21 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   keyboard would send, so nothing else changed: one layout, the same keys, and plugins get it for
   free. On Linux the app now runs as a native Wayland client with the text-input protocol on, so
   GNOME's on-screen keyboard can appear for a form field.
+- **The start screen sets the computer up.** Under the three modes it lists the tools the app leans
+  on that are missing (`iw`, `curl`, `tcpdump` on a fresh Ubuntu) and `K` installs them with the
+  system's package manager; on Linux, `A` installs, after a confirming press and one prompt, a
+  sudoers rule for a fixed helper so that no privileged action asks for a password again (see
+  SECURITY.md — it is root for that account). Nothing is shown where nothing is missing.
+- **Linux builds: a `.deb`** (x64, arm64) next to the AppImage, carrying electron-builder's AppArmor
+  profile for Ubuntu 24.04's user-namespace restriction and `tcpdump`, `iw`, `curl` as Recommends.
 
 ### Fixed
+
+- **The Linux port survey could not write its file.** Root was appending to a file the app had
+  created in `/tmp`, which Linux's `fs.protected_regular` refuses; the elevated scripts now write
+  into a per-user scratch directory and root creates the file itself.
+- **A refused admin prompt is recognised the same way everywhere.** pkexec's exit 126 was not, so
+  a dismissed dialog left a Linux survey "running" at zero frames.
 
 - **Legends that named keys that did nothing.** The mode chooser claimed `Tab` switched modes (it
   now does); the empty Ethernet screen offered `Esc` while swallowing it; the profile panel
@@ -31,6 +44,8 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 - **The window fits the screen.** Its height is capped at the display's work area, so on an 11.6"
   laptop the legend is not pushed below the bottom edge.
+- **Whether a tool is installed is a PATH lookup**, not a `--version` run; it also looks in the sbin
+  directories Debian keeps off a user's PATH, where `iw` lives.
 
 ## [0.7.0] – 2026-10-28
 

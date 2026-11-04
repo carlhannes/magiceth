@@ -22,6 +22,19 @@ Only the latest released version receives security updates (the project is in an
   NetworkManager, and the opt-in Windows Location fix (`O`) are elevated, and then **per action**
   via the OS's own prompt (macOS password / Linux `pkexec` / Windows UAC). The entire app never
   needs to run as admin.
+- **Linux can be told to stop asking — and that means root.** The start screen offers, on Linux
+  only and after a confirming press (`A`), to install one rule in `/etc/sudoers.d` that lets your
+  user run one root-owned helper, `/usr/local/libexec/magiceth-elevate`, without a password; from
+  then on the elevated scripts go through `sudo -n` and that helper instead of `pkexec`. Be clear
+  about what that is: the helper runs whatever script it is handed, so the rule is passwordless
+  root for that account through that path — as powerful as `NOPASSWD: ALL` — for magiceth and for
+  anything else running as you, a plugin in `Documents/magiceth/plugins` included. It is meant for
+  a dedicated field laptop and nothing else; `sudo` logs every call to the journal; and one command
+  undoes it: `sudo rm /etc/sudoers.d/magiceth-<user> /usr/local/libexec/magiceth-elevate`. Without
+  the rule nothing changes: every action asks, as before.
+- **The start screen can install tools.** Where `tcpdump`, `iw` or `curl` are missing it says so and
+  offers (`K`) to run the system's package manager for them — one elevated command, only on that
+  keypress, only for those packages.
 - **A Configure-mode session holds an address on the port.** One prompt adds an extra address to
   the selected port and removes it when the session ends, through the same elevated script, so the
   port's own configuration is never touched and the removal happens even if the app has gone. The
@@ -42,7 +55,8 @@ Only the latest released version receives security updates (the project is in an
   dies with a session open.
 - **Plugins run with the app's privileges.** A plugin in `Documents/magiceth/plugins` is plain
   Node code loaded into the main process when — and only when — you open it from the Configure
-  chooser; until then the app reads its `package.json` and nothing else. Treat the folder like a
+  chooser; until then the app reads its `package.json` and nothing else. On a Linux machine with
+  the admin rule above, those privileges include passwordless root. Treat the folder like a
   place you put programs: anything that can write there (including a cloud sync of your Documents)
   can put code there, and the chooser shows every plugin's origin — `built in`, or the folder it
   was found in — and its author before you open it.

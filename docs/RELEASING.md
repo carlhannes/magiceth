@@ -1,12 +1,13 @@
 # Releasing
 
-How a version of magiceth goes from `main` to the four files on the
+How a version of magiceth goes from `main` to the files on the
 [Releases](https://github.com/carlhannes/magiceth/releases) page. There is no release automation:
 CI runs the checks, a person (or an agent on their Mac) builds, and a person publishes. The whole
 thing takes about half an hour, most of it electron-builder.
 
-The artifacts, the commands that build them and why all four build on a Mac are in the README's
-"Building & packaging" section; this page is the order of operations around that.
+The artifacts, the commands that build them and why the macOS and Windows ones build on a Mac are
+in the README's "Building & packaging" section; this page is the order of operations around that.
+The Linux files build on a Linux host — the field laptop will do — from the same commit.
 
 ## Before you start
 
@@ -55,7 +56,7 @@ git tag -a vX.Y.Z -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-## 3. Build the four files
+## 3. Build the files
 
 On the release commit (the merged `main`, or the release branch — same tree):
 
@@ -64,6 +65,15 @@ npm ci
 npm run package -- --mac     # magiceth-X.Y.Z-arm64.dmg and magiceth-X.Y.Z.dmg
 npm run package -- --win     # magiceth Setup X.Y.Z.exe and magiceth-X.Y.Z-portable.exe
 ```
+
+And on a Linux host, same commit, same `npm ci`:
+
+```sh
+npm run package -- --linux   # magiceth_X.Y.Z_amd64.deb, magiceth_X.Y.Z_arm64.deb, the AppImages
+```
+
+The Wi-Fi helper step prints "macOS only, skipping" there, which is right. Whether the Linux files
+can be built from the Mac as well is unverified; until someone has, the Linux host is the procedure.
 
 `npm run package` builds the Wi-Fi helper first, then the app, then electron-builder. Both
 Windows targets come out of the one command; a release is always both. Everything lands in
@@ -115,8 +125,12 @@ WLAN scan showed the networks after the Location prompt and a rescan.
 
 ```sh
 cd dist
-shasum -a 256 magiceth-X.Y.Z-arm64.dmg magiceth-X.Y.Z.dmg "magiceth Setup X.Y.Z.exe" magiceth-X.Y.Z-portable.exe > SHA256SUMS.txt
+shasum -a 256 magiceth-X.Y.Z-arm64.dmg magiceth-X.Y.Z.dmg "magiceth Setup X.Y.Z.exe" magiceth-X.Y.Z-portable.exe \
+  magiceth_X.Y.Z_amd64.deb magiceth_X.Y.Z_arm64.deb magiceth-X.Y.Z.AppImage magiceth-X.Y.Z-arm64.AppImage > SHA256SUMS.txt
 ```
+
+The Linux files come over from the Linux host first (`scp` into `dist/`); one checksum file covers
+everything.
 
 Release notes are one sentence on what the release is about, then the version's CHANGELOG section
 verbatim. Keep them in `dist/RELEASE-NOTES-X.Y.Z.md` while publishing; the CHANGELOG is the copy
@@ -125,13 +139,14 @@ that lasts.
 ## 6. Publish
 
 A GitHub release on tag `vX.Y.Z`, titled `vX.Y.Z — <what it is about>`, body from the notes file,
-with five assets: the four files and `SHA256SUMS.txt`. Through the web UI ("Draft a new release",
+with the built files and `SHA256SUMS.txt` as assets. Through the web UI ("Draft a new release",
 choose the tag, drop the files in), or with the GitHub CLI:
 
 ```sh
 gh release create vX.Y.Z --title "vX.Y.Z — …" --notes-file dist/RELEASE-NOTES-X.Y.Z.md \
   dist/magiceth-X.Y.Z-arm64.dmg dist/magiceth-X.Y.Z.dmg "dist/magiceth Setup X.Y.Z.exe" \
-  dist/magiceth-X.Y.Z-portable.exe dist/SHA256SUMS.txt
+  dist/magiceth-X.Y.Z-portable.exe dist/magiceth_X.Y.Z_amd64.deb dist/magiceth_X.Y.Z_arm64.deb \
+  dist/magiceth-X.Y.Z.AppImage dist/magiceth-X.Y.Z-arm64.AppImage dist/SHA256SUMS.txt
 ```
 
 Afterwards, the README's Releases link lands on it, and `main` already carries the next
@@ -139,6 +154,6 @@ Afterwards, the README's Releases link lands on it, and `main` already carries t
 
 ## Who does what
 
-Steps 2, 3 and 5 need nothing but a Mac and the repository, so an agent can do them and hand over
-`dist/`. Merging the pull request, pushing the tag and publishing the release need the GitHub
-account, and step 4 needs a person at the screen.
+Steps 2, 3 and 5 need nothing but a Mac, a Linux host and the repository, so an agent can do them
+and hand over `dist/`. Merging the pull request, pushing the tag and publishing the release need the
+GitHub account, and step 4 needs a person at the screen.

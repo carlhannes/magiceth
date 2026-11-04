@@ -62,7 +62,8 @@ The load-bearing test surface is pure parsers tested against **real** command ou
 
 Privileged actions (MAC/IP config) and packet capture can't be run without admin/root and are
 not covered by the automated tests — verify them manually per
-[SUDO-TEST.md](SUDO-TEST.md) (macOS/Linux) and [WINDOWS-TEST.md](WINDOWS-TEST.md).
+[SUDO-TEST.md](SUDO-TEST.md) (macOS/Linux), [LINUX-TEST.md](LINUX-TEST.md) (the Linux field laptop)
+and [WINDOWS-TEST.md](WINDOWS-TEST.md).
 
 ## Common contributions
 

@@ -51,8 +51,19 @@ win:
 # and sit next to each other in a release list. Spell the portable one out.
 portable:
   artifactName: ${productName}-${version}-portable.${ext}
+# Linux: the .deb is the install for Ubuntu 24.04 and its relatives. Ubuntu restricts unprivileged
+# user namespaces through AppArmor, which breaks Electron's sandbox in an AppImage (and the image
+# needs libfuse2, which noble no longer ships); electron-builder's .deb installs an AppArmor profile
+# that allows the namespace, a .desktop entry and /usr/bin/magiceth. The AppImage stays for a
+# distribution without .deb. Recommends rather than Depends for the tools: the app runs without
+# them and its start screen offers to install what is missing. Setting `depends` would replace
+# electron-builder's own runtime list, so it is left alone.
 linux:
   category: Utility
   target:
     - target: AppImage
       arch: [x64, arm64]
+    - target: deb
+      arch: [x64, arm64]
+deb:
+  recommends: [tcpdump, iw, curl]

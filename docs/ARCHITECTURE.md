@@ -29,7 +29,9 @@ src/
   main/
     index.ts               # app lifecycle, windows, IPC registration, hotplug poll
     util/run-command.ts    # run()/runJson() — shared command helper (execFile, no shell)
-    privilege.ts           # elevation: runElevatedShell/runElevatedPlan (osascript/pkexec/UAC)
+    util/tools.ts          # toolPath(): is a tool installed — a PATH lookup, never a probe run
+    util/scratch.ts        # the per-user scratch directory the elevated scripts write into
+    privilege.ts           # elevation: runElevatedShell/runElevatedPlan (osascript / sudo -n or pkexec / UAC), the Linux admin rule
     platform/
       index.ts             # PlatformOps interface + getPlatform()
       darwin.ts            # macOS implementation (+ pure parsers)
@@ -46,6 +48,8 @@ src/
       reconfig.ts          # MAC rolling + profile application + undo
       profiles.ts          # fs/electron glue for profile storage
       profiles-core.ts     # pure profile operations (upsert/remove/…)
+      setup.ts             # the start screen's setup card: missing tools, the Linux admin rule, installing them
+      setup-core.ts        # pure: which package manager, and the unattended install command
     plugins/
       loader.ts            # Configure mode: find plugin folders, run at most one, forward keys, unload
       manifest.ts          # pure: a plugin folder's package.json → PluginManifest
@@ -75,6 +79,7 @@ src/
     src/ethernet.ts        # Ethernet mode: the port dashboard + profile editor
     src/wlan.ts            # WLAN mode: network list, AP list, AP detail, recording
     src/configure.ts       # Configure mode: the plugin chooser and the active plugin's screen
+    src/setup.ts           # the start screen's setup card and its two keys
     src/plugin-view.ts     # pure: a plugin's view blocks → HTML
     src/styles.css
     src/env.d.ts
@@ -98,17 +103,18 @@ Each capability is a platform-independent interface in `capabilities/` that dele
 (arguments as an array, **no shell**) — which makes quoting/injection a non-issue — with a
 timeout and `windowsHide`.
 
-| Module                       | Privileges  | What it does                                                                                                  |
-| ---------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------- |
-| `adapters`                   | None        | Enumerates the ports worth showing, dongles first; looks up chipsets via `chipsets.json`.                     |
-| `diagnostics` → `probe`      | None        | Reads netinfo and runs gateway/internet ping + DNS test in parallel.                                          |
-| `survey`                     | Root/admin  | Port survey: runs `tcpdump` until stopped, tallying 802.1Q VLANs and LLDP/CDP. Optional; degrades gracefully. |
-| `speedtest`                  | None        | Throughput both ways, bound to the dongle. Manual only — it moves real traffic. Degrades gracefully.          |
-| `reconfig`                   | Root/admin  | Rolls MAC, applies DHCP/static profile, undoes.                                                               |
-| `profiles` / `profiles-core` | None        | Reads/writes profile JSON; pure CRUD operations.                                                              |
-| `wifiscan` → `ie80211`       | Location\*  | WLAN mode. Asks the platform for a sweep, decodes beacons, accumulates a recording. All three OSes.           |
-| `recordings` / `-core`       | None        | Writes a recording to CSV in Documents, reads it back, reveals it in the file manager.                        |
-| `plugins` → `dhcp`           | Root/admin† | Configure mode. Loads one plugin at a time; the host's DHCP server needs an address held on the port.         |
+| Module                       | Privileges  | What it does                                                                                                                   |
+| ---------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `adapters`                   | None        | Enumerates the ports worth showing, dongles first; looks up chipsets via `chipsets.json`.                                      |
+| `diagnostics` → `probe`      | None        | Reads netinfo and runs gateway/internet ping + DNS test in parallel.                                                           |
+| `survey`                     | Root/admin  | Port survey: runs `tcpdump` until stopped, tallying 802.1Q VLANs and LLDP/CDP. Optional; degrades gracefully.                  |
+| `speedtest`                  | None        | Throughput both ways, bound to the dongle. Manual only — it moves real traffic. Degrades gracefully.                           |
+| `reconfig`                   | Root/admin  | Rolls MAC, applies DHCP/static profile, undoes.                                                                                |
+| `profiles` / `profiles-core` | None        | Reads/writes profile JSON; pure CRUD operations.                                                                               |
+| `setup` / `setup-core`       | Root/admin‡ | The start screen's card: which tools are missing, the Linux admin rule; installs them on a keypress through the elevated path. |
+| `wifiscan` → `ie80211`       | Location\*  | WLAN mode. Asks the platform for a sweep, decodes beacons, accumulates a recording. All three OSes.                            |
+| `recordings` / `-core`       | None        | Writes a recording to CSV in Documents, reads it back, reveals it in the file manager.                                         |
+| `plugins` → `dhcp`           | Root/admin† | Configure mode. Loads one plugin at a time; the host's DHCP server needs an address held on the port.                          |
 
 \* Location consent on macOS and Windows; nothing on Linux with NetworkManager, one `pkexec`
 prompt without it. See [reading the air](#reading-the-air-on-each-os).
@@ -116,6 +122,8 @@ prompt without it. See [reading the air](#reading-the-air-on-each-os).
 † One prompt per session, for the address hold, which on macOS also shares the laptop's internet
 with the link; the DHCP server and discovery run unprivileged. See
 [Configure mode](#configure-mode-plugins).
+
+‡ Only when `K` or `A` is pressed; the checks themselves are PATH lookups.
 
 ## Platform layer (`PlatformOps`)
 
@@ -152,7 +160,8 @@ helper `.ps1`. JSON output is preferred where available to avoid brittle text pa
 
 The preload exposes `window.api` per `MagicethApi` (`src/shared/types.ts`). Channels:
 
-- **Reads:** `adapters:list`, `diagnostics:run`, `profiles:list`
+- **Reads:** `adapters:list`, `diagnostics:run`, `profiles:list`, `setup:status`
+- **Setup (privileged, on a keypress):** `setup:install`
 - **Writes (profiles, unprivileged):** `profiles:save`, `profiles:saveCurrent`, `profiles:delete`
 - **Privileged:** `reconfig:rollMac`, `reconfig:applyProfile`, `reconfig:undo`
 - **Long-running (privileged):** `survey:start`, `survey:stop`
@@ -184,8 +193,22 @@ Least privilege: the app and all read-only diagnostics run unprivileged. Only `s
 **per action** via `src/main/privilege.ts`:
 
 - **macOS:** `osascript -e 'do shell script "…" with administrator privileges'`
-- **Linux:** `pkexec`
+- **Linux:** `pkexec`, or `sudo -n` through the helper below once the admin rule is installed
 - **Windows:** `Start-Process -Verb RunAs` (UAC), with `-EncodedCommand` (base64/UTF-16LE) to avoid quoting issues
+
+On Linux the prompt can be made to go away for good, which is what a dedicated field laptop wants:
+the start screen's `A` installs, through one `pkexec` prompt, a rule in `/etc/sudoers.d` allowing
+this user to run one root-owned helper (`/usr/local/libexec/magiceth-elevate`, which `exec`s
+`sh -c` on its argument) without a password. `runElevatedShell` probes `sudo -n <helper> true` on
+every call (`linuxElevator()`, about ten milliseconds, no cache — the OS is the single source of
+truth) and uses `sudo -n` when it succeeds and `pkexec` otherwise; nothing else in the app knows
+which. It is passwordless root for that account through that path, and SECURITY.md and the
+confirmation both say so. Two details the scripts rely on: the files root writes go into a per-user
+scratch directory (`util/scratch.ts`), because `fs.protected_regular` refuses root an `O_CREAT`
+open of someone else's file in sticky `/tmp`; and a refused prompt is recognised in one place,
+`elevationRefused()` — pkexec's exit 126/127, osascript's `-128`, UAC's "canceled", `sudo -n`'s "a
+password is required" — which is why every long-running elevated script ends in `true`: a script
+whose own last command is missing also exits 127.
 
 Wi-Fi scanning is the one read-only feature that can need elevation, and only on a Linux without
 NetworkManager: triggering a sweep needs `CAP_NET_ADMIN`, so one `pkexec` prompt starts a scan loop
@@ -261,6 +284,11 @@ The app opens on a chooser: **Ethernet**, the wired port dashboard; **WLAN**, th
 and **Configure**, which uses the port to set a device up through a plugin. `Tab` cycles through
 them and `Esc` steps back out. They are separate because they answer different questions, and
 mixing them on one screen would cost the at-a-glance readability the whole tool is built around.
+
+Under the three cards the chooser shows — only while something on this computer needs attention — a
+setup card (`setup.ts`): tools the app leans on that are missing, and on Linux the admin rule. Its
+keys, `K` and `A`, are the only chooser keys that run anything, and both go through the elevated
+path in main.
 
 `main.ts` is the only module that knows all three exist. `shell.ts` holds what they share — the
 mode, the notice bar, the pending-confirmation gate and the render hook — and imports none of
@@ -410,7 +438,8 @@ mid-recording still finalise the file.
   results. This is the deterministic, platform-independent test surface.
 - **Platform implementations are verified on real hardware** ("spikes") — especially the
   privileged ones (MAC/IP) and capture. Manual procedures are in
-  [`../SUDO-TEST.md`](../SUDO-TEST.md) and [`../WINDOWS-TEST.md`](../WINDOWS-TEST.md).
+  [`../SUDO-TEST.md`](../SUDO-TEST.md), [`../LINUX-TEST.md`](../LINUX-TEST.md) and
+  [`../WINDOWS-TEST.md`](../WINDOWS-TEST.md).
 - Run `npm run typecheck && npm run lint && npm test` before every PR.
 
 ## What counts as an adapter

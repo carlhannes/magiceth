@@ -177,7 +177,9 @@ rather than implying coverage:
   script (`*AddressHoldScript` in `platform/`), a pure function with a test. The DHCP server binds
   port 67 unprivileged — verified on macOS 27, true on Windows, and arranged on Linux by the script
   lowering `ip_unprivileged_port_start`. Running the app binary as root would also fail outright
-  on an AppImage, because root cannot read a FUSE mount.
+  on an AppImage, because root cannot read a FUSE mount — which is also why the Linux admin helper
+  is written by the app on request rather than shipped by the package: it has to work the same
+  from an AppImage, a `.deb` and `npm run dev`.
 - **The DHCP socket hears every interface.** `lease.ts` is written so that a packet from the
   office LAN gets silence; keep it that way (no unicast replies, no NAK, nothing outside the pool)
   and add a test for every new case.
@@ -192,6 +194,12 @@ rather than implying coverage:
 - Commands run through `run()`/`runJson()` (`execFile`, argument array, no shell). The single
   exception is elevation in `privilege.ts`, where every interpolated value goes through `shQuote`
   or `psEscapeDouble`.
+- Elevation goes through `privilege.ts` only — never call `sudo` or `pkexec` from anywhere else.
+  Files an elevated script writes go through `scratchFile()` (`util/scratch.ts`): bare `/tmp` is
+  refused to root under Linux's `fs.protected_regular`. Long-running elevated scripts end in
+  `true`, so that exit 126/127 can mean "the prompt was refused" (`elevationRefused()`).
+- Whether a tool is installed is `toolPath()` (`util/tools.ts`), a PATH lookup — never a
+  `--version` probe through `run()`, which cannot tell a missing tool from a failing one.
 - Parsing stays in exported pure functions so it can be unit-tested without touching hardware.
 - A legend entry (`Hint.keys` in the renderer) holds real `KeyboardEvent.key` values, never
   display text: every entry is a button, and a tap dispatches exactly those keys.

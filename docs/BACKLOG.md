@@ -98,8 +98,9 @@ is still open:
   rejected for Linux: it needs root, drops the association the machine is using, hears one channel
   at a time, and adds nothing the screens show — client counts and load come from BSS Load, which
   `iw` already prints. Per-client visibility would be a different feature.
-- **Linux without NetworkManager asks for a password.** Triggering a sweep needs `CAP_NET_ADMIN`, so
-  the fallback is one `pkexec` prompt for a loop that scans every few seconds until a stop file, a
+- **Linux without NetworkManager asks for a password** — unless the start screen's admin rule is
+  installed, in which case the loop runs through `sudo -n` and asks nothing. Triggering a sweep
+  needs `CAP_NET_ADMIN`, so the fallback is one prompt for a loop that scans every few seconds until a stop file, a
   3600 s cap, or five idle minutes. Those two numbers are guesses at what feels right: too short and
   a once-scan a minute after the last one prompts again, too long and the radio stays off-channel
   for nothing. `iwctl` (iwd) and `wpa_cli` could trigger without root on some systems and were left
@@ -293,6 +294,23 @@ carries `"protocol": "dhcp"` as a second signal.
   test the app, and `npm audit` flags all three (dev-time only; nothing of theirs ships). Moving on
   means electron-vite 6 with vite 6–8 and vitest 5, and the bundle check in
   `electron.vite.config.ts` has to be re-verified against whichever bundler that brings.
+
+## The start screen's setup card: edges
+
+- **Windows has no row for the port survey yet.** It would be Wireshark + Npcap through `winget`
+  (`WiresharkFoundation.Wireshark`, and Npcap interactively — the free Npcap cannot be installed
+  silently, only the OEM build can), and it waits for a Windows port survey (tshark) to exist at all.
+- **The admin rule assumes Ubuntu's sudo defaults**: `requiretty` off and `secure_path` with the
+  sbin directories. A hardened sudoers makes the `sudo -n` probe fail, the app silently stays on
+  `pkexec`, and the row keeps showing as not done; the detail text should then say the rule is
+  installed but refused, which needs the probe to tell the two apart.
+- **tcpdump under AppArmor on Ubuntu is unverified with the new file handling.** Root's shell
+  creates the output file in the user's scratch directory and tcpdump, which drops to its own user,
+  writes through the inherited descriptor. If AppArmor denies that, `journalctl -k -g apparmor`
+  says so and `tcpdump … | cat >> file` is the fallback. LINUX-TEST.md step 3.5 checks it.
+- **Linux builds have not been built on a Linux host or installed on one yet.** Whether
+  `npm run package -- --linux` works from macOS (electron-builder's darwin `fpm`) is also
+  unverified; LINUX-TEST.md says to build on the laptop if it does not.
 
 ## Notices never clear on their own
 

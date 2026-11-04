@@ -311,7 +311,9 @@ only ever added.
 
 ## Trust
 
-A plugin runs with the app's privileges, in the app's process. Placing a folder in
+A plugin runs with the app's privileges, in the app's process — and on a Linux machine where the
+start screen's admin rule has been installed, those privileges include passwordless root
+([SECURITY.md](../SECURITY.md)). Placing a folder in
 `Documents/magiceth/plugins` is the act of trusting it — and anything that can write there, a cloud
 sync of Documents included, can place one. The chooser shows every plugin's origin and author before
 it is opened, and nothing runs until it is. [SECURITY.md](../SECURITY.md) has the longer version.

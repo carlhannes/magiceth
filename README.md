@@ -144,6 +144,11 @@ first launch asks for a confirmation — see [SECURITY.md](SECURITY.md).
   build, or strip the quarantine flag before opening —
   `xattr -d com.apple.quarantine ~/Downloads/magiceth-0.6.0-arm64.dmg`.
 - **Windows.** SmartScreen says "Windows protected your PC": More info → **Run anyway**.
+- **Linux.** Install the `.deb` — `sudo apt install ./magiceth_<version>_amd64.deb` (or
+  `_arm64`) — which puts in place the AppArmor profile Ubuntu 24.04 needs for Electron's sandbox
+  and a launcher in the menu. The AppImage is for distributions without `.deb`; on Ubuntu 24.04 it
+  needs `libfuse2t64` and still trips the sandbox restriction. The first screen lists anything the
+  app leans on that is missing (`iw`, `curl`, `tcpdump`) and offers to install it.
 
 ### From source
 
@@ -162,6 +167,12 @@ any time and `Esc` steps back out. Everything is controlled from the keyboard, o
 key in the legend at the bottom is also a button, the mode cards and the list rows are tappable —
 tap a row to select it, tap it again to open it — and a pending confirmation is answered by tapping
 the question itself.
+
+If something the app leans on is missing — `iw` or `curl` on a fresh Ubuntu, `tcpdump` where it was
+never installed — the start screen says so under the three modes, and `K` installs it with the
+system's package manager (one admin prompt, or none after `A`, see
+[Privileged actions](#privileged-actions)). On a Mac or a Windows machine those tools ship with the
+system, so the card never appears there.
 
 ### Ethernet mode
 
@@ -318,6 +329,16 @@ capture packets (LLDP/CDP) require admin/root and request it **per action** via 
 an extra address on the port for its duration; the DHCP server itself runs unprivileged. See
 [SECURITY.md](SECURITY.md).
 
+**On Linux you can make the prompts go away.** The start screen offers `A` ("admin once"): one
+`pkexec` prompt installs a rule in `/etc/sudoers.d` and a three-line helper in
+`/usr/local/libexec`, and from then on every privileged action runs through `sudo -n` without
+asking. Read [SECURITY.md](SECURITY.md) before pressing it — it is passwordless root for your
+account through that helper, which is what a dedicated field laptop wants and a shared machine does
+not. `sudo rm` of the two files puts things back. If your username is not a plain lower-case one the
+app will not write the rule; the equivalent by hand is a file `/etc/sudoers.d/magiceth` holding
+`<user> ALL=(root) NOPASSWD: /usr/local/libexec/magiceth-elevate` (root, mode 0440, checked with
+`visudo -cf`) and the helper itself — `#!/bin/sh` and `exec /bin/sh -c "$1"` — root, mode 0755.
+
 ### What leaves the machine
 
 Everything the tool does stays on the local link, with one exception you start yourself: the
@@ -346,7 +367,8 @@ Open Anyway route instead of "damaged"; [docs/RELEASING.md](docs/RELEASING.md) h
 prove the seal is complete before anything is published. Windows shows SmartScreen → More info →
 Run anyway.
 
-A full release is four files, and all four build from macOS. The Windows ones need Rosetta on an
+The macOS and Windows files, four in all, build from macOS; the Linux ones build on a Linux host
+(`npm run package -- --linux`). The Windows ones need Rosetta on an
 Apple Silicon Mac, because electron-builder stamps the version into the `.exe` through an x86 Wine
 it fetches itself (`softwareupdate --install-rosetta`). Both Windows targets are listed in
 `electron-builder.yml`, so one command always builds the installer **and** the portable `.exe` —
@@ -354,17 +376,20 @@ never build just one of them, a release is both. The order of operations around 
 version, tag, smoke test, checksums, notes, the GitHub release — is in
 [docs/RELEASING.md](docs/RELEASING.md).
 
-| Artifact                    | Built by                   | For                              |
-| --------------------------- | -------------------------- | -------------------------------- |
-| `magiceth-<v>-arm64.dmg`    | `npm run package -- --mac` | macOS, Apple Silicon             |
-| `magiceth-<v>.dmg`          | `npm run package -- --mac` | macOS, Intel                     |
-| `magiceth Setup <v>.exe`    | `npm run package -- --win` | Windows installer, x64 + arm64   |
-| `magiceth-<v>-portable.exe` | `npm run package -- --win` | Windows, runs without installing |
+| Artifact                    | Built by                     | For                                                    |
+| --------------------------- | ---------------------------- | ------------------------------------------------------ |
+| `magiceth-<v>-arm64.dmg`    | `npm run package -- --mac`   | macOS, Apple Silicon                                   |
+| `magiceth-<v>.dmg`          | `npm run package -- --mac`   | macOS, Intel                                           |
+| `magiceth Setup <v>.exe`    | `npm run package -- --win`   | Windows installer, x64 + arm64                         |
+| `magiceth-<v>-portable.exe` | `npm run package -- --win`   | Windows, runs without installing                       |
+| `magiceth_<v>_amd64.deb`    | `npm run package -- --linux` | Linux x64: Ubuntu 24.04 and relatives                  |
+| `magiceth_<v>_arm64.deb`    | `npm run package -- --linux` | Linux arm64                                            |
+| `magiceth-<v>.AppImage`     | `npm run package -- --linux` | Linux x64 (`-arm64` too), distributions without `.deb` |
 
-No Linux binary is published. The AppImage target exists in `electron-builder.yml`; on a Linux
-host, `npm ci && npm run build && npx electron-builder --linux AppImage` builds one. **No part of
-the Linux path has been run on real hardware** — see [docs/BACKLOG.md](docs/BACKLOG.md) — so treat
-it as a build-from-source preview and say what you find.
+The `.deb` is the one to install on Ubuntu 24.04, for the reasons spelled out in
+`electron-builder.yml`. **The Linux path is being verified on real hardware now**: the procedure and
+its findings are in [LINUX-TEST.md](LINUX-TEST.md), and [docs/BACKLOG.md](docs/BACKLOG.md) lists
+what is still open — so say what you find.
 
 ## How it works
 
