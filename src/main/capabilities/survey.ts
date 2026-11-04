@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 import { run } from '../util/run-command'
-import { runElevatedShell, shQuote } from '../privilege'
+import { scratchFile } from '../util/scratch'
+import { toolPath } from '../util/tools'
+import { elevationRefused, runElevatedShell, shQuote } from '../privilege'
 import { isValidIpv4 } from '../../shared/net'
 import type { SurveyResult, Neighbor, VlanSighting } from '../../shared/types'
 
@@ -143,20 +143,18 @@ export function surveyArgs(device: string): string[] {
  * never returns and the collected output is never handed back. That is the exact bug that made
  * this feature report "none heard" with frames on the wire — see docs/VLAN-FINDINGS.md. `-l`
  * keeps the output line-buffered, so SIGKILL loses nothing.
+ *
+ * Root creates the output file itself (`umask 022`, so the app can read it back): a file the app
+ * had created would be refused to root under Linux's `fs.protected_regular` — see util/scratch.ts.
  */
 export function surveyScript(device: string, outFile: string, stopFile: string): string {
   const args = surveyArgs(device).map(shQuote).join(' ')
   return (
-    `tcpdump ${args} >> ${shQuote(outFile)} 2>&1 & ` +
+    `umask 022; tcpdump ${args} >> ${shQuote(outFile)} 2>&1 & ` +
     `p=$!; n=0; ` +
     `while [ ! -f ${shQuote(stopFile)} ] && [ $n -lt ${MAX_SECONDS} ]; do sleep 1; n=$((n+1)); done; ` +
     `kill -9 $p 2>/dev/null; rm -f ${shQuote(stopFile)}; true`
   )
-}
-
-async function toolAvailable(): Promise<boolean> {
-  const r = await run('tcpdump', ['--version'], { timeoutMs: 3000 })
-  return /tcpdump|libpcap/i.test(`${r.stdout}${r.stderr}`)
 }
 
 /**
@@ -292,8 +290,8 @@ export async function startSurvey(
       'The port survey needs tshark + Npcap on Windows (not supported in this version).'
     )
   }
-  if (!(await toolAvailable())) {
-    return fail(device, 'no-tool', 'tcpdump is missing — install it to survey the port.')
+  if (!toolPath('tcpdump')) {
+    return fail(device, 'no-tool', 'tcpdump is missing — the start screen offers to install it.')
   }
 
   // Probe before claiming `active`. Everything from here to the launch has to be synchronous: an
@@ -301,11 +299,11 @@ export async function startSurvey(
   // and this call would then spawn a tcpdump that nothing is tracking and nothing will ever stop.
   const direct = await canCaptureDirectly(device)
 
+  // In the user's own scratch directory, where root may create the file (util/scratch.ts says why
+  // bare /tmp would not do) and the app may delete it afterwards.
   const stamp = `${process.pid}-${Date.now()}`
-  const outFile = path.join(os.tmpdir(), `magiceth-survey-${stamp}.txt`)
-  const stopFile = path.join(os.tmpdir(), `magiceth-survey-${stamp}.stop`)
-  // Create it ourselves so the file belongs to us even when root is the one appending to it.
-  fs.writeFileSync(outFile, '')
+  const outFile = scratchFile(`survey-${stamp}.txt`)
+  const stopFile = scratchFile(`survey-${stamp}.stop`)
 
   const s: ActiveSurvey = {
     device,
@@ -338,7 +336,7 @@ export async function startSurvey(
     runElevatedShell(surveyScript(device, outFile, stopFile), MAX_SECONDS * 1000 + 30_000)
       .then((r) => {
         if (active !== s) return
-        if (/not authorized|user canceled|-128/i.test(r.stderr)) {
+        if (elevationRefused(r)) {
           stopSurvey()
           onUpdate(fail(device, 'needs-privilege', 'Capture cancelled — it needs admin rights.'))
         }

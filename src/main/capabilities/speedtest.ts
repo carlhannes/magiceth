@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { run } from '../util/run-command'
+import { toolPath } from '../util/tools'
 import { getPlatform } from '../platform'
 import type { SpeedPhase, SpeedTestResult } from '../../shared/types'
 
@@ -299,11 +299,6 @@ async function runPhases(s: ActiveTest, bind: string): Promise<void> {
   s.onUpdate(snapshot(s, false))
 }
 
-async function toolAvailable(): Promise<boolean> {
-  const r = await run('curl', ['--version'], { timeoutMs: 3000 })
-  return /curl\s+\d/i.test(`${r.stdout}${r.stderr}`)
-}
-
 function fail(device: string, status: SpeedTestResult['status'], message: string): SpeedTestResult {
   return { status, running: false, device, phases: [], elapsedSec: 0, message }
 }
@@ -319,8 +314,8 @@ export async function startSpeedTest(
 ): Promise<SpeedTestResult> {
   stopSpeedTest()
 
-  if (!(await toolAvailable())) {
-    return fail(device, 'no-tool', 'curl is missing — install it to run a speed test.')
+  if (!toolPath('curl')) {
+    return fail(device, 'no-tool', 'curl is missing — the start screen offers to install it.')
   }
   // Read the address here rather than trusting the caller for it: on Windows it is the only thing
   // curl can bind to, and testing the wrong interface would be worse than not testing at all.

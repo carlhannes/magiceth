@@ -6,10 +6,10 @@
 
 import fs from 'node:fs'
 import os from 'node:os'
-import path from 'node:path'
 import { getPlatform } from '../../platform'
 import type { Upstream } from '../../platform'
-import { runElevatedPlan } from '../../privilege'
+import { elevationRefused, runElevatedPlan } from '../../privilege'
+import { scratchFile } from '../../util/scratch'
 import { isLinkLocalIpv4 } from '../../../shared/net'
 import type { DhcpEvent, DhcpSession, DhcpSpec } from '../../../shared/plugin'
 import { hexToBytes } from './codec'
@@ -167,7 +167,7 @@ export async function startDhcpSession(device: string, spec: DhcpSpec): Promise<
     }
   }
 
-  const stopFile = path.join(os.tmpdir(), `magiceth-dhcp-${process.pid}-${Date.now()}.stop`)
+  const stopFile = scratchFile(`dhcp-${process.pid}-${Date.now()}.stop`)
   const plan = await getPlatform().buildAddressHoldPlan(
     device,
     { ip: subnet.serverIp, cidr: subnet.cidr, upstream: upstream?.device },
@@ -192,7 +192,7 @@ export async function startDhcpSession(device: string, spec: DhcpSpec): Promise<
       if (active !== s) return
       // Still current when the script returned: either the prompt was refused (non-zero exit,
       // or the OS saying so), or the cap in the script ran out before ours did.
-      if (r.code !== 0 || /not authorized|cancel/i.test(r.stderr)) {
+      if (r.code !== 0 || elevationRefused(r)) {
         finish(
           s,
           'could not start',

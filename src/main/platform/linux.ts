@@ -1,10 +1,10 @@
 import { existsSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 import { run } from '../util/run-command'
+import { scratchFile } from '../util/scratch'
+import { toolPath } from '../util/tools'
 import { normalizeMac } from '../../shared/mac'
 import { cidrToDotted, isValidIpv4 } from '../../shared/net'
-import { runElevatedShell, shQuote } from '../privilege'
+import { elevationRefused, linuxElevator, runElevatedShell, shQuote } from '../privilege'
 import { channelFromMhz } from '../capabilities/wifi-model'
 import { LOOP_MAX_SECONDS, iwScanLoopScript, parseIwScan } from './iw'
 import type { IwBss } from './iw'
@@ -349,10 +349,6 @@ function wifiInterface(device: string): string | undefined {
   }
 }
 
-async function toolPresent(file: string): Promise<boolean> {
-  return (await run(file, ['--version'], { timeoutMs: 3000 })).code === 0
-}
-
 function toSighting(b: IwBss): WifiSighting | undefined {
   if (b.rssi === undefined) return undefined
   const placed = b.freqMhz === undefined ? undefined : channelFromMhz(b.freqMhz)
@@ -382,7 +378,7 @@ export function dumpToOutcome(text: string): WifiScanOutcome {
   }
 }
 
-async function scanViaNetworkManager(iface: string): Promise<WifiScanOutcome> {
+async function scanViaNetworkManager(iface: string, iw: string): Promise<WifiScanOutcome> {
   const wait = NM_RESCAN_INTERVAL_MS - (Date.now() - lastRescanAt)
   if (wait > 0) await sleep(wait)
   lastRescanAt = Date.now()
@@ -391,7 +387,7 @@ async function scanViaNetworkManager(iface: string): Promise<WifiScanOutcome> {
   // blocks for fifteen seconds when the request is refused.
   await run('nmcli', ['device', 'wifi', 'rescan', 'ifname', iface], { timeoutMs: 5000 })
   await sleep(SWEEP_MS)
-  const dump = await run('iw', ['dev', iface, 'scan', 'dump'], { timeoutMs: 8000 })
+  const dump = await run(iw, ['dev', iface, 'scan', 'dump'], { timeoutMs: 8000 })
   if (dump.code !== 0) {
     return {
       status: 'error',
@@ -442,8 +438,9 @@ function endSession(s: ScanSession): void {
 }
 
 function startSession(device: string): ScanSession {
-  const stamp = `${process.pid}-${Date.now()}`
-  const base = path.join(os.tmpdir(), `magiceth-wifi-${stamp}`)
+  // In the user's scratch directory: the root loop creates its own files there, which bare /tmp
+  // would refuse under fs.protected_regular (util/scratch.ts).
+  const base = scratchFile(`wifi-${process.pid}-${Date.now()}`)
   const s: ScanSession = {
     device,
     outFile: `${base}.txt`,
@@ -455,14 +452,13 @@ function startSession(device: string): ScanSession {
   }
   touch(s.keepFile)
   // Fire and forget: this only returns when the loop ends, and the password prompt is inside it.
-  // pkexec exits 126 when the dialog is dismissed and 127 when authorization fails.
   runElevatedShell(
     iwScanLoopScript(device, s.outFile, s.stopFile, s.keepFile),
     LOOP_MAX_SECONDS * 1000 + 30_000
   )
     .then((r) => {
       s.done = true
-      s.refused = r.code === 126 || r.code === 127
+      s.refused = elevationRefused(r)
     })
     .catch(() => {
       s.done = true
@@ -518,15 +514,19 @@ async function scanElevated(iface: string): Promise<WifiScanOutcome> {
 async function scanWifi(device: string): Promise<WifiScanOutcome> {
   const iface = wifiInterface(device)
   if (!iface) return { status: 'error', message: 'This machine has no Wi-Fi interface.' }
-  if (!(await toolPresent('iw'))) {
-    return { status: 'no-tool', message: 'Wi-Fi scanning needs `iw` — install the iw package.' }
+  const iw = toolPath('iw')
+  if (!iw) {
+    return {
+      status: 'no-tool',
+      message: 'Wi-Fi scanning needs `iw` — the start screen offers to install it.'
+    }
   }
-  if (await toolPresent('nmcli')) return scanViaNetworkManager(iface)
-  if (!(await toolPresent('pkexec'))) {
+  if (toolPath('nmcli')) return scanViaNetworkManager(iface, iw)
+  if (!toolPath('pkexec') && (await linuxElevator()) !== 'sudo') {
     return {
       status: 'no-tool',
       message:
-        'Triggering a Wi-Fi scan needs NetworkManager (nmcli) or pkexec; neither is installed.'
+        "Triggering a Wi-Fi scan needs NetworkManager (nmcli), pkexec, or the start screen's admin rule; this machine has none of them."
     }
   }
   return scanElevated(iface)

@@ -172,6 +172,13 @@ describe('surveyScript', () => {
     expect(surveyScript("a'b", '/tmp/o', '/tmp/s')).toContain("'a'\\''b'")
   })
 
+  // Root creates the output file. A file the app pre-created would be refused to root under
+  // Linux's fs.protected_regular; the umask is what lets the app read it back afterwards.
+  it('lets root create a world-readable output file', () => {
+    expect(script.startsWith('umask 022; tcpdump ')).toBe(true)
+    expect(script.endsWith('; true')).toBe(true)
+  })
+
   // -e guarantees tcpdump prints the 802.1Q header; without it we would be relying on the payload
   // decode, which no capture we have taken actually demonstrates.
   it('captures broadcast/multicast with the link-layer header shown', () => {
