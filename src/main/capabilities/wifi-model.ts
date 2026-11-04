@@ -7,6 +7,7 @@
 import { resolveVendor } from './oui'
 import type { WifiSighting } from '../platform'
 import type {
+  ChannelAir,
   ChannelBucket,
   ChannelLoad,
   WifiBand,
@@ -353,9 +354,11 @@ function spansOverlap(
  * close the nearest one is, the worst load any of them admits to, and how much else bleeds onto it.
  *
  * Takes tracks rather than a live scan so the same function answers the question for a recording
- * read back off disk. Ordered by band then channel, which is how a spectrum is read.
+ * read back off disk.
+ * While listening, `air` adds what was measured on each channel — including channels where no
+ * access point was heard, which is the "where is it quiet" answer. Ordered by band then channel, which is how a spectrum is read.
  */
-export function channelSummary(tracks: WifiTrack[]): ChannelLoad[] {
+export function channelSummary(tracks: WifiTrack[], air: ChannelAir[] = []): ChannelLoad[] {
   const byKey = new Map<string, WifiTrack[]>()
   for (const t of tracks) {
     const key = `${t.band}/${t.channel}`
@@ -368,26 +371,39 @@ export function channelSummary(tracks: WifiTrack[]): ChannelLoad[] {
     .map((t) => occupiedSpan(t))
     .filter((s): s is { loMhz: number; hiMhz: number } => s !== undefined)
 
-  const out: ChannelLoad[] = []
-  for (const group of byKey.values()) {
-    const { channel, band } = group[0]
+  const airByKey = new Map(air.map((a) => [`${a.band}/${a.channel}`, a]))
+
+  /** One row. `group` is empty for a channel that was measured but where no access point was heard. */
+  const row = (channel: number, band: WifiBand, group: WifiTrack[]): ChannelLoad => {
     const centre = channelCentreMhz(channel, band)
     // A channel row stands for its own 20 MHz, whatever widths the access points on it use.
     const own = centre === undefined ? undefined : { loMhz: centre - 10, hiMhz: centre + 10 }
     const utils = group
       .map((t) => t.utilizationPct?.max)
       .filter((u): u is number => u !== undefined)
-    out.push({
+    const measured = airByKey.get(`${band}/${channel}`)
+    return {
       channel,
       band,
       accessPoints: group.length,
-      bestRssi: Math.max(...group.map((t) => t.rssi.max)),
+      bestRssi: group.length ? Math.max(...group.map((t) => t.rssi.max)) : undefined,
       // An access point that never advertised a BSS Load must not read as 0% load.
       maxUtilizationPct: utils.length ? Math.max(...utils) : undefined,
       ...clientsOf(group),
       overlappingAps:
-        own === undefined ? group.length : spans.filter((s) => spansOverlap(s, own)).length
-    })
+        own === undefined ? group.length : spans.filter((s) => spansOverlap(s, own)).length,
+      ...(measured && {
+        visited: measured.visited,
+        framesPerSec: measured.framesPerSec,
+        retryPct: measured.retryPct
+      })
+    }
+  }
+
+  const out: ChannelLoad[] = []
+  for (const group of byKey.values()) out.push(row(group[0].channel, group[0].band, group))
+  for (const a of air) {
+    if (!byKey.has(`${a.band}/${a.channel}`)) out.push(row(a.channel, a.band, []))
   }
 
   const bandOrder: WifiBand[] = ['2.4', '5', '6', '?']

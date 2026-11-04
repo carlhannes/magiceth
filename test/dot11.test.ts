@@ -122,19 +122,39 @@ describe('decodeFrame: the frames that end an association', () => {
 })
 
 describe('decodeFrame: frames whose parties are not kept', () => {
-  it('reduces a data frame to its retry flag, with no address anywhere in the result', () => {
-    const data = dataFrame({ qos: true, toDs: true, retry: true, a1: AP, a2: CLIENT, a3: AP })
-    const frame = decodeFrame(record(data), 127)
-    expect(frame).toMatchObject({ body: { kind: 'data' }, retry: true, freqMhz: 5240 })
+  const quiet = (frame: unknown): void => {
     const text = JSON.stringify(frame)
     expect(text).not.toContain(CLIENT)
     expect(text).not.toContain('3c:22')
     expect(text).not.toContain(CLIENT.replaceAll(':', ''))
+  }
+
+  it('reduces a station-to-AP data frame to its retry flag and the AP it was for', () => {
+    const data = dataFrame({ qos: true, toDs: true, retry: true, a1: AP, a2: CLIENT, a3: AP })
+    const frame = decodeFrame(record(data), 127)
+    expect(frame).toMatchObject({ body: { kind: 'data', bssid: AP }, retry: true, freqMhz: 5240 })
+    quiet(frame)
   })
 
-  it('does not look at a four-address data frame any differently', () => {
+  it('finds the AP in the transmitter field of a frame coming from it, and keeps no client', () => {
+    const data = dataFrame({ fromDs: true, a1: CLIENT, a2: AP, a3: '00:11:22:33:44:55' })
+    const frame = decodeFrame(record(data), 127)
+    expect(frame?.body).toEqual({ kind: 'data', bssid: AP })
+    quiet(frame)
+  })
+
+  it('finds the BSSID in the third address when neither DS bit is set', () => {
+    const data = dataFrame({ a1: CLIENT, a2: '00:11:22:33:44:55', a3: AP })
+    const frame = decodeFrame(record(data), 127)
+    expect(frame?.body).toEqual({ kind: 'data', bssid: AP })
+    quiet(frame)
+  })
+
+  it('names no AP in a four-address frame, and still keeps no client', () => {
     const data = dataFrame({ toDs: true, fromDs: true, a1: AP, a2: CLIENT, a3: AP })
-    expect(decodeFrame(record(data), 127)?.body).toEqual({ kind: 'data' })
+    const frame = decodeFrame(record(data), 127)
+    expect(frame?.body).toEqual({ kind: 'data', bssid: undefined })
+    quiet(frame)
   })
 
   it('counts a probe request and an ACK as other, and keeps no address from them', () => {

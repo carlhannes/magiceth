@@ -218,6 +218,15 @@ export interface WifiBss {
    */
   locallyAdministered: boolean
   countryCode?: string
+  /**
+   * Heard while listening (monitor mode), never from a scan: management frames that end an
+   * association — deauthentication and disassociation — naming this BSSID, since the session began.
+   * A trickle is ordinary roaming; a flood is the signature of an attack or of a failing AP.
+   */
+  deauths?: number
+  /** Frames per second this AP's BSSID appeared in on its channel while listening (≈), and how many were retries. */
+  airFramesPerSec?: number
+  airRetryPct?: number
 }
 
 /** Every AP broadcasting the same network name, which is what you actually pick in the list. */
@@ -270,8 +279,11 @@ export interface ChannelLoad {
   channel: number
   band: WifiBand
   accessPoints: number
-  /** Strongest signal heard on the channel — how much of this load is actually near you. */
-  bestRssi: number
+  /**
+   * Strongest signal heard on the channel — how much of this load is actually near you. Absent on
+   * a channel with no access point, which only exists while listening has measured it.
+   */
+  bestRssi?: number
   /** Highest utilization any access point on the channel advertised, where any of them did. */
   maxUtilizationPct?: number
   /**
@@ -286,6 +298,46 @@ export interface ChannelLoad {
    * the number that matters on 2.4 GHz, where channels are 5 MHz apart but 20 MHz wide.
    */
   overlappingAps: number
+  /**
+   * Measured while listening (monitor mode), as opposed to `maxUtilizationPct`, which is what an
+   * access point claims. `visited` counts the dwells the radio spent on the channel — 0 means it
+   * could not be tuned, which is not the same as a quiet channel. Frames per second is ≈: dwell
+   * time is nominal. Retries are the share of heard frames carrying the retry flag.
+   */
+  visited?: number
+  framesPerSec?: number
+  retryPct?: number
+}
+
+/** What listening measured on one channel; the input channelSummary folds into its rows. */
+export interface ChannelAir {
+  channel: number
+  band: WifiBand
+  visited: number
+  framesPerSec: number
+  retryPct: number
+}
+
+/** The state of a monitor-mode session, for the status line. */
+export interface MonitorStatus {
+  running: boolean
+  device: string
+  monitorInterface: string
+  /** Frames decoded since the session began, and their length on the air. */
+  frames: number
+  bytes: number
+  /** Size of the temporary capture file; it grows with the traffic and is capped. */
+  pcapBytes: number
+  /** Complete sweeps of the channel list. */
+  passes: number
+  channelsVisited: number
+  /** Channels the radio refused to tune to — on the AX201, most likely 5 GHz (docs/WIFI-FINDINGS.md). */
+  channelsFailed: number
+  dwellMs: number
+  /** Set while the radio is held on one access point's channel. */
+  pinnedChannel?: number
+  elapsedSec: number
+  message?: string
 }
 
 /**
@@ -363,6 +415,10 @@ export interface WifiScanResult {
    * a policy key left by a privacy tool. The renderer offers the key only when this is set.
    */
   canEnableAccess?: boolean
+  /** True when this computer can listen to the air (Linux with a monitor-capable card and the tools). */
+  canMonitor?: boolean
+  /** Present while a monitor-mode session exists, running or just stopped. */
+  monitor?: MonitorStatus
 }
 
 // --- The start screen's setup card: tools the app leans on, and the Linux admin rule ---

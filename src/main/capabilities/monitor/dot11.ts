@@ -3,9 +3,10 @@
 // What is read, and what is deliberately not: the radiotap header, the 802.11 frame control, and —
 // for beacons, probe responses and the frames that end an association — the BSSID and the
 // elements an access point advertises about itself. A data frame is reduced to "a data frame,
-// retried or not": its addresses and its payload are never looked at, so nothing downstream can
-// hold, show or save who was talking to whom. Per-device views, if they are ever built, extend
-// this file and say so in docs/SECURITY.md.
+// retried or not, on this BSSID": the BSSID is the access point's own address and is read from the
+// one field the DS bits name, so the client's address and the payload are never looked at, and
+// nothing downstream can hold, show or save who was talking to whom. Per-device views, if they
+// are ever built, extend this file and say so in docs/SECURITY.md.
 //
 // A frame the parser cannot place comes back `undefined`; input off the air is never trusted to
 // be well-formed, and never makes this throw.
@@ -36,7 +37,8 @@ const FCS_LENGTH = 4
 export type FrameBody =
   | { kind: 'beacon' | 'probe-response'; bssid: string; facts: BeaconFacts }
   | { kind: 'deauth' | 'disassoc'; bssid: string }
-  | { kind: 'data' }
+  /** `bssid` is absent for a four-address (WDS) frame, where the access point is not named. */
+  | { kind: 'data'; bssid?: string }
   | { kind: 'other' }
 
 export interface DecodedFrame {
@@ -55,6 +57,24 @@ function macAt(buf: Buffer, at: number): string {
   return out
 }
 
+const FC_TO_DS = 0x01
+const FC_FROM_DS = 0x02
+/** Where the three-address data header ends: the third address stops at byte 22. */
+const DATA_ADDRESSES = 22
+
+/**
+ * The access point's address in a data frame: address 1 going to it, address 2 coming from it,
+ * address 3 when neither (a peer-to-peer or ad-hoc frame). The other two fields hold the station
+ * and are never read.
+ */
+function dataBssid(mac: Buffer, flags: number): string | undefined {
+  if (mac.length < DATA_ADDRESSES) return undefined
+  const toDs = (flags & FC_TO_DS) !== 0
+  const fromDs = (flags & FC_FROM_DS) !== 0
+  if (toDs && fromDs) return undefined
+  return macAt(mac, toDs ? 4 : fromDs ? 10 : 16)
+}
+
 /** The 802.11 frame itself, with the check sequence cut off when there is one to cut. */
 function decodeMac(
   mac: Buffer,
@@ -70,7 +90,7 @@ function decodeMac(
     body
   })
 
-  if (type === TYPE_DATA) return out({ kind: 'data' })
+  if (type === TYPE_DATA) return out({ kind: 'data', bssid: dataBssid(mac, flags) })
   if (type !== TYPE_MGMT) return out({ kind: 'other' })
 
   // The order bit on a management frame adds a four-byte HT Control field to the header.

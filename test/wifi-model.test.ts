@@ -224,6 +224,45 @@ describe('channelSummary', () => {
   it('returns nothing for no tracks', () => {
     expect(channelSummary([])).toEqual([])
   })
+
+  describe('with what listening measured', () => {
+    const tracks = accumulate([
+      { atSec: 0, bssids: [bss({ bssid: 'a', channel: 1, rssi: -60, utilizationPct: 30 })] }
+    ])
+
+    it('puts the measurement next to the advertised load on the same row', () => {
+      const [row] = channelSummary(tracks, [
+        { channel: 1, band: '2.4', visited: 3, framesPerSec: 212.5, retryPct: 14 }
+      ])
+      expect(row).toMatchObject({
+        channel: 1,
+        maxUtilizationPct: 30,
+        visited: 3,
+        framesPerSec: 212.5,
+        retryPct: 14
+      })
+    })
+
+    it('adds a row for a channel where listening heard no access point, quiet or not', () => {
+      const rows = channelSummary(tracks, [
+        { channel: 1, band: '2.4', visited: 3, framesPerSec: 10, retryPct: 0 },
+        { channel: 3, band: '2.4', visited: 3, framesPerSec: 0, retryPct: 0 },
+        { channel: 144, band: '5', visited: 0, framesPerSec: 0, retryPct: 0 }
+      ])
+      expect(rows.map((r) => `${r.band}/${r.channel}`)).toEqual(['2.4/1', '2.4/3', '5/144'])
+      const quiet = rows[1]
+      expect(quiet).toMatchObject({ accessPoints: 0, framesPerSec: 0, visited: 3 })
+      expect(quiet.bestRssi).toBeUndefined()
+      // Channel 3 is empty but the access point on channel 1 still reaches it.
+      expect(quiet.overlappingAps).toBe(1)
+      // Visited zero times is a channel the radio could not tune to, not a quiet one.
+      expect(rows[2].visited).toBe(0)
+    })
+
+    it('leaves rows without a measurement unmeasured', () => {
+      expect(channelSummary(tracks)[0].framesPerSec).toBeUndefined()
+    })
+  })
 })
 
 describe('trackToBss', () => {
