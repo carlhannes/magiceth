@@ -13,11 +13,14 @@ import { pickSelected } from '../../shared/adapter'
 import { validateProfileDraft } from '../../shared/profile'
 import type { ProfileDraftInput } from '../../shared/profile'
 import { clock, escapeHtml, plural, row, speedText } from './view'
+import type { Hint } from './view'
 import {
   app,
   confirmStep,
   consumePending,
+  FORM_FOOTER,
   getPending,
+  hints,
   renderShell,
   requestRender,
   setMode,
@@ -101,14 +104,16 @@ function currentNet() {
 
 function renderSelector(): string {
   if (adapters.length <= 1) return ''
-  return `<div class="selector">${adapters
+  const chips = adapters
     .map((d, i) => {
       // Lead with the device: it is the one thing guaranteed unique, so two adapters of the same
       // model stay tellable apart. The vendor is dropped — the card below spells it out in full.
       const name = `${d.device} · ${d.chipset ? d.chipset.chipset : d.portName || 'USB Ethernet'}`
       return `<span class="chip${i === selected ? ' active' : ''}">${escapeHtml(name)}</span>`
     })
-    .join('')}<span class="selector-hint">↑ ↓ switch</span></div>`
+    .join('')
+  const step = hints([{ keys: ['ArrowUp', 'ArrowDown'], label: 'switch' }])
+  return `<div class="selector">${chips}<span class="selector-hint">${step}</span></div>`
 }
 
 function renderDiagnostics(d: Adapter): string {
@@ -232,8 +237,8 @@ function renderSpeed(d: Adapter): string {
     const moved = forThis.phases.reduce((sum, p) => sum + p.bytes, 0)
     const volume = `${Math.round(moved / 1e6)} MB`
     const footer = live
-      ? `<p class="hint2">Testing ${clock(forThis.elapsedSec)} · ${volume} · <b>T</b> stops</p>`
-      : `<p class="hint2">Ran ${clock(forThis.elapsedSec)} · ${volume} moved · <b>T</b> tests again</p>`
+      ? `<p class="hint2">Testing ${clock(forThis.elapsedSec)} · ${volume} · ${hints([{ keys: ['t'], label: 'stops' }])}</p>`
+      : `<p class="hint2">Ran ${clock(forThis.elapsedSec)} · ${volume} moved · ${hints([{ keys: ['t'], label: 'tests again' }])}</p>`
 
     inner = rows + footer
   }
@@ -303,8 +308,8 @@ function renderSurvey(d: Adapter): string {
         : ''
 
     const footer = live
-      ? `<p class="hint2">Surveying ${clock(forThis.elapsedSec)} · ${plural(forThis.frames, 'frame')} · <b>C</b> stops</p>`
-      : `<p class="hint2">Ran ${clock(forThis.elapsedSec)} · ${plural(forThis.frames, 'frame')} · <b>C</b> surveys again</p>`
+      ? `<p class="hint2">Surveying ${clock(forThis.elapsedSec)} · ${plural(forThis.frames, 'frame')} · ${hints([{ keys: ['c'], label: 'stops' }])}</p>`
+      : `<p class="hint2">Ran ${clock(forThis.elapsedSec)} · ${plural(forThis.frames, 'frame')} · ${hints([{ keys: ['c'], label: 'surveys again' }])}</p>`
 
     inner = verdict + vlans + neighbors + quiet + footer
   }
@@ -340,7 +345,6 @@ function renderInfo(d: Adapter): string {
           ? `<p class="notes">Not in the chipset database — add "${escapeHtml(usbId)}" to resources/chipsets.json.</p>`
           : ''
     }
-    <p class="hint2"><b>I</b> or <b>Esc</b> closes</p>
   </section>`
 }
 
@@ -360,7 +364,6 @@ function renderPanel(): string {
   return `<section class="panel-card">
     <div class="section-title">Profiles — apply to the adapter</div>
     <ul class="profiles">${items}</ul>
-    <p class="hint2"><b>↑↓</b> select · <b>Enter</b>/<b>1-9</b> apply · <b>N</b> new · <b>E</b> edit · <b>Backspace</b> delete · <b>P</b> close</p>
   </section>`
 }
 
@@ -391,7 +394,7 @@ function renderEditor(): void {
   const v = (s?: string): string => escapeHtml(s ?? '')
   app.innerHTML = renderShell({
     key: 'ethernet:editor',
-    footer: 'Fill in with the mouse · <b>Esc</b> cancels',
+    footer: FORM_FOOTER,
     body: `
     <section class="editor">
       <div class="section-title">${p ? 'Edit profile' : 'New profile'}</div>
@@ -429,6 +432,16 @@ function renderEditor(): void {
   ;(document.getElementById('f-cancel') as HTMLElement).addEventListener('click', () =>
     closeEditor()
   )
+  // Enter in a field saves, as it does in a plugin's form: it is a touch keyboard's return key, and
+  // macOS never moves keyboard focus onto the buttons.
+  for (const input of app.querySelectorAll<HTMLInputElement>('.editor input')) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        void submitEditor()
+      }
+    })
+  }
   ;(document.getElementById('f-name') as HTMLInputElement).focus()
 }
 
@@ -464,11 +477,46 @@ async function submitEditor(): Promise<void> {
   closeEditor()
 }
 
+/**
+ * The legend follows the state of the screen. With the profile panel open its keys are the
+ * panel's — the dashboard's own are inert until it closes, and a legend naming keys that do nothing
+ * is a legend that teaches people to ignore it.
+ */
+function footerHints(): Hint[] {
+  if (panel) {
+    return [
+      { keys: ['ArrowUp', 'ArrowDown'], label: 'select' },
+      { keys: ['Enter'], label: 'apply' },
+      { keys: ['n'], label: 'new' },
+      { keys: ['e'], label: 'edit' },
+      { keys: ['Backspace'], label: 'delete' },
+      { keys: ['i'], label: 'chipset' },
+      { keys: ['p', 'Escape'], label: 'close' }
+    ]
+  }
+  return [
+    { keys: ['r'], label: 'rerun' },
+    { keys: ['m'], label: 'roll MAC' },
+    { keys: ['p'], label: 'profiles' },
+    { keys: ['i'], label: 'chipset' },
+    { keys: ['s'], label: 'save' },
+    { keys: ['u'], label: 'undo' },
+    { keys: ['c'], label: surveying ? 'stop' : 'survey' },
+    { keys: ['t'], label: measuring ? 'stop' : 'speed' },
+    { keys: ['Tab'], label: 'wi-fi' },
+    { keys: ['Escape'], label: info ? 'close' : 'back' }
+  ]
+}
+
 export function renderEthernet(): string {
   if (adapters.length === 0) {
     return renderShell({
       key: 'ethernet:empty',
-      footer: 'waiting for a port… · <b>Tab</b> wi-fi · <b>Esc</b> back',
+      footer: [
+        { keys: [], label: 'waiting for a port…' },
+        { keys: ['Tab'], label: 'wi-fi' },
+        { keys: ['Escape'], label: 'back' }
+      ],
       body: `
       <div class="empty">
         <p class="big">No network ports found</p>
@@ -484,7 +532,7 @@ export function renderEthernet(): string {
     busy: running || surveying || measuring || busy,
     // The selector says which port everything below belongs to, so it stays put.
     status: renderSelector(),
-    footer: `<b>R</b> rerun · <b>M</b> roll MAC · <b>P</b> profiles · <b>I</b> chipset · <b>S</b> save · <b>U</b> undo · <b>C</b> ${surveying ? 'stop' : 'survey'} · <b>T</b> ${measuring ? 'stop' : 'speed'} · <b>Tab</b> wi-fi`,
+    footer: footerHints(),
     body: `
     ${renderDiagnostics(d)}
     ${renderInfo(d)}
@@ -738,7 +786,16 @@ export function handleEthernetKey(e: KeyboardEvent): void {
     }
     return
   }
-  if (adapters.length === 0 || busy) return
+  if (adapters.length === 0) {
+    // Nothing to act on, but the way out still works.
+    if (e.key === 'Escape') {
+      setMode('chooser')
+      requestRender()
+      e.preventDefault()
+    }
+    return
+  }
+  if (busy) return
   const adapter = adapters[selected]
   const device = adapter.device
   // Every keystroke consumes any outstanding confirmation: only the very next press of the same
@@ -774,6 +831,9 @@ export function handleEthernetKey(e: KeyboardEvent): void {
       info = true
     } else if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
       panel = false
+    } else if (e.key >= '1' && e.key <= '9') {
+      // The row numbers are keycaps: a digit applies that profile, panel open or not.
+      applyProfileByIndex(Number(e.key) - 1, e.key, pending)
     } else {
       return
     }

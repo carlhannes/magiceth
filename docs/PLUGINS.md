@@ -121,6 +121,11 @@ What a failure does:
   of `Esc` or `Tab` before leaving.
 - `blocks` — drawn in order, top to bottom. The area scrolls.
 - `keys` — the legend at the bottom: `{ key, label }` pairs. `Esc leave` is appended by the shell.
+  On a touch screen each entry is also a button: `↑↓`, `←→`, `Enter`, `Esc`, `Tab`, `Backspace`,
+  `Space` and a single letter or digit reach `onKey` as the key they name (a letter arrives
+  lower-case, as an unshifted press does); anything else (`any`, `1-9`) is shown as text. A tap on
+  a `list` row reaches the plugin as arrow presses towards that row, and a tap on the selected row
+  as `Enter`.
 
 ### Blocks
 

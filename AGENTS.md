@@ -193,4 +193,6 @@ rather than implying coverage:
   exception is elevation in `privilege.ts`, where every interpolated value goes through `shQuote`
   or `psEscapeDouble`.
 - Parsing stays in exported pure functions so it can be unit-tested without touching hardware.
+- A legend entry (`Hint.keys` in the renderer) holds real `KeyboardEvent.key` values, never
+  display text: every entry is a button, and a tap dispatches exactly those keys.
 - `resources/chipsets.json` is the only chipset source of truth.

@@ -158,26 +158,29 @@ npm run dev        # starts the app in development mode
 
 Launch the app (does **not** require admin). It opens on a chooser with three modes — press `1`/`E`
 for **Ethernet**, `2`/`W` for **Wi-Fi** or `3`/`C` for **Configure**. `Tab` cycles through them at
-any time and `Esc` steps back out. Everything is controlled from the keyboard.
+any time and `Esc` steps back out. Everything is controlled from the keyboard, or by touch: every
+key in the legend at the bottom is also a button, the mode cards and the list rows are tappable —
+tap a row to select it, tap it again to open it — and a pending confirmation is answered by tapping
+the question itself.
 
 ### Ethernet mode
 
 With a dongle plugged in, identification and diagnostics are shown automatically.
 
-| Key               | Action                                                                 |
-| ----------------- | ---------------------------------------------------------------------- |
-| `↑` `↓`           | Switch selected port (or navigate the profile panel)                   |
-| `R` / space       | Re-run diagnostics                                                     |
-| `C`               | Start / stop the port survey (VLANs on the wire, LLDP/CDP)             |
-| `T`               | Start / stop the speed test (real transfer, see above)                 |
-| `I`               | Open/close the chipset sub-view (capabilities + raw USB IDs)           |
-| `M`               | Roll a new MAC address                                                 |
-| `P`               | Open/close the profile panel                                           |
-| `1`–`9` / `Enter` | Apply a profile to the adapter                                         |
-| `N` / `E`         | New / edit the selected profile (the form is filled in with the mouse) |
-| `Backspace`       | Delete the selected profile                                            |
-| `S`               | Save the current config as a profile                                   |
-| `U`               | Undo the last change                                                   |
+| Key               | Action                                                       |
+| ----------------- | ------------------------------------------------------------ |
+| `↑` `↓`           | Switch selected port (or navigate the profile panel)         |
+| `R` / space       | Re-run diagnostics                                           |
+| `C`               | Start / stop the port survey (VLANs on the wire, LLDP/CDP)   |
+| `T`               | Start / stop the speed test (real transfer, see above)       |
+| `I`               | Open/close the chipset sub-view (capabilities + raw USB IDs) |
+| `M`               | Roll a new MAC address                                       |
+| `P`               | Open/close the profile panel                                 |
+| `1`–`9` / `Enter` | Apply a profile to the adapter                               |
+| `N` / `E`         | New / edit the selected profile                              |
+| `Backspace`       | Delete the selected profile                                  |
+| `S`               | Save the current config as a profile                         |
+| `U`               | Undo the last change                                         |
 
 ### Wi-Fi mode
 

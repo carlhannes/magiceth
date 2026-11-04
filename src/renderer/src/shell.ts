@@ -1,10 +1,11 @@
-// The shell around the two modes: what they share, and the screen you pick between them on.
+// The shell around the modes: what they share, and the screen you pick between them on.
 //
-// Everything here is deliberately mode-agnostic. The Ethernet dashboard and the WLAN scanner both
-// import from this file; this file imports neither of them, so the dependency only ever points one
-// way and main.ts is the single place that knows both exist.
+// Everything here is deliberately mode-agnostic. The Ethernet dashboard, the WLAN scanner and
+// Configure mode all import from this file; this file imports none of them, so the dependency only
+// ever points one way and main.ts is the single place that knows they all exist.
 
-import { escapeHtml, keyLabel } from './view'
+import { escapeHtml, keyLabel, renderHints } from './view'
+import type { Hint } from './view'
 
 export const app = document.getElementById('app') as HTMLElement
 export const APP_VERSION = __APP_VERSION__
@@ -130,8 +131,23 @@ export interface ModeView {
   busy?: boolean
   status?: string
   body: string
-  footer: string
+  /** The key legend. Data rather than markup, because every entry is also the button for its key. */
+  footer: Hint[]
 }
+
+/**
+ * A legend anywhere on a screen: the footer, or a line inside a card. Drawn here rather than by the
+ * modes so the one key waiting for a confirming press is marked wherever it appears.
+ */
+export function hints(list: Hint[]): string {
+  return renderHints(list, pendingAction?.key)
+}
+
+/** A form's legend: Save and Cancel are buttons on the form itself; Esc is the one key it hands back. */
+export const FORM_FOOTER: Hint[] = [
+  { keys: [], label: 'Save or Cancel below' },
+  { keys: ['Escape'], label: 'cancels' }
+]
 
 export function renderShell(view: ModeView): string {
   return `
@@ -139,7 +155,7 @@ export function renderShell(view: ModeView): string {
     ${renderNotice()}
     ${view.status ?? ''}
     <div class="scroll" data-view="${escapeHtml(view.key)}">${view.body}</div>
-    <footer class="hint">${view.footer}</footer>`
+    <footer class="hint">${hints(view.footer)}</footer>`
 }
 
 export function renderTopbar(busy = false): string {
@@ -156,33 +172,39 @@ export function renderTopbar(busy = false): string {
   return `<header class="topbar"><h1>magiceth</h1>${tag}<span class="ver">v${APP_VERSION}</span>${spinner}</header>`
 }
 
+/** A question in the notice bar is tappable: the tap is the confirming second press it asks for. */
 export function renderNotice(): string {
   if (!notice) return ''
-  return `<div class="notice${pendingAction ? ' confirm' : ''}">${escapeHtml(notice)}</div>`
+  const press = pendingAction ? ` confirm" data-press="${escapeHtml(pendingAction.key)}` : ''
+  return `<div class="notice${press}">${escapeHtml(notice)}</div>`
 }
 
 /**
  * The first screen. Three jobs, and the tool does them differently enough that mixing them on
- * one screen would cost the glanceability the whole thing is built around.
+ * one screen would cost the glanceability the whole thing is built around. Each card is the key
+ * it names, so a tap on it is that key.
  */
 export function renderChooser(): string {
   return renderShell({
     key: 'chooser',
-    footer:
-      '<b>1</b>/<b>E</b> ethernet · <b>2</b>/<b>W</b> wi-fi · <b>3</b>/<b>C</b> configure · <b>Tab</b> switches anytime',
+    footer: [
+      { keys: ['1', 'e'], label: 'ethernet' },
+      { keys: ['2', 'w'], label: 'wi-fi' },
+      { keys: ['3', 'c'], label: 'configure' }
+    ],
     body: `
     <section class="chooser">
-      <div class="mode-card">
+      <div class="mode-card" data-press="1">
         <span class="mode-key">1</span>
         <h2>Ethernet</h2>
         <p>A wired port through a USB dongle — IP, DHCP, gateway, DNS, ping, throughput and the VLANs on the wire.</p>
       </div>
-      <div class="mode-card">
+      <div class="mode-card" data-press="2">
         <span class="mode-key">2</span>
         <h2>Wi-Fi</h2>
         <p>The air around you — every network, the access points behind it, their channels, width, load and signal.</p>
       </div>
-      <div class="mode-card">
+      <div class="mode-card" data-press="3">
         <span class="mode-key">3</span>
         <h2>Configure</h2>
         <p>Set a device up through the port — adopt a UniFi switch to a remote controller, or run a plugin of your own.</p>

@@ -17,9 +17,11 @@ import type {
   WifiTrack
 } from '../../shared/types'
 import { clock, escapeHtml, plural, row, rowWithSub } from './view'
+import type { Hint } from './view'
 import {
   confirmStep,
   consumePending,
+  hints,
   renderShell,
   requestRender,
   setMode,
@@ -247,8 +249,7 @@ function renderApDetail(): string {
         : row('Clients', 'not advertised', 'warn')
     }
     ${b.countryCode ? row('Country', b.countryCode) : ''}
-    ${track && sightings > 1 ? row('Seen', `${plural(sightings, 'time')} over ${clock(track.lastSeenSec - track.firstSeenSec)}`) : ''}
-    <p class="hint2"><b>←</b>/<b>Esc</b> back</p>`
+    ${track && sightings > 1 ? row('Seen', `${plural(sightings, 'time')} over ${clock(track.lastSeenSec - track.firstSeenSec)}`) : ''}`
 }
 
 /** Which channels are crowded, and whether the crowd is near enough to matter. */
@@ -325,7 +326,7 @@ function renderBuckets(): string {
 function renderSavedList(): string {
   if (savedList.length === 0) {
     return `<div class="section-title">Saved recordings</div>
-      <p class="status-msg">Nothing saved yet. Press <b>L</b> to record a walk — it is written to your Documents folder as it runs.</p>`
+      <p class="status-msg">Nothing saved yet. ${hints([{ keys: ['l'], label: 'record a walk' }])} — it is written to your Documents folder as it runs.</p>`
   }
   const items = savedList
     .map(
@@ -339,8 +340,7 @@ function renderSavedList(): string {
     )
     .join('')
   return `<div class="section-title">Saved recordings — Documents/magiceth</div>
-    <ul class="profiles">${items}</ul>
-    <p class="hint2"><b>Enter</b> open · <b>F</b> show in folder · <b>S</b> close</p>`
+    <ul class="profiles">${items}</ul>`
 }
 
 function renderLevel(): string {
@@ -363,7 +363,10 @@ function renderLevel(): string {
 function renderBody(): string {
   if (result && result.status !== 'ok' && networks().length === 0) {
     const fix = result.canEnableAccess
-      ? `<p class="hint2"><b>O</b> turn Location on for me (asks for admin) · <b>R</b> scan again</p>`
+      ? `<p class="hint2">${hints([
+          { keys: ['o'], label: 'turn Location on for me (asks for admin)' },
+          { keys: ['r'], label: 'scan again' }
+        ])}</p>`
       : ''
     return `<section class="panel-card">
       <div class="section-title">Wi-Fi scan</div>
@@ -374,22 +377,54 @@ function renderBody(): string {
   return `<section class="panel-card">${renderLevel()}</section>`
 }
 
+/** The legend for the level on screen: only keys that do something there. */
+function footerHints(): Hint[] {
+  const select: Hint = { keys: ['ArrowUp', 'ArrowDown'], label: 'select' }
+  const open: Hint = { keys: ['Enter'], label: 'open' }
+  const back: Hint = { keys: ['ArrowLeft', 'Escape'], label: 'back' }
+  const scan: Hint = { keys: ['r'], label: 'scan' }
+  const record: Hint = { keys: ['l'], label: recording ? 'stop' : 'record' }
+  const channel: Hint = {
+    keys: ['c'],
+    label: level === 'channels' ? 'groups' : level === 'buckets' ? 'close' : 'channels'
+  }
+  const next: Hint = { keys: ['Tab'], label: 'configure' }
+  switch (level) {
+    case 'saved':
+      return [
+        select,
+        open,
+        { keys: ['f'], label: 'folder' },
+        { keys: ['s', 'Escape'], label: 'close' },
+        next
+      ]
+    case 'networks': {
+      const extra: Hint[] = []
+      if (result?.canEnableAccess && networks().length === 0)
+        extra.push({ keys: ['o'], label: 'location' })
+      if (loaded) extra.push({ keys: ['f'], label: 'folder' })
+      return [
+        select,
+        open,
+        channel,
+        { keys: ['s'], label: 'saved' },
+        scan,
+        record,
+        ...extra,
+        next,
+        { keys: ['Escape'], label: loaded ? 'saved list' : 'back' }
+      ]
+    }
+    case 'aps':
+      return [select, open, back, channel, scan, record]
+    default:
+      // detail, channels, buckets: nothing to select or open.
+      return [back, channel, scan, record]
+  }
+}
+
 export function renderWlan(): string {
   const status = statusLine()
-  const record = `<b>L</b> ${recording ? 'stop' : 'record'}`
-  const channelKey =
-    level === 'channels'
-      ? '<b>C</b> groups'
-      : level === 'buckets'
-        ? '<b>C</b> close'
-        : '<b>C</b> channels'
-  const fixKey = result?.canEnableAccess && networks().length === 0 ? ' · <b>O</b> location' : ''
-  const footer =
-    level === 'saved'
-      ? `<b>↑↓</b> select · <b>Enter</b> open · <b>F</b> folder · <b>S</b> close · <b>Tab</b> ethernet`
-      : level === 'networks'
-        ? `<b>↑↓</b> select · <b>Enter</b> open · ${channelKey} · <b>S</b> saved · <b>R</b> scan · ${record}${fixKey}`
-        : `<b>↑↓</b> select · <b>Enter</b> open · <b>←</b> back · ${channelKey} · <b>R</b> scan · ${record}`
   return renderShell({
     // Which list you are on, and which row you opened — so moving the selection keeps your place
     // while descending into something else starts at the top.
@@ -400,7 +435,7 @@ export function renderWlan(): string {
     status: status
       ? `<div class="selector"><span class="selector-hint">${escapeHtml(status)}</span></div>`
       : '',
-    footer,
+    footer: footerHints(),
     body: renderBody()
   })
 }

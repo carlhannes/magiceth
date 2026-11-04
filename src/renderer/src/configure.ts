@@ -9,17 +9,20 @@ import type { Adapter } from '../../shared/types'
 import type { Block, PluginManifest, PluginScreen } from '../../shared/plugin'
 import { pickSelected } from '../../shared/adapter'
 import { escapeHtml } from './view'
+import type { Hint } from './view'
 import {
   app,
   confirmStep,
   consumePending,
+  FORM_FOOTER,
+  hints,
   renderShell,
   requestRender,
   setMode,
   setNotice,
   setRenderSuspended
 } from './shell'
-import { renderBlocks } from './plugin-view'
+import { pluginHints, renderBlocks } from './plugin-view'
 
 type FormBlock = Extract<Block, { kind: 'form' }>
 
@@ -50,7 +53,8 @@ function portLine(): string {
       return `<span class="chip${i === selected ? ' active' : ''}">${escapeHtml(name)}</span>`
     })
     .join('')
-  return `<div class="selector">${chips}<span class="selector-hint">← → port</span></div>`
+  // `data-step` tells a tap on a chip which keys walk this strip (main.ts); the others use ↑↓.
+  return `<div class="selector" data-step="ArrowLeft ArrowRight">${chips}<span class="selector-hint">${hints([{ keys: ['ArrowLeft', 'ArrowRight'], label: 'port' }])}</span></div>`
 }
 
 /** The plugins the chooser shows: all of them, or those matching what was typed. */
@@ -91,7 +95,15 @@ function renderChooser(): string {
     key: 'configure:chooser',
     busy: activating,
     status: portLine(),
-    footer: `<b>↑↓</b> select · <b>Enter</b> open · <b>←→</b> port · type to search · <b>Esc</b> back · <b>Tab</b> ethernet`,
+    footer: [
+      { keys: ['ArrowUp', 'ArrowDown'], label: 'select' },
+      { keys: ['Enter'], label: 'open' },
+      { keys: ['ArrowLeft', 'ArrowRight'], label: 'port' },
+      { keys: [], label: 'type to search' },
+      ...(pluginFilter ? [{ keys: ['Backspace'], label: 'erase' }] : []),
+      { keys: ['Escape'], label: pluginFilter ? 'clear' : 'back' },
+      { keys: ['Tab'], label: 'ethernet' }
+    ],
     body: `<section class="panel-card">
       ${search}
       <ul class="profiles">${pluginRows(list)}</ul>
@@ -108,13 +120,12 @@ function statusLine(s: PluginScreen): string {
 }
 
 function renderActive(s: PluginScreen): string {
-  const keys = s.view.keys.map((k) => `<b>${escapeHtml(k.key)}</b> ${escapeHtml(k.label)}`)
-  keys.push('<b>Esc</b> leave')
+  const keys: Hint[] = [...pluginHints(s.view.keys), { keys: ['Escape'], label: 'leave' }]
   return renderShell({
     key: `configure:${s.pluginId}`,
     busy: s.view.busy,
     status: statusLine(s),
-    footer: keys.join(' · '),
+    footer: keys,
     body: `<section class="panel-card">${renderBlocks(s.view.blocks)}</section>`
   })
 }
@@ -139,7 +150,7 @@ function drawForm(s: PluginScreen, block: FormBlock): void {
   app.innerHTML = renderShell({
     key: `configure:${s.pluginId}:form:${block.id}`,
     status: statusLine(s),
-    footer: 'Fill in with the mouse · <b>Esc</b> cancels',
+    footer: FORM_FOOTER,
     body: `<section class="editor">
       <div class="section-title">${escapeHtml(block.title)}</div>
       ${fields}

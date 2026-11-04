@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'node:path'
 import os from 'node:os'
 import { listAdapters } from './capabilities/adapters'
@@ -47,7 +47,9 @@ function interfaceSignature(): string {
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 480,
-    height: 820,
+    // Tall enough for a port's whole readout, but never taller than the screen: on an 11.6" laptop
+    // the work area is under 800 px and a window that overruns it hides the key legend.
+    height: Math.min(820, screen.getPrimaryDisplay().workAreaSize.height),
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -121,6 +123,15 @@ function startHotplugPolling(): void {
   setInterval(() => {
     pollOnce().catch((e) => console.error('hotplug poll failed:', e))
   }, POLL_MS)
+}
+
+// On Linux, run as a native Wayland client where there is a Wayland session (X11 otherwise), and
+// speak the text-input protocol: that is what makes GNOME's on-screen keyboard appear when a form
+// field takes focus on a touch screen. Must be set before the app is ready.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto')
+  app.commandLine.appendSwitch('enable-wayland-ime')
+  app.commandLine.appendSwitch('wayland-text-input-version', '3')
 }
 
 app.whenReady().then(() => {

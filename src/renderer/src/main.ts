@@ -2,6 +2,11 @@
 //
 // This file is the only one that knows all the modes exist. shell.ts holds what they share, and
 // no mode imports another, so the dependency graph stays a tree.
+//
+// It is also where a tap becomes a keypress. Legend buttons, mode cards, the confirmation notice
+// and list rows are handled by two delegated listeners at the bottom, which dispatch the same
+// synthetic keydown that scripts/ui-check.mjs uses — so each mode's key handler stays the only
+// input handler there is, for a finger as much as for a keyboard.
 
 import './styles.css'
 import {
@@ -37,10 +42,21 @@ const TAB_ORDER: Mode[] = ['ethernet', 'wlan', 'configure']
  */
 let lastSelection = ''
 
+// A finger on the screen holds repaints back. The WLAN lists re-sort on every push, so a render
+// landing between the touch and the click it becomes would put another row under the finger and
+// the tap would open the wrong network. The click arrives as its own task after touchend, so the
+// flush waits a moment for it.
+let touching = false
+let dirty = false
+
 function render(): void {
   // A form that draws itself also owns repainting, or a background event would wipe what is being
   // typed. The mode raises this flag while its editor is up.
   if (isRenderSuspended()) return
+  if (touching) {
+    dirty = true
+    return
+  }
 
   // Replacing the markup destroys the scrolling element and with it the reader's place. Push
   // updates land about once a second while scanning, so without this a long list would snap back
@@ -117,6 +133,8 @@ function handleChooserKey(e: KeyboardEvent): void {
   if (e.key === '1' || e.key === 'e' || e.key === 'E') switchTo('ethernet')
   else if (e.key === '2' || e.key === 'w' || e.key === 'W') switchTo('wlan')
   else if (e.key === '3' || e.key === 'c' || e.key === 'C') switchTo('configure')
+  // Tab cycles the modes from anywhere, the chooser included: it starts the cycle.
+  else if (e.key === 'Tab') switchTo(TAB_ORDER[0])
   else return
   e.preventDefault()
 }
@@ -143,6 +161,72 @@ document.addEventListener('keydown', (e) => {
   else if (mode === 'wlan') handleWlanKey(e)
   else if (mode === 'configure') handleConfigureKey(e)
 })
+
+// --- A tap is a keypress ---
+
+/** What the keyboard would do. Dispatched on the document, so it takes exactly the path a key does. */
+function press(key: string): void {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+}
+
+/** What a finger can land on besides a legend key: list rows, and the adapter or port chips. */
+const ITEM = '.profile, .chip'
+
+app.addEventListener('click', (e) => {
+  const target = e.target as Element | null
+  const pressed = target?.closest<HTMLElement>('[data-press]')
+  if (pressed) {
+    press(pressed.dataset.press ?? '')
+    return
+  }
+  // A row is reached the way the arrow keys reach it: steps from the selected row, the short way
+  // round since every list wraps. That is what lets a plugin's list — whose selection the plugin
+  // owns and the app cannot set — behave exactly like the app's own. The indices are taken from
+  // the markup once, before the first step repaints it. Tapping the selected row again opens it,
+  // as Enter does; a chip only selects.
+  const item = target?.closest<HTMLElement>(ITEM)
+  const list = item?.parentElement
+  if (!item || !list) return
+  const items = [...list.children].filter((c) => c.matches(ITEM))
+  const current = items.findIndex((c) => c.matches('.sel, .active'))
+  const wanted = items.indexOf(item)
+  if (current < 0 || wanted < 0) return
+  const [back, forth] = (list.dataset.step ?? 'ArrowUp ArrowDown').split(' ')
+  const n = items.length
+  const ahead = (wanted - current + n) % n
+  if (ahead === 0) {
+    if (item.matches('.profile')) press('Enter')
+    return
+  }
+  const behind = n - ahead
+  const key = ahead <= behind ? forth : back
+  for (let i = 0; i < Math.min(ahead, behind); i++) press(key)
+})
+
+// Keep focus where it is: a legend button left focused would fire again on the next Enter, and a
+// second tap on a row must open the row, not select its text.
+app.addEventListener('mousedown', (e) => {
+  if ((e.target as Element | null)?.closest(`[data-press], ${ITEM}`)) e.preventDefault()
+})
+
+function release(e: TouchEvent): void {
+  if (e.touches.length > 0) return
+  touching = false
+  setTimeout(() => {
+    if (!dirty) return
+    dirty = false
+    render()
+  }, 150)
+}
+app.addEventListener(
+  'touchstart',
+  () => {
+    touching = true
+  },
+  { passive: true }
+)
+app.addEventListener('touchend', release, { passive: true })
+app.addEventListener('touchcancel', release, { passive: true })
 
 async function init(): Promise<void> {
   setRenderer(render)

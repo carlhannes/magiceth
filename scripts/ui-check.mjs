@@ -237,17 +237,53 @@ async function expectChooser() {
   await expectText('Hello plugin')
   await expectNoText('saying hello')
 }
+/** The first line of the highlighted list row: a plugin's title, a fruit. */
+const selectedRow = () =>
+  evalIn(
+    page,
+    () => document.querySelector('.profile.sel .pn')?.firstChild?.textContent?.trim() ?? ''
+  )
 /** Walk the chooser's selection to the plugin with this title (the list wraps). */
 async function selectPlugin(title) {
   for (let i = 0; i < 10; i++) {
-    const selected = await evalIn(
-      page,
-      () => document.querySelector('.profile.sel .pn')?.firstChild?.textContent?.trim() ?? ''
-    )
-    if (selected === title) return
+    if ((await selectedRow()) === title) return
     await press('ArrowDown')
   }
   throw new Error(`could not select "${title}"`)
+}
+/** What a finger would do. element.click() bubbles to the delegated listener in main.ts, which turns it into the key. */
+async function tap(selector) {
+  const hit = await evalIn(
+    page,
+    (s) => {
+      const el = document.querySelector(s)
+      if (!el) return false
+      el.click()
+      return true
+    },
+    selector
+  )
+  if (!hit) throw new Error(`nothing to tap at ${selector}`)
+  await new Promise((r) => setTimeout(r, 150))
+  trace.push(`tap ${selector} → ${await view()}`)
+}
+/** Tap the list row whose first line is this text. Selects it, or opens it when already selected. */
+async function tapRow(title) {
+  const hit = await evalIn(
+    page,
+    (t) => {
+      const li = [...document.querySelectorAll('li.profile')].find(
+        (el) => el.querySelector('.pn')?.firstChild?.textContent?.trim() === t
+      )
+      if (!li) return false
+      li.click()
+      return true
+    },
+    title
+  )
+  if (!hit) throw new Error(`no row "${title}" to tap`)
+  await new Promise((r) => setTimeout(r, 150))
+  trace.push(`tap row ${title} → ${await view()}`)
 }
 
 // --- The walk ---
@@ -358,6 +394,62 @@ async function run() {
   await press('Escape')
   await expectSelector('.chooser')
   await shot('mode-chooser')
+
+  // --- The same screens by touch: main.ts turns every tap below into the key it stands for ---
+  await tap('.mode-card[data-press="3"]')
+  await expectChooser()
+  // A tap on a row selects it; a tap on the selected row opens it. Make sure Hello is not already
+  // selected, or the first tap would open it.
+  if ((await selectedRow()) === 'Hello plugin') await tapRow('UniFi adoption')
+  await tapRow('Hello plugin')
+  if ((await selectedRow()) !== 'Hello plugin') throw new Error('tapping a row did not select it')
+  await tapRow('Hello plugin')
+  await expectText('Hello again, reloaded.')
+  // The example's fruit list is the plugin's own selection: apple is picked, cherry is one step
+  // back round the wrap, so the tap must go the short way and the plugin must land on cherry.
+  if ((await selectedRow()) !== 'apple')
+    throw new Error(`expected apple, got "${await selectedRow()}"`)
+  await tapRow('cherry')
+  if ((await selectedRow()) !== 'cherry') throw new Error('tapping a plugin row did not move it')
+  await tap('footer [data-press="ArrowDown"]')
+  if ((await selectedRow()) !== 'apple')
+    throw new Error('the legend arrow did not move the selection')
+  await tap('footer [data-press="n"]')
+  await expectSelector('#pf-0')
+  await tap('footer [data-press="Escape"]')
+  await expectNoText('Your name')
+  await shot('hello-by-touch')
+  await tap('footer [data-press="Escape"]')
+  await expectChooser()
+  await tap('footer [data-press="Escape"]')
+  await expectSelector('.chooser')
+
+  // Ethernet: the profile panel from the legend and back. The empty screen has only the way out.
+  await tap('.mode-card[data-press="1"]')
+  await until(async () => (await view()).startsWith('ethernet:'), 'ethernet mode', 5000)
+  if ((await view()) !== 'ethernet:empty') {
+    await tap('footer [data-press="p"]')
+    await expectSelector('.panel-card .profiles')
+    await shot('profiles-by-touch')
+    await tap('footer [data-press="Escape"]')
+    await until(
+      () => evalIn(page, () => !document.querySelector('.panel-card .profiles')),
+      'the panel to close',
+      5000
+    )
+  }
+  await tap('footer [data-press="Escape"]')
+  await expectSelector('.chooser')
+
+  // Wi-Fi: the channel view from the legend, then back out.
+  await tap('.mode-card[data-press="2"]')
+  await until(async () => (await view()).startsWith('wlan:'), 'wlan mode', 5000)
+  await tap('footer [data-press="c"]')
+  await until(async () => (await view()).startsWith('wlan:channels'), 'the channel view', 5000)
+  await tap('footer [data-press="Escape"]')
+  await until(async () => (await view()).startsWith('wlan:networks'), 'the network list', 5000)
+  await tap('footer [data-press="Escape"]')
+  await expectSelector('.chooser')
 }
 
 let failed = false

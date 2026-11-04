@@ -155,16 +155,65 @@ body {
 
 /* No margin-top: auto — the scrolling region above takes the slack and holds this at the bottom. */
 .hint {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 2px 10px;
   color: var(--muted);
-  font-size: 12px;
-  text-align: center;
+  font-size: 13px;
+  user-select: none;
 }
 
-.hint b {
+/* --- The key legend, anywhere it appears ---
+   Every key is a button: the keycap and its label, tall enough for a finger and drawn the same on a
+   desktop. One layout for touch and keyboard; the keycap keeps the terminal look. */
+.key {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding-right: 4px;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Several keys sharing a label (↑↓ select), or a plain-text entry. */
+.keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.key b,
+.keys b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
   color: var(--text);
   background: var(--dim);
-  padding: 1px 6px;
-  border-radius: 5px;
+  font-weight: 700;
+}
+
+.key:hover b,
+.key:active b {
+  outline: 1px solid var(--accent);
+}
+
+/* The key the notice bar is asking about: amber, like the question. */
+.key.confirm b,
+.keys.confirm b {
+  background: var(--warn);
+  color: #000;
 }
 
 .adapter-head .dev {
@@ -243,8 +292,11 @@ body {
 }
 
 .selector .chip {
-  font-size: 12px;
-  padding: 4px 9px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  font-size: 13px;
+  padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid var(--dim);
   color: var(--muted);
@@ -349,13 +401,6 @@ body {
   font-size: 12px;
 }
 
-.hint2 b {
-  color: var(--text);
-  background: var(--dim);
-  padding: 1px 6px;
-  border-radius: 5px;
-}
-
 .editor {
   background: var(--panel);
   border: 1px solid var(--dim);
@@ -377,11 +422,12 @@ body {
 .fld input,
 .fld select {
   font-size: 15px;
+  min-height: 40px;
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--dim);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   font-variant: tabular-nums;
 }
 
@@ -414,6 +460,7 @@ body {
 
 .btn {
   font-size: 14px;
+  min-height: 40px;
   padding: 9px 16px;
   border-radius: 8px;
   border: 1px solid var(--dim);
@@ -590,4 +637,18 @@ body {
 /* A plugin that cannot be opened — wrong api, bad entry — stays in the list with the reason. */
 .profile.muted {
   opacity: 0.55;
+}
+
+/* --- Touch ---
+   Rows, chips, mode cards and a pending question are tap targets: a tap on one becomes the key that
+   does the same thing (main.ts). No text selection on them, so a double tap opens instead of
+   highlighting, and no double-tap zoom delay. */
+.profile,
+.selector .chip,
+.mode-card,
+.notice.confirm {
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }

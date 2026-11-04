@@ -29,6 +29,15 @@ focus; extend the confirm keypress to dongles as well; or leave it and document 
 The confirmation is cleared by any other keypress and never by a timer, because self-clearing
 notices are their own open question further down this file.
 
+Touch did not change the gate: the legend's `M` is a one-tap MAC roll on a dongle exactly as the
+key is, and a tap on the already-selected profile row is `Enter`. A stray tap in tablet mode is as
+easy as a stray keystroke, which is one more reason to take the decision above rather than drift.
+
+Related, found while making rows tappable: a tap on an adapter chip is sent as arrow presses, and
+each arrow re-runs the diagnostics, so on a machine with four or more ports two `runDiag` calls can
+be in flight at once and the last to _finish_ wins — the same race a held `↓` key has always had.
+Not seen on real hardware; a machine with that many ports has not been met.
+
 ## Configure mode: verified on macOS, open elsewhere
 
 On 2026-10-28 a factory-default USW-Flex-Mini was adopted end to end through the plugin on macOS
@@ -121,6 +130,8 @@ is still open:
   into a port with no DHCP server for the first, and a trunk plus an admin capture for the second.
   The chipset and profile shots have the same problem _and_ the chipset one was captured
   mid-scroll, so its heading is cut off — those two only need a dongle plugged into USB, no cable.
+  Every shot also predates the legend becoming buttons, so their footers look different from the
+  app's.
 - **Radio de-duplication is a heuristic.** Per-channel client totals treat two access points as
   one radio when they advertise the same station count and their BSSIDs differ in at most two
   octets. It is right on every case in the captures taken so far, but it will merge two genuine

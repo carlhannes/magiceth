@@ -9,6 +9,29 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
 
 ## [Unreleased]
 
+### Added
+
+- **Touch.** Every key in the legend is now a button, the mode cards and list rows are tappable
+  (tap to select, tap again to open), the adapter and port chips too, and a pending confirmation
+  is answered by tapping the question in the notice bar. A tap is turned into the same keypress the
+  keyboard would send, so nothing else changed: one layout, the same keys, and plugins get it for
+  free. On Linux the app now runs as a native Wayland client with the text-input protocol on, so
+  GNOME's on-screen keyboard can appear for a form field.
+
+### Fixed
+
+- **Legends that named keys that did nothing.** The mode chooser claimed `Tab` switched modes (it
+  now does); the empty Ethernet screen offered `Esc` while swallowing it; the profile panel
+  advertised `1`–`9` without applying anything, and kept the dashboard's keys in the footer while
+  they were inert; the saved-recordings list said `Tab` went to Ethernet when it went to Configure.
+  Each now says what it does, and does what it says.
+- **Enter saves the profile editor**, as it already did a plugin's form.
+
+### Changed
+
+- **The window fits the screen.** Its height is capped at the display's work area, so on an 11.6"
+  laptop the legend is not pushed below the bottom edge.
+
 ## [0.7.0] – 2026-10-28
 
 ### Fixed

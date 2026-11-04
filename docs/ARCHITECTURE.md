@@ -69,9 +69,9 @@ src/
   preload/index.ts
   renderer/
     index.html
-    src/main.ts            # entry: mounts, dispatches render + keys by mode
+    src/main.ts            # entry: mounts, dispatches render + keys by mode, turns taps into keys
     src/shell.ts           # mode chooser, notice bar, pending confirmations, render hook
-    src/view.ts            # pure formatters shared by every mode (row, clock, escapeHtml…)
+    src/view.ts            # pure formatters shared by every mode (row, clock, escapeHtml…) and the key legend
     src/ethernet.ts        # Ethernet mode: the port dashboard + profile editor
     src/wlan.ts            # WLAN mode: network list, AP list, AP detail, recording
     src/configure.ts       # Configure mode: the plugin chooser and the active plugin's screen
@@ -229,6 +229,20 @@ arrow keys + simple keys (see README). The profile editor opens inline (`N`/`E`)
 open, `render()` becomes a **no-op** so that background events (hotplug/diagnostics) don't reset
 the input fields — field values are read from the DOM only on Save. The version is injected at
 build time (`__APP_VERSION__` via Vite `define`) and shown in the topbar.
+
+**A tap is a keypress.** The legend is data — `Hint[]` on `ModeView`, each entry the real
+`KeyboardEvent.key` values it stands for and a label, drawn by `renderHints` in `view.ts` — and
+every key in it is a button carrying its key value. One delegated click listener in `main.ts` turns
+a tap on such a button, on a mode card, or on the pending question in the notice bar into the same
+synthetic `keydown` that `scripts/ui-check.mjs` dispatches, so the modes' key handlers remain the
+only input handlers there are and touch cannot drift from the keyboard. A tap on a list row or an
+adapter chip is translated into arrow presses from the selected row, the short way round since
+every list wraps, and a tap on the selected row is `Enter` — which is what lets a plugin's list,
+whose selection the plugin owns and the app cannot set, behave exactly like the app's own. A
+plugin's legend names its keys as display text (`↑↓`, `Esc`, `N`); `pluginHints` maps those back to
+key values and leaves the rest (`any`) as text. While a finger is down, `render()` is deferred: the
+WLAN lists re-sort on every push, and a repaint between the touch and the click it becomes would put
+another row under the finger.
 
 Below the diagnostics sit two sections that fill in over time rather than on request: the speed
 test (`T`) and the port survey (`C`). Both follow the same shape — a `start`/`stop` pair plus an
@@ -430,7 +444,9 @@ acts.
 Every screen is assembled by `renderShell()` in `src/renderer/src/shell.ts` from a `ModeView`: a
 topbar, the notice, an optional pinned status line, the body, and the key legend. Only the body
 scrolls. The frame is fixed because the legend is how anyone discovers what the app does, and a
-legend that scrolls away on any list longer than the window is a legend nobody reads.
+legend that scrolls away on any list longer than the window is a legend nobody reads. Because every
+entry is also executable, an entry must name a key that does something on that screen: a legend
+that lies is not merely confusing, it is a button that does nothing.
 
 Having one function assemble it is what keeps the screens that need it — both Ethernet states,
 the profile editor, WLAN, Configure's chooser and plugin screens, and the mode chooser — from
