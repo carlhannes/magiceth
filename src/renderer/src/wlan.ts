@@ -8,6 +8,7 @@ import type {
   Adapter,
   ChannelBucket,
   ChannelLoad,
+  MonitorStatus,
   RecordingSummary,
   SavedRecording,
   WifiBss,
@@ -50,6 +51,25 @@ const ENABLE_ACCESS_EXPLAINER =
 /** What pressing L is about to do. Shown as the confirmation, not as standing hint text. */
 const RECORD_EXPLAINER =
   'Recording — keeps scanning and tracks every access point over time, so signal, clients and channel load get a min/max/average. Walk around, then press L again to stop.'
+
+/**
+ * What pressing M is about to do. Shown as the confirmation, and honest about the cost: Wi-Fi goes
+ * off. confirmStep adds "Press M again to start."
+ */
+const MONITOR_EXPLAINER =
+  "Monitor mode — listens to every Wi-Fi frame on every channel to show how busy the air really is and which access points are there, including hidden ones. Nothing is sent, and the contents of other people's traffic are never read. This computer's Wi-Fi is disconnected for the duration and reconnected when you stop (allow about ten seconds). Asks for admin."
+
+const RECONNECT_NOTE =
+  'Stopped listening. Wi-Fi is being reconnected — give it about ten seconds, then R scans again.'
+
+/** Deauthentications heard from one access point before it reads as a warning, and as bad. */
+const DEAUTH_WARN = 3
+const DEAUTH_BAD = 10
+
+/** True while a listening session is running on this screen's live result. */
+function listening(): boolean {
+  return !loaded && result?.monitor?.running === true
+}
 
 function networks(): WifiNetwork[] {
   return loaded ? loaded.networks : (result?.networks ?? [])
@@ -141,7 +161,26 @@ function trackFor(bssid: string): WifiTrack | undefined {
   return tracks().find((t) => t.bssid === bssid)
 }
 
+const megabytes = (bytes: number): string =>
+  bytes < 1024 * 1024 ? '<1 MB' : `${Math.round(bytes / 1024 / 1024)} MB`
+
+/** `Listening · 38 channels · 4 312 frames · 38 MB · Wi-Fi off until you stop`, plus what is notable. */
+function listeningLine(m: MonitorStatus): string {
+  if (m.pcapBytes === 0) return 'Starting to listen — approve the admin prompt if one appears…'
+  const parts = [
+    'Listening',
+    plural(m.channelsVisited, 'channel'),
+    `${m.frames.toLocaleString('en')} ${m.frames === 1 ? 'frame' : 'frames'}`,
+    megabytes(m.pcapBytes)
+  ]
+  if (m.channelsFailed > 0) parts.push(`${m.channelsFailed} could not be tuned`)
+  if (m.pinnedChannel !== undefined) parts.push(`held on ch ${m.pinnedChannel}`)
+  parts.push('Wi-Fi off until you stop')
+  return parts.join(' · ')
+}
+
 function statusLine(): string {
+  if (listening() && result?.monitor) return listeningLine(result.monitor)
   if (loaded) {
     const s = loaded.summary
     return `Saved ${s.startedAt} · ${clock(s.durationSec)} · ${plural(s.networks, 'network')}, ${plural(s.accessPoints, 'access point')}`
@@ -168,6 +207,9 @@ function statusLine(): string {
 function renderNetworkList(): string {
   const list = networks()
   if (list.length === 0) {
+    if (listening()) {
+      return `<p class="status-msg">Listening — the first sweep of the channels takes about fifteen seconds.</p>`
+    }
     return `<p class="status-msg">${scanning ? 'Scanning the air…' : 'No networks heard yet — press R.'}</p>`
   }
   const items = list
@@ -249,14 +291,30 @@ function renderApDetail(): string {
         : row('Clients', 'not advertised', 'warn')
     }
     ${b.countryCode ? row('Country', b.countryCode) : ''}
+    ${b.airFramesPerSec != null ? row('Air', `≈ ${b.airFramesPerSec} frames/s · ${b.airRetryPct ?? 0}% retries`, (b.airRetryPct ?? 0) > 30 ? 'bad' : (b.airRetryPct ?? 0) > 15 ? 'warn' : '') : ''}
+    ${b.deauths != null ? row('Deauths heard', String(b.deauths), b.deauths >= DEAUTH_BAD ? 'bad' : b.deauths >= DEAUTH_WARN ? 'warn' : '') : ''}
     ${track && sightings > 1 ? row('Seen', `${plural(sightings, 'time')} over ${clock(track.lastSeenSec - track.firstSeenSec)}`) : ''}`
+}
+
+/** What listening measured on a channel, kept apart from the load its access points advertise. */
+function airText(c: ChannelLoad): string | undefined {
+  if (c.visited === undefined) return undefined
+  if (c.visited === 0) return 'the card could not tune to it'
+  return `heard ≈ ${c.framesPerSec ?? 0} frames/s · ${c.retryPct ?? 0}% retries`
+}
+
+function airClass(c: ChannelLoad): string {
+  if (c.visited === 0) return 'warn'
+  if ((c.retryPct ?? 0) > 30) return 'bad'
+  if ((c.retryPct ?? 0) > 15) return 'warn'
+  return ''
 }
 
 /** Which channels are crowded, and whether the crowd is near enough to matter. */
 function renderChannels(): string {
   const list = channels()
   if (list.length === 0) return `<p class="status-msg">Nothing heard yet — press R.</p>`
-  const busiest = Math.max(...list.map((c) => c.accessPoints))
+  const busiest = Math.max(1, ...list.map((c) => c.accessPoints))
   let band = ''
   const out: string[] = []
   for (const c of list) {
@@ -267,19 +325,25 @@ function renderChannels(): string {
     // Capped at five so the busiest row still fits on one line in a 480px window.
     const bars = '▋'.repeat(Math.max(1, Math.round((c.accessPoints / busiest) * 5)))
     const detail = [
-      clientsText(c.clients, c.clientsFromAps, c.accessPoints),
+      c.accessPoints > 0 ? clientsText(c.clients, c.clientsFromAps, c.accessPoints) : undefined,
       c.maxUtilizationPct != null ? `load ${c.maxUtilizationPct}%` : undefined,
+      airText(c),
       // Only worth saying when something beyond this channel's own access points reaches it.
       c.overlappingAps > c.accessPoints ? `${c.overlappingAps} overlapping` : undefined
     ]
       .filter(Boolean)
       .join(' · ')
+    // A channel nobody advertises on has no bars and no strongest signal; the air line carries it.
+    const value =
+      c.accessPoints > 0 && c.bestRssi !== undefined
+        ? `${bars} ${plural(c.accessPoints, 'AP')} · ${c.bestRssi} dBm`
+        : 'no AP heard'
     out.push(
       rowWithSub(
         `Ch ${c.channel}`,
-        `${bars} ${plural(c.accessPoints, 'AP')} · ${c.bestRssi} dBm`,
+        value,
         detail,
-        loadClass(c.maxUtilizationPct)
+        c.maxUtilizationPct !== undefined ? loadClass(c.maxUtilizationPct) : airClass(c)
       )
     )
   }
@@ -389,6 +453,14 @@ function footerHints(): Hint[] {
     label: level === 'channels' ? 'groups' : level === 'buckets' ? 'close' : 'channels'
   }
   const next: Hint = { keys: ['Tab'], label: 'configure' }
+  // Listening is a separate key because it is a different act: it disconnects. R has nothing to
+  // scan with while it runs, so it is not offered.
+  const live = listening()
+  const listen: Hint[] =
+    result?.canMonitor && !loaded
+      ? [{ keys: ['m'], label: live ? 'stop listening' : 'listen' }]
+      : []
+  const scanKey: Hint[] = live ? [] : [scan]
   switch (level) {
     case 'saved':
       return [
@@ -408,18 +480,26 @@ function footerHints(): Hint[] {
         open,
         channel,
         { keys: ['s'], label: 'saved' },
-        scan,
+        ...scanKey,
         record,
+        ...listen,
         ...extra,
         next,
         { keys: ['Escape'], label: loaded ? 'saved list' : 'back' }
       ]
     }
     case 'aps':
-      return [select, open, back, channel, scan, record]
+      return [select, open, back, channel, ...scanKey, record, ...listen]
+    case 'detail': {
+      const held = live && currentAp()?.channel === result?.monitor?.pinnedChannel
+      const pin: Hint[] = live
+        ? [{ keys: ['k'], label: held ? 'sweep again' : 'hold channel' }]
+        : []
+      return [back, channel, ...scanKey, record, ...listen, ...pin]
+    }
     default:
-      // detail, channels, buckets: nothing to select or open.
-      return [back, channel, scan, record]
+      // channels, buckets: nothing to select or open.
+      return [back, channel, ...scanKey, record, ...listen]
   }
 }
 
@@ -429,7 +509,7 @@ export function renderWlan(): string {
     // Which list you are on, and which row you opened — so moving the selection keeps your place
     // while descending into something else starts at the top.
     key: `wlan:${level}:${level === 'detail' ? `${netSel}:${apSel}` : level === 'aps' ? netSel : ''}`,
-    busy: scanning || recording,
+    busy: scanning || recording || listening(),
     // Live while recording: elapsed time, scans, and the file being written. Worth keeping on
     // screen while scrolling a long list.
     status: status
@@ -473,6 +553,60 @@ async function scan(mode: 'once' | 'record'): Promise<void> {
     scanning = false
     requestRender()
   }
+}
+
+/** Put Wi-Fi aside and listen. A refusal leaves what was on screen alone and says why. */
+async function startListening(): Promise<void> {
+  const dev = await resolveDevice()
+  scanning = true
+  // The status line says what is happening, prompt included; a standing notice would outlive it.
+  setNotice(null)
+  requestRender()
+  try {
+    const next = await window.api.startMonitor(dev)
+    if (next.status === 'ok') {
+      result = next
+      recording = next.running
+    } else {
+      setNotice(next.message ?? 'Could not start listening.')
+    }
+  } catch (err) {
+    console.error('starting to listen failed', err)
+    setNotice(`Could not start listening: ${String(err)}`)
+  } finally {
+    scanning = false
+    requestRender()
+  }
+}
+
+async function stopListening(): Promise<void> {
+  setNotice(RECONNECT_NOTE)
+  try {
+    const final = await window.api.stopMonitor()
+    if (final) result = final
+  } catch (err) {
+    console.error('stopping listening failed', err)
+  }
+  requestRender()
+}
+
+/** K on an access point: hold the radio on its channel and width, or sweep again. */
+async function togglePin(): Promise<void> {
+  const ap = currentAp()
+  if (!ap || !listening()) return
+  const held = ap.channel === result?.monitor?.pinnedChannel
+  setNotice(
+    held
+      ? null
+      : `Holding the radio on channel ${ap.channel}, so every frame on it is heard. K again to sweep all channels.`
+  )
+  try {
+    const next = await window.api.pinMonitor(held ? null : ap.bssid)
+    if (next) result = next
+  } catch (err) {
+    console.error('pinning the channel failed', err)
+  }
+  requestRender()
 }
 
 /** The one-key Location fix. Whatever comes back is shown; a failure leaves the screen as it was. */
@@ -601,10 +735,18 @@ export function handleWlanKey(e: KeyboardEvent): void {
   else if (e.key === 'Enter' || e.key === 'ArrowRight') descend()
   else if (e.key === 'Escape' || e.key === 'ArrowLeft') ascend()
   else if (e.key === 'r' || e.key === 'R' || e.key === ' ') {
-    if (!scanning) {
+    // While listening the station is down: a scan would only fail.
+    if (!scanning && !listening()) {
       backToLive()
       void scan('once')
     }
+  } else if (e.key === 'm' || e.key === 'M') {
+    if (!result?.canMonitor || loaded || scanning) return
+    if (listening()) void stopListening()
+    else if (confirmStep('m', '', MONITOR_EXPLAINER, pending)) void startListening()
+  } else if (e.key === 'k' || e.key === 'K') {
+    if (level !== 'detail' || !listening()) return
+    void togglePin()
   } else if (e.key === 'l' || e.key === 'L') {
     if (recording) void stopRecording()
     else {
@@ -632,6 +774,8 @@ export function handleWlanKey(e: KeyboardEvent): void {
 
 /** Leaving the mode stops the radio work; a recording must not outlive the screen it belongs to. */
 export function leaveWlan(): void {
+  // Listening first: it has Wi-Fi switched off, and the stop is what switches it back on.
+  if (listening()) void window.api.stopMonitor().catch(() => undefined)
   if (!recording) return
   recording = false
   void window.api
@@ -651,8 +795,13 @@ export function enterWlan(): void {
 export function initWlan(): void {
   window.api.onWifiUpdate((update) => {
     if (update.device && update.device !== device) return
+    const wasListening = listening()
     result = update
     recording = update.running
+    // A session that ended on its own (refused prompt, a cap, an error) says why, once.
+    if (wasListening && update.monitor && !update.monitor.running) {
+      setNotice(update.monitor.message ?? RECONNECT_NOTE)
+    }
     requestRender()
   })
 }

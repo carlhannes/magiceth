@@ -448,6 +448,63 @@ async function run() {
   await until(async () => (await view()).startsWith('wlan:channels'), 'the channel view', 5000)
   await tap('footer [data-press="Escape"]')
   await until(async () => (await view()).startsWith('wlan:networks'), 'the network list', 5000)
+
+  // Listening, when a capture is named to play back (MAGICETH_MONITOR_REPLAY=<file.pcap>): a
+  // computer that cannot listen can still be driven through the screens. The key asks first, then
+  // the list fills as sweeps complete, and stopping hands the Wi-Fi back.
+  if (process.env.MAGICETH_MONITOR_REPLAY) {
+    await until(
+      () => evalIn(page, () => Boolean(document.querySelector('footer [data-press="m"]'))),
+      'the listen key',
+      15000
+    )
+    await tap('footer [data-press="m"]')
+    await expectText('Monitor mode')
+    await tap('footer [data-press="m"]')
+    await expectText('Listening')
+    await shot('wlan-listening-start')
+    await until(
+      () => evalIn(page, () => document.querySelectorAll('.panel-card .profile').length > 0),
+      'access points heard while listening',
+      30000
+    )
+    // The replayed access points arrive when the first sweep closes, among whatever the real scan
+    // found: wait for the network they belong to to list more than one.
+    await until(
+      () =>
+        evalIn(page, () =>
+          [...document.querySelectorAll('li.profile')].some(
+            (li) =>
+              li.textContent.includes('tdc_nomap') &&
+              Number(/(\d+) APs/.exec(li.textContent)?.[1]) >= 2
+          )
+        ),
+      'the replayed access points',
+      40000
+    )
+    await shot('wlan-listening-networks')
+    // The replayed access points sit among whatever the real scan found, so rows are taken by
+    // name. A tap on a row that is not selected selects it, and on one that is, opens it.
+    const open = async (title, view_) => {
+      for (let i = 0; i < 3 && !(await view()).startsWith(view_); i++) await tapRow(title)
+      if (!(await view()).startsWith(view_)) throw new Error(`could not open ${title}`)
+    }
+    await open('tdc_nomap', 'wlan:aps')
+    await shot('wlan-listening-aps')
+    await open('74:ac:b9:00:00:01', 'wlan:detail')
+    await expectText('Deauths heard')
+    await expectText('frames/s')
+    await shot('wlan-listening-detail')
+    await tap('footer [data-press="c"]')
+    await expectText('frames/s')
+    await shot('wlan-listening-channels')
+    await tap('footer [data-press="c"]')
+    await tap('footer [data-press="c"]')
+    await tap('footer [data-press="m"]')
+    await expectText('Stopped listening')
+    await shot('wlan-listening-stopped')
+  }
+
   await tap('footer [data-press="Escape"]')
   await expectSelector('.chooser')
 }

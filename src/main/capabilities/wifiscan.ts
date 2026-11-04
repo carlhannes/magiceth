@@ -131,7 +131,12 @@ function snapshot(s: ActiveScan, running: boolean): WifiScanResult {
   }
 }
 
-function fail(device: string, status: WifiScanResult['status'], message: string): WifiScanResult {
+function fail(
+  device: string,
+  status: WifiScanResult['status'],
+  message: string,
+  canMonitor = false
+): WifiScanResult {
   return {
     status,
     running: false,
@@ -142,7 +147,9 @@ function fail(device: string, status: WifiScanResult['status'], message: string)
     buckets: [],
     scans: 0,
     elapsedSec: 0,
-    message
+    message,
+    // A scan that cannot run (no iw, no permission) says nothing about whether the card can listen.
+    canMonitor
   }
 }
 
@@ -243,7 +250,7 @@ export async function startWifiScan(
   if (out.status !== 'ok') {
     // Only a refusal is worth asking about; a missing tool or a broken helper is not a prompt.
     if (out.status === 'needs-permission') p.requestWifiAccess()
-    const result = fail(device, out.status, out.message)
+    const result = fail(device, out.status, out.message, canMonitor !== undefined)
     if (out.status === 'needs-permission' && p.enableWifiAccess) result.canEnableAccess = true
     return result
   }
