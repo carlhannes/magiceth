@@ -11,7 +11,7 @@
 // name, details by regex inside the section — rather than by line number, which is what keeps it
 // standing when a new iw version adds an element in the middle.
 
-import { phyLabel, securityLabel, vhtWidth } from '../capabilities/ie80211'
+import { phyLabel, securityLabel, vhtWidth, withPrivacyBit } from '../capabilities/ie80211'
 import type { BeaconFacts } from '../capabilities/ie80211'
 import { shQuote } from '../privilege'
 
@@ -154,8 +154,7 @@ function factsOf(secs: Section[], capability: string | undefined): BeaconFacts {
 
   const rsn = first(secs, 'RSN')
   const wpa = first(secs, 'WPA')
-  facts.security =
-    securityFrom(rsn, wpa) ?? (capability && /\bPrivacy\b/.test(capability) ? 'WEP' : undefined)
+  facts.security = securityFrom(rsn, wpa)
 
   const wps = first(secs, 'WPS')
   const manufacturer = wps?.match(/\* Manufacturer: (.+)/)?.[1].trim()
@@ -175,7 +174,7 @@ function factsOf(secs: Section[], capability: string | undefined): BeaconFacts {
   if (country) facts.countryCode = country[1]
 
   facts.widthMhz = widthFrom(secs)
-  return facts
+  return withPrivacyBit(facts, capability !== undefined && /\bPrivacy\b/.test(capability))
 }
 
 /** Every BSS in a scan dump. A block the parser cannot place (no BSSID) is skipped, never thrown on. */

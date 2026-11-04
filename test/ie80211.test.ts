@@ -13,7 +13,8 @@ import {
   readBeacon,
   securityLabel,
   vhtStreams,
-  vhtWidth
+  vhtWidth,
+  withPrivacyBit
 } from '../src/main/capabilities/ie80211'
 import { AP_24_BUSY, AP_5G_4X4, AP_6E_2X2 } from './fixtures/beacons'
 
@@ -231,7 +232,37 @@ describe('readBeacon against real captures', () => {
     expect(readBeacon(AP_5G_4X4).model).toBeUndefined()
   })
 
+  it('names the channel from the access point own elements', () => {
+    // Three real beacons: 2.4 GHz carries a DS Parameter Set, the 5 GHz ones only HT Operation.
+    expect(readBeacon(AP_24_BUSY).primaryChannel).toBe(1)
+    expect(readBeacon(AP_5G_4X4).primaryChannel).toBe(128)
+    expect(readBeacon(AP_6E_2X2).primaryChannel).toBe(48)
+    expect(readBeacon('00026869').primaryChannel).toBeUndefined()
+  })
+
+  it('reads the same facts from the bytes as from their hex', () => {
+    for (const hex of [AP_24_BUSY, AP_5G_4X4, AP_6E_2X2]) {
+      expect(readBeacon(hexToBytes(hex))).toEqual(readBeacon(hex))
+      expect(parseElements(hexToBytes(hex))).toEqual(parseElements(hex))
+    }
+  })
+
   it('returns empty facts for an empty beacon instead of throwing', () => {
     expect(readBeacon('')).toEqual({ vendorOuis: [], phy: undefined, streams: undefined })
+  })
+})
+
+describe('withPrivacyBit', () => {
+  it('calls a network with the bit and no RSN or WPA element WEP', () => {
+    expect(withPrivacyBit(readBeacon('00026869'), true).security).toBe('WEP')
+  })
+
+  it('leaves a network that names its own security alone', () => {
+    const facts = readBeacon(AP_24_BUSY)
+    expect(withPrivacyBit(facts, true)).toBe(facts)
+  })
+
+  it('leaves an open network open', () => {
+    expect(withPrivacyBit(readBeacon('00026869'), false).security).toBeUndefined()
   })
 })

@@ -17,6 +17,7 @@ export interface InfoElement {
 
 // Element ids worth naming.
 const ID_SSID = 0
+const ID_DS_PARAMS = 3
 const ID_COUNTRY = 7
 const ID_BSS_LOAD = 11
 const ID_HT_CAPABILITIES = 45
@@ -43,10 +44,11 @@ export function hexToBytes(hex: string): Uint8Array {
 
 /**
  * Walk the TLV chain. Stops at the first element whose declared length runs past the buffer, which
- * is the only sane response to a truncated capture — the remainder cannot be located.
+ * is the only sane response to a truncated capture — the remainder cannot be located. Takes the
+ * elements as hex (what an OS hands over) or as the bytes themselves (what a capture holds).
  */
-export function parseElements(hex: string): InfoElement[] {
-  const b = hexToBytes(hex)
+export function parseElements(input: string | Uint8Array): InfoElement[] {
+  const b = typeof input === 'string' ? hexToBytes(input) : input
   const out: InfoElement[] = []
   let i = 0
   while (i + 2 <= b.length) {
@@ -251,6 +253,11 @@ export function parseWps(body: Uint8Array): { manufacturer?: string; model?: str
 
 export interface BeaconFacts {
   ssid?: string
+  /**
+   * The channel the AP says it is on, from its own elements. A receiver tuned to a neighbouring
+   * channel still hears the frame, so the radio's channel is only a guess; this is the answer.
+   */
+  primaryChannel?: number
   phy?: string
   streams?: number
   /** From the operation elements — the only source of width an OS that reports none has. */
@@ -271,7 +278,7 @@ export interface BeaconFacts {
  * The PHY generation is decided by which capability element is present rather than by any field
  * claiming a mode: an AP that carries EHT capabilities is Wi-Fi 7 whatever else it says.
  */
-export function readBeacon(hex: string): BeaconFacts {
+export function readBeacon(input: string | Uint8Array): BeaconFacts {
   const facts: BeaconFacts = { vendorOuis: [] }
   let ht: number | undefined
   let vht: number | undefined
@@ -284,9 +291,14 @@ export function readBeacon(hex: string): BeaconFacts {
   let htWidth: number | undefined
   let vhtOpWidth: number | undefined
   let heWidth: number | undefined
+  let dsChannel: number | undefined
+  let htPrimary: number | undefined
 
-  for (const el of parseElements(hex)) {
+  for (const el of parseElements(input)) {
     switch (el.id) {
+      case ID_DS_PARAMS:
+        if (el.body.length >= 1) dsChannel = el.body[0]
+        break
       case ID_SSID:
         if (el.body.length > 0) {
           facts.ssid = new TextDecoder().decode(el.body).replace(/\0+$/, '')
@@ -314,9 +326,12 @@ export function readBeacon(hex: string): BeaconFacts {
       case ID_RSN:
         rsn = parseRsn(el.body)
         break
-      case ID_HT_OPERATION:
-        htWidth = parseHtOperation(el.body)?.widthMhz
+      case ID_HT_OPERATION: {
+        const op = parseHtOperation(el.body)
+        htWidth = op?.widthMhz
+        htPrimary = op?.primary
         break
+      }
       case ID_VHT_OPERATION:
         vhtOpWidth = parseVhtOperation(el.body)?.widthMhz
         break
@@ -352,5 +367,19 @@ export function readBeacon(hex: string): BeaconFacts {
   facts.security = rsn ?? (hasWpa ? 'WPA' : undefined)
   // Widest claim wins: 6 GHz has only the HE element, 5 GHz gets VHT over HT, 2.4 GHz has HT alone.
   facts.widthMhz = heWidth ?? vhtOpWidth ?? htWidth
+  // 5 GHz access points leave out the DS Parameter Set; HT Operation names the channel there. A
+  // 6 GHz AP has neither (its channel is in the HE Operation element), and nothing here tunes 6 GHz.
+  const primary = dsChannel ?? htPrimary
+  if (primary !== undefined && primary > 0) facts.primaryChannel = primary
+  return facts
+}
+
+/**
+ * Fold the capability field's Privacy bit into the facts. The elements alone cannot tell WEP from
+ * an open network — both lack an RSN element — but the bit can: set with no RSN or WPA element, the
+ * network is WEP. `iw` prints the bit as text and a capture carries it as a flag; both land here.
+ */
+export function withPrivacyBit(facts: BeaconFacts, privacy: boolean): BeaconFacts {
+  if (privacy && facts.security === undefined) return { ...facts, security: 'WEP' }
   return facts
 }
