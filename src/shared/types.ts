@@ -365,7 +365,32 @@ export interface WifiScanResult {
   canEnableAccess?: boolean
 }
 
+// --- The start screen's setup card: tools the app leans on, and the Linux admin rule ---
+
+export interface SetupItem {
+  /** Stable: 'admin', 'tcpdump', 'iw', 'curl', … */
+  id: string
+  /** The key on the start screen that acts on it: 'k' installs tools, 'a' sets up admin. */
+  key: string
+  label: string
+  /** Why it matters and what state it is in, in one line. */
+  detail: string
+  ok: boolean
+  /** Whether the app can put it right itself; otherwise `detail` says what to do. */
+  canInstall: boolean
+}
+
+export interface SetupOutcome {
+  items: SetupItem[]
+  /** What happened, for the notice bar. */
+  message: string
+}
+
 export interface MagicethApi {
+  /** What the start screen may offer to fix. Everything `ok` is not shown. */
+  setupStatus(): Promise<SetupItem[]>
+  /** Install or set up the named items (admin prompt where needed), then re-check. */
+  installSetup(ids: string[]): Promise<SetupOutcome>
   listAdapters(): Promise<Adapter[]>
   onAdaptersChanged(cb: (adapters: Adapter[]) => void): () => void
   runDiagnostics(device: string): Promise<Diagnostics>

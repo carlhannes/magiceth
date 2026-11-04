@@ -10,13 +10,17 @@ import type {
   WifiAccessResult,
   WifiScanResult,
   RecordingSummary,
-  SavedRecording
+  SavedRecording,
+  SetupItem,
+  SetupOutcome
 } from '../shared/types'
 import type { KeyPress, PluginActivation, PluginManifest, PluginScreen } from '../shared/plugin'
 
 // Exposes a small, typed API on window.api. contextIsolation is on and the renderer
 // never gets direct access to Node/Electron — only these methods.
 const api: MagicethApi = {
+  setupStatus: (): Promise<SetupItem[]> => ipcRenderer.invoke('setup:status'),
+  installSetup: (ids: string[]): Promise<SetupOutcome> => ipcRenderer.invoke('setup:install', ids),
   listAdapters: () => ipcRenderer.invoke('adapters:list'),
   onAdaptersChanged: (cb: (adapters: Adapter[]) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: Adapter[]): void => cb(data)

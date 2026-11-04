@@ -11,6 +11,7 @@
 import './styles.css'
 import {
   app,
+  consumePending,
   getMode,
   isRenderSuspended,
   renderChooser,
@@ -20,6 +21,7 @@ import {
   setPending,
   setRenderer
 } from './shell'
+import { handleSetupKey, initSetup, renderSetupCard, setupBusy, setupLegend } from './setup'
 import type { Mode } from './shell'
 import { handleEthernetKey, initEthernet, leaveEthernet, renderEthernet } from './ethernet'
 import { enterWlan, handleWlanKey, initWlan, leaveWlan, renderWlan } from './wlan'
@@ -67,7 +69,11 @@ function render(): void {
 
   switch (getMode()) {
     case 'chooser':
-      app.innerHTML = renderChooser()
+      app.innerHTML = renderChooser({
+        card: renderSetupCard(),
+        legend: setupLegend(),
+        busy: setupBusy()
+      })
       break
     case 'ethernet':
       app.innerHTML = renderEthernet()
@@ -130,6 +136,17 @@ function switchTo(next: Mode): void {
 }
 
 function handleChooserKey(e: KeyboardEvent): void {
+  // The setup card's keys first; they are the only ones here that may ask for a second press, and
+  // any other key takes the question off the screen, as in every mode.
+  const pending = consumePending()
+  if (handleSetupKey(e, pending)) {
+    e.preventDefault()
+    return
+  }
+  if (pending) {
+    setNotice(null)
+    requestRender()
+  }
   if (e.key === '1' || e.key === 'e' || e.key === 'E') switchTo('ethernet')
   else if (e.key === '2' || e.key === 'w' || e.key === 'W') switchTo('wlan')
   else if (e.key === '3' || e.key === 'c' || e.key === 'C') switchTo('configure')
@@ -233,6 +250,8 @@ async function init(): Promise<void> {
   initWlan()
   initConfigure()
   render()
+  // What this computer is missing, for the card on the start screen. A few PATH lookups in main.
+  void initSetup()
   // Ethernet sets itself up behind the chooser. Everything it does on startup is a cheap read, and
   // doing it now means picking Ethernet shows a filled-in port rather than "waiting for a port…".
   await initEthernet()

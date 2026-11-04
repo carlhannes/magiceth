@@ -182,15 +182,18 @@ export function renderNotice(): string {
 /**
  * The first screen. Three jobs, and the tool does them differently enough that mixing them on
  * one screen would cost the glanceability the whole thing is built around. Each card is the key
- * it names, so a tap on it is that key.
+ * it names, so a tap on it is that key. `extra` is the setup card main.ts hangs under them while
+ * something on this computer needs installing, and its keys.
  */
-export function renderChooser(): string {
+export function renderChooser(extra: { card: string; legend: Hint[]; busy?: boolean }): string {
   return renderShell({
     key: 'chooser',
+    busy: extra.busy,
     footer: [
       { keys: ['1', 'e'], label: 'ethernet' },
       { keys: ['2', 'w'], label: 'wi-fi' },
-      { keys: ['3', 'c'], label: 'configure' }
+      { keys: ['3', 'c'], label: 'configure' },
+      ...extra.legend
     ],
     body: `
     <section class="chooser">
@@ -208,7 +211,7 @@ export function renderChooser(): string {
         <span class="mode-key">3</span>
         <h2>Configure</h2>
         <p>Set a device up through the port — adopt a UniFi switch to a remote controller, or run a plugin of your own.</p>
-      </div>
+      </div>${extra.card}
     </section>`
   })
 }

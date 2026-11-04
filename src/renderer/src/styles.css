@@ -652,3 +652,25 @@ body {
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* --- The start screen's setup card ---
+   Under the three modes, amber because it is a thing to attend to rather than a place to go. */
+.mode-card.setup {
+  border-left-color: var(--warn);
+}
+
+.mode-card.setup .mode-key {
+  color: var(--warn);
+}
+
+.setup-line {
+  grid-column: 2;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.setup-line b {
+  color: var(--text);
+  font-weight: 600;
+}

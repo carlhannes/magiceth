@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'node:path'
 import os from 'node:os'
 import { listAdapters } from './capabilities/adapters'
+import { installSetup, setupStatus } from './capabilities/setup'
 import { runDiagnostics } from './capabilities/diagnostics'
 import { startSurvey, stopSurvey } from './capabilities/survey'
 import { startSpeedTest, stopSpeedTest } from './capabilities/speedtest'
@@ -135,6 +136,10 @@ if (process.platform === 'linux') {
 }
 
 app.whenReady().then(() => {
+  // The start screen's setup card. Status is a few PATH lookups (and one `sudo -n` on Linux);
+  // install runs the package manager or writes the admin rule, through the elevated path.
+  ipcMain.handle('setup:status', () => setupStatus())
+  ipcMain.handle('setup:install', (_event, ids: string[]) => installSetup(ids))
   ipcMain.handle('adapters:list', () => listAdapters())
   ipcMain.handle('diagnostics:run', (_event, device: string) => runDiagnostics(device))
   // The survey runs until stopped, pushing partial results as they accumulate.
