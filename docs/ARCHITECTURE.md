@@ -38,6 +38,7 @@ src/
       linux.ts             # Linux implementation (+ pure parsers)
       win32.ts             # Windows implementation (+ pure parsers)
       iw.ts                # pure: `iw scan dump` text → beacon facts (Linux), the elevated scan loop
+      nm.ts                # pure: NetworkManager's view of a port, and a profile applied through it (Linux)
       wifi-helper.ts       # pure: the JSON both Wi-Fi helpers (macOS, Windows) print
     capabilities/
       adapters.ts          # dongle list + chipset lookup
@@ -155,6 +156,13 @@ Examples of commands per OS: macOS `ioreg`/`networksetup`/`ifconfig`/`ipconfig g
 the Wi-Fi helper `.app`; Linux `ip -j`/`udevadm`/sysfs/`resolvectl` and `iw`/`nmcli`; Windows
 `Get-NetAdapter`/`Get-NetIPAddress`/`netsh` (via `powershell ... | ConvertTo-Json`) and the Wi-Fi
 helper `.ps1`. JSON output is preferred where available to avoid brittle text parsing.
+
+A profile on Linux has two scripts behind it. On an Ethernet port NetworkManager manages (asked
+with `nmcli device show` before the prompt) it is a NetworkManager connection of the app's own —
+in memory, named after the port, replaced whole on every apply, first in line for autoconnect —
+because raw `ip` commands on such a port are undone within seconds and `dhclient` is not on a
+modern desktop at all. A port nobody manages gets `ip addr`/`dhclient` as before. Both are pure
+builders in `platform/nm.ts` and `platform/linux.ts`, and neither has run on hardware yet.
 
 ## IPC contract
 

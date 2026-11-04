@@ -8,6 +8,8 @@ import { elevationRefused, linuxElevator, runElevatedShell, shQuote } from '../p
 import { channelFromMhz } from '../capabilities/wifi-model'
 import { LOOP_MAX_SECONDS, iwScanLoopScript, parseIwScan } from './iw'
 import type { IwBss } from './iw'
+import { nmProfileScript, parseNmDevice } from './nm'
+import type { NmDevice } from './nm'
 import type { ElevatedPlan } from '../privilege'
 import type {
   HeldAddress,
@@ -243,14 +245,18 @@ function pingCommand(target: string, opts: PingOptions): PingSpec {
   }
 }
 
-// --- Active control (M4) — documented (iproute2/dhclient), verify on real hardware. ---
-// NOTE: raw iproute2 can clash with NetworkManager if it is active (see SUDO-TEST.md).
+// --- Active control: iproute2 where nothing manages the port, NetworkManager where it does. ---
 
 export function linuxSetMacScript(device: string, mac: string): string {
   const d = shQuote(device)
   return `ip link set dev ${d} down && ip link set dev ${d} address ${shQuote(mac)} && ip link set dev ${d} up`
 }
 
+/**
+ * The profile on a port nobody manages: addresses by hand, DHCP through `dhclient`. On a port
+ * NetworkManager manages this would be undone within seconds and `dhclient` may not exist; that
+ * port gets `nmProfileScript` instead (nm.ts). Unverified on hardware either way.
+ */
 export function linuxProfileScript(device: string, profile: Profile): string {
   const d = shQuote(device)
   const cmds: string[] = []
@@ -271,8 +277,26 @@ async function buildSetMacPlan(device: string, mac: string): Promise<ElevatedPla
   return { interpreter: 'sh', script: linuxSetMacScript(device, mac) }
 }
 
+/** What NetworkManager makes of a port — undefined where there is no NetworkManager, or no such port. */
+async function nmDevice(device: string): Promise<NmDevice | undefined> {
+  if (!toolPath('nmcli')) return undefined
+  const r = await run(
+    'nmcli',
+    ['-t', '-f', 'GENERAL.TYPE,GENERAL.STATE', 'device', 'show', device],
+    {
+      timeoutMs: 5000
+    }
+  )
+  return r.code === 0 ? parseNmDevice(r.stdout) : undefined
+}
+
 async function buildProfilePlan(device: string, profile: Profile): Promise<ElevatedPlan> {
-  return { interpreter: 'sh', script: linuxProfileScript(device, profile) }
+  const nm = await nmDevice(device)
+  const managedEthernet = nm !== undefined && nm.managed && nm.type === 'ethernet'
+  return {
+    interpreter: 'sh',
+    script: managedEthernet ? nmProfileScript(device, profile) : linuxProfileScript(device, profile)
+  }
 }
 
 /**

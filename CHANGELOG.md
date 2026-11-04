@@ -24,6 +24,10 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   SECURITY.md — it is root for that account). Nothing is shown where nothing is missing.
 - **Linux builds: a `.deb`** (x64, arm64) next to the AppImage, carrying electron-builder's AppArmor
   profile for Ubuntu 24.04's user-namespace restriction and `tcpdump`, `iw`, `curl` as Recommends.
+- **Profiles on Linux go through NetworkManager** where it manages the port: a connection of the
+  app's own, in memory, replaced on every apply and brought back on a replug. Static profiles now
+  carry their DNS servers there, and a DHCP profile no longer needs `dhclient`, which Ubuntu 24.04
+  does not install. Ports NetworkManager does not manage keep the `ip`/`dhclient` script.
 
 ### Fixed
 

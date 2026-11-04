@@ -251,15 +251,19 @@ development machine. What is still open:
 - **A Mac where the user deleted a port's network service** will not list that built-in port, since
   the service list is half the rule. Dongles are unaffected — they are found through `ioreg`.
 
-## Linux: static profiles silently drop DNS
+## Linux profiles: NetworkManager path unverified, the bare path still drops DNS
 
-`linuxProfileScript` (`src/main/platform/linux.ts`) applies the address and default route for a
-static profile but never touches DNS, so a profile created with DNS servers applies without them
-and the user gets no warning. macOS applies all of them via `networksetup -setdnsservers`.
+On an Ethernet port NetworkManager manages, a profile is now a NetworkManager connection
+(`nmProfileScript`, `src/main/platform/nm.ts`) with the DNS servers in `ipv4.dns`, which closes the
+DNS gap there — on paper. Nothing of it has run on hardware: the `nmcli connection add save no`
+form, whether `connection.autoconnect-priority` really brings the profile back on a replug, how
+long `connection up` takes on a port without DHCP, and whether NetworkManager leaves a MAC set
+with `ip link` alone (`cloned-mac-address=preserve` is the default, but a distribution can change
+it). LINUX-TEST.md step 3 covers each.
 
-Open because there is no single right way to do it on Linux: `/etc/resolv.conf` may be a symlink
-managed by `systemd-resolved`, NetworkManager may own the connection, or the file may be plain.
-Needs a decision on which to support, and hardware to verify on.
+On a port nobody manages, `linuxProfileScript` still applies the address and default route and
+never touches DNS: `/etc/resolv.conf` may be a symlink managed by `systemd-resolved` or a plain
+file, and there is no single right way. Low impact now that desktops take the other path.
 
 ## Windows: only the first DNS server is applied
 

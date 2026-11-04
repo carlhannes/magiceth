@@ -103,6 +103,6 @@ networksetup -getinfo "AX88179A"          # verify that a DHCP address comes bac
 
 ## 5. Remaining per-OS spike (not this machine)
 
-- **Linux:** MAC via `ip link`, DHCP/static via `ip`/`dhclient` — note the clash with NetworkManager if active.
+- **Linux:** MAC via `ip link`; DHCP/static through NetworkManager (`nmcli connection add save no …`) on a port it manages, via `ip`/`dhclient` otherwise. See LINUX-TEST.md.
 - **Windows:** MAC via `Set-NetAdapterAdvancedProperty` (requires the driver to expose `NetworkAddress`),
   IP via `netsh`. Elevation via UAC (`Start-Process -Verb RunAs`).

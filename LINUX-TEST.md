@@ -103,9 +103,28 @@ tap in tablet mode is as easy as a stray key.
    `U` restores it. If NetworkManager puts the old address back by itself, note it: it means the
    connection has `ethernet.cloned-mac-address` set, and the profile script needs the
    NetworkManager branch sooner.
-3. **Profiles.** A static profile is expected to apply. A DHCP profile is **expected to fail** with
-   "could not verify": it runs `dhclient`, which Ubuntu 24.04 no longer installs. That is the known
-   gap the NetworkManager-aware profiles close next; record what the notice said.
+3. **Profiles.** NetworkManager manages this port, so a profile becomes a connection of the app's
+   own, `magiceth-<port>`, in memory only. Apply a static profile with DNS servers: expected the
+   address, gateway and DNS in the readout within a few seconds, and
+
+   ```sh
+   nmcli -t -f NAME,DEVICE,ACTIVE connection show      # magiceth-<port> active on the port
+   nmcli -t -f connection.autoconnect-priority connection show magiceth-<port>   # 100
+   resolvectl dns <port>                                # the profile's servers
+   ```
+
+   Then a DHCP profile: expected a lease back and the static address gone. Then, with the static
+   profile applied again, unplug and replug the cable: expected the static address back by itself
+   (autoconnect priority). Reboot: expected the system's own connection, and no `magiceth-` entry
+   in `nmcli connection show`. First, before any of it, save what the app will read:
+
+   ```sh
+   nmcli -t -f GENERAL.TYPE,GENERAL.STATE device show <port>   # the two lines parseNmDevice reads
+   ```
+
+   If a profile fails, `journalctl -u NetworkManager --since=-5min` and the notice text are what
+   to record; BACKLOG lists what is assumed here.
+
 4. **Port survey.** `C`: expected to run for its full time without a prompt. The frames go into
    `/tmp/magiceth-$(id -u)/survey-<stamp>.txt`, created by root with mode 0644 — check that the
    file exists, is not empty and is deletable as the user. If it stays empty, look for AppArmor
