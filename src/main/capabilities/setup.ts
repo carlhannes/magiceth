@@ -10,6 +10,7 @@ import {
   LINUX_USERNAME,
   elevationRefused,
   linuxAdminSetupScript,
+  linuxCanElevate,
   linuxElevator,
   runElevatedPlan
 } from '../privilege'
@@ -26,7 +27,7 @@ interface SetupRow {
   /** What it is for, finishing the sentence "… — not installed". */
   why: string
   check: () => Promise<boolean> | boolean
-  canInstall: () => boolean
+  canInstall: () => Promise<boolean> | boolean
   /** Distro packages; rows sharing this are installed in one go. */
   packages?: string[]
   /** Anything that is not a package. */
@@ -40,7 +41,11 @@ const INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 
 const has = (name: string): boolean => toolPath(name) !== undefined
 
-/** A tool on PATH, installable where there is a package manager and a way to elevate. */
+/**
+ * A tool on PATH, installable where there is a package manager and a way to elevate — pkexec or
+ * the admin rule, the two routes `runElevatedShell` takes; sudo on its own would ask for a password
+ * nobody can type.
+ */
 function tool(id: string, why: string, manual: string): SetupRow {
   return {
     id,
@@ -48,10 +53,10 @@ function tool(id: string, why: string, manual: string): SetupRow {
     label: id,
     why,
     check: () => has(id),
-    canInstall: () =>
+    canInstall: async () =>
       process.platform === 'linux' &&
       detectPackageManager(has) !== undefined &&
-      (has('pkexec') || has('sudo')),
+      (await linuxCanElevate()),
     packages: process.platform === 'linux' ? [id] : undefined,
     manual
   }
@@ -91,7 +96,7 @@ function rows(): SetupRow[] {
 
 async function describe(row: SetupRow): Promise<SetupItem> {
   const ok = await row.check()
-  const canInstall = !ok && row.canInstall()
+  const canInstall = !ok && (await row.canInstall())
   const state = row.id === 'admin' ? `${row.why}.` : `${row.why} — not installed.`
   const detail = ok
     ? row.id === 'admin'
@@ -128,7 +133,10 @@ async function runPlan(plan: ElevatedPlan, what: string): Promise<string | undef
  * Re-checks afterwards, and says in one line what happened — the renderer never composes it.
  */
 export async function installSetup(ids: string[]): Promise<SetupOutcome> {
-  const chosen = rows().filter((row) => ids.includes(row.id) && row.canInstall())
+  const chosen: SetupRow[] = []
+  for (const row of rows()) {
+    if (ids.includes(row.id) && (await row.canInstall())) chosen.push(row)
+  }
   const problems: string[] = []
   const packages = [...new Set(chosen.flatMap((row) => row.packages ?? []))]
   if (packages.length > 0) {

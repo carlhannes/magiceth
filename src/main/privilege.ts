@@ -1,5 +1,6 @@
 import { run } from './util/run-command'
 import type { RunResult } from './util/run-command'
+import { toolPath } from './util/tools'
 
 // Run commands with elevated privileges via a clear OS prompt — or, on a Linux machine set up for
 // it, without one. Used by the port survey, reconfig, the Configure-mode address hold and the Linux
@@ -93,12 +94,21 @@ export function linuxAdminSetupScript(user: string): string {
 /**
  * sudo without a prompt when the rule above is in place, otherwise pkexec. Probed on every call
  * (about ten milliseconds): the OS stays the single source of truth, and the setup takes effect
- * without a restart. Assumes Ubuntu's defaults — `requiretty` off, `secure_path` with /usr/sbin —
- * which is what the setup targets; where sudo refuses, pkexec is used exactly as before.
+ * without a restart. The probe runs the helper (`true`, as root) rather than asking `sudo -l`,
+ * because `-l <command>` answers whether the policy permits the command, not whether it needs a
+ * password: an account in the sudo group with any NOPASSWD rule elsewhere would pass it without
+ * this rule, and every action would then fail on "a password is required". Assumes Ubuntu's
+ * defaults — `requiretty` off, `secure_path` with /usr/sbin — which is what the setup targets;
+ * where sudo refuses, pkexec is used exactly as before.
  */
 export async function linuxElevator(): Promise<'sudo' | 'pkexec'> {
   const r = await run('sudo', ['-n', LINUX_HELPER, 'true'], { timeoutMs: 5000 })
   return r.code === 0 ? 'sudo' : 'pkexec'
+}
+
+/** Whether this Linux machine can elevate at all: pkexec is there, or the admin rule is. */
+export async function linuxCanElevate(): Promise<boolean> {
+  return toolPath('pkexec') !== undefined || (await linuxElevator()) === 'sudo'
 }
 
 /**
@@ -112,7 +122,9 @@ export function elevationRefused(r: RunResult): boolean {
   return (
     r.code === 126 ||
     r.code === 127 ||
-    /user canceled|-128|not authorized|canceled by the user|a password is required/i.test(r.stderr)
+    /user canceled|\(-128\)|not authorized|canceled by the user|a password is required/i.test(
+      r.stderr
+    )
   )
 }
 

@@ -69,5 +69,8 @@ describe('elevationRefused', () => {
     expect(elevationRefused(r(0))).toBe(false)
     expect(elevationRefused(r(1))).toBe(false)
     expect(elevationRefused(r(2, 'ip: RTNETLINK answers: Operation not supported'))).toBe(false)
+    // osascript's code is "(-128)"; a bare -128 is a number a failing script may well print.
+    expect(elevationRefused(r(1, 'tcpdump: invalid offset -1280'))).toBe(false)
+    expect(elevationRefused(r(1, 'signal -128 dBm out of range'))).toBe(false)
   })
 })

@@ -65,5 +65,9 @@ linux:
       arch: [x64, arm64]
     - target: deb
       arch: [x64, arm64]
+# A .deb must name a maintainer, and electron-builder otherwise looks for an email in package.json's
+# `author` and refuses to build without one. This is the repository's public commit identity. The
+# package's homepage comes from the git remote.
 deb:
+  maintainer: carlhannes <734718+carlhannes@users.noreply.github.com>
   recommends: [tcpdump, iw, curl]

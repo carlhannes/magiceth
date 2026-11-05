@@ -4,7 +4,7 @@ import { scratchFile } from '../util/scratch'
 import { toolPath } from '../util/tools'
 import { normalizeMac } from '../../shared/mac'
 import { cidrToDotted, isValidIpv4 } from '../../shared/net'
-import { elevationRefused, linuxElevator, runElevatedShell, shQuote } from '../privilege'
+import { elevationRefused, linuxCanElevate, runElevatedShell, shQuote } from '../privilege'
 import { channelFromMhz } from '../capabilities/wifi-model'
 import {
   LOOP_MAX_SECONDS,
@@ -555,7 +555,7 @@ async function scanWifi(device: string): Promise<WifiScanOutcome> {
     }
   }
   if (toolPath('nmcli')) return scanViaNetworkManager(iface, iw)
-  if (!toolPath('pkexec') && (await linuxElevator()) !== 'sudo') {
+  if (!(await linuxCanElevate())) {
     return {
       status: 'no-tool',
       message:
@@ -574,7 +574,7 @@ async function monitorSupport(device: string): Promise<MonitorSupport | undefine
   const iface = wifiInterface(device)
   const iw = toolPath('iw')
   if (!iface || !iw || !toolPath('tcpdump')) return undefined
-  if (!toolPath('pkexec') && (await linuxElevator()) !== 'sudo') return undefined
+  if (!(await linuxCanElevate())) return undefined
   const info = await run(iw, ['dev', iface, 'info'], { timeoutMs: 5000 })
   const wiphy = info.code === 0 ? parseIwWiphy(info.stdout) : undefined
   if (wiphy === undefined) return undefined

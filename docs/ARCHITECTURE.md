@@ -224,11 +224,13 @@ this user to run one root-owned helper (`/usr/local/libexec/magiceth-elevate`, w
 `sh -c` on its argument) without a password. `runElevatedShell` probes `sudo -n <helper> true` on
 every call (`linuxElevator()`, about ten milliseconds, no cache — the OS is the single source of
 truth) and uses `sudo -n` when it succeeds and `pkexec` otherwise; nothing else in the app knows
-which. It is passwordless root for that account through that path, and SECURITY.md and the
-confirmation both say so. Two details the scripts rely on: the files root writes go into a per-user
+which, and whether there is any way to elevate at all is `linuxCanElevate()`. The probe runs the
+helper rather than asking `sudo -l`, which says whether a command is permitted but not whether it
+needs a password. It is passwordless root for that account through that path, and SECURITY.md and
+the confirmation both say so. Two details the scripts rely on: the files root writes go into a per-user
 scratch directory (`util/scratch.ts`), because `fs.protected_regular` refuses root an `O_CREAT`
 open of someone else's file in sticky `/tmp`; and a refused prompt is recognised in one place,
-`elevationRefused()` — pkexec's exit 126/127, osascript's `-128`, UAC's "canceled", `sudo -n`'s "a
+`elevationRefused()` — pkexec's exit 126/127, osascript's `(-128)`, UAC's "canceled", `sudo -n`'s "a
 password is required" — which is why every long-running elevated script ends in `true`: a script
 whose own last command is missing also exits 127.
 
