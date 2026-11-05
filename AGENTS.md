@@ -197,7 +197,19 @@ rather than implying coverage:
 - Elevation goes through `privilege.ts` only — never call `sudo` or `pkexec` from anywhere else.
   Files an elevated script writes go through `scratchFile()` (`util/scratch.ts`): bare `/tmp` is
   refused to root under Linux's `fs.protected_regular`. Long-running elevated scripts end in
-  `true`, so that exit 126/127 can mean "the prompt was refused" (`elevationRefused()`).
+  `true`, so that exit 126/127 can mean "the prompt was refused" (`elevationRefused()`); one that
+  never reaches its end, like the listening script, exits only with 0, 1 or 128+signal.
+- The listening script (`linuxMonitorScript`, `platform/iw.ts`) changes what the machine is
+  connected to, so it restores through `trap … EXIT` on every way out, kills `tcpdump` with `kill -9`
+  first (SIGTERM does not stop it mid-read), and is tested by running it, under `sh` and under
+  `dash`, against stand-ins — keep it that way when it changes (`test/monitor-script.test.ts`). The
+  decoder in `monitor/dot11.ts` never reads a station's address or a frame's payload, and
+  `monitor/model.ts` has no store that could hold one: a per-device view would be a deliberate new
+  feature that says so in SECURITY.md, not a field added on the way past.
+- `MAGICETH_MONITOR_REPLAY=<file.pcap>` plays a capture back instead of elevating; it is the only
+  way to drive the listening screens without a card that can listen, `npm run ui-check` included
+  (its rates are not measurements). A fixture capture keeps only frames of your own devices and the
+  beacons of access points; do not commit other people's client traffic.
 - Whether a tool is installed is `toolPath()` (`util/tools.ts`), a PATH lookup — never a
   `--version` probe through `run()`, which cannot tell a missing tool from a failing one.
 - Parsing stays in exported pure functions so it can be unit-tested without touching hardware.

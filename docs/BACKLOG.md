@@ -94,10 +94,10 @@ is still open:
 - **Linux is implemented but has not been run on hardware; Windows has run on one machine.** Every
   claim they rest on, and what to measure first, is listed in [WIFI-FINDINGS.md](WIFI-FINDINGS.md).
   Until then the `iw` fixture in `test/iw.test.ts` and the Windows entries in
-  `test/wifi-helper.test.ts` are documented format rather than captures. Monitor mode (`tcpdump -I`) was considered and
-  rejected for Linux: it needs root, drops the association the machine is using, hears one channel
-  at a time, and adds nothing the screens show — client counts and load come from BSS Load, which
-  `iw` already prints. Per-client visibility would be a different feature.
+  `test/wifi-helper.test.ts` are documented format rather than captures. Listening (monitor mode) on Linux is built for
+  the AX201 — see below — and the same goes for it: nothing has run on the card, and
+  `test/iw.test.ts`'s `iw phy info` is documented format. It disconnects Wi-Fi and needs root, which
+  is why it is a separate key; scanning stays the default and never disconnects.
 - **Linux without NetworkManager asks for a password** — unless the start screen's admin rule is
   installed, in which case the loop runs through `sudo -n` and asks nothing. Triggering a sweep
   needs `CAP_NET_ADMIN`, so the fallback is one prompt for a loop that scans every few seconds until a stop file, a
@@ -123,6 +123,16 @@ is still open:
   access point, and the Windows API reports none; the Noise row is simply absent there.
 - **No 6 GHz width on Linux.** The HE Operation element's 6 GHz information is decoded from bytes
   (macOS, Windows) but not yet from `iw`'s text, whose format for it has not been seen.
+- **Listening: what is left.** Per-device views (stations per access point, devices looking for a
+  network) were deliberately not built: nothing stores a client's address (see SECURITY.md). Airtime
+  from rate and length (the radiotap HE/VHT/MCS fields are skipped; the app reads only the first six
+  radiotap fields) instead of frames per second; 160 MHz pin where the card allows; a macOS source
+  (`tcpdump -I` plus a channel switch from the helper); a stations CSV (not built on purpose);
+  evil-twin hints (same SSID, different security or maker) which need no monitor mode and belong in
+  `groupBySsid`; the kernel regression bugzilla 217051 on 5 GHz; and the fallback of switching the
+  station itself to monitor (`iw dev <if> set type monitor`) if the AX201 will not take a second
+  interface next to it. `shared/mac.ts` and `wifi-model.ts` each have an `isLocallyAdministered` — one
+  should go before a second caller appears.
 - **Only Linux can tell WEP from open.** The elements alone cannot; `iw` prints the Privacy
   capability bit, the other two helpers do not pass it on.
 - **Two Ethernet screenshots are from v0.2.0.** `docs/shots/screenshot.png` and

@@ -20,8 +20,9 @@ selection by itself.
 **Wi-Fi mode** points the same idea at the air: every network in earshot, the access
 points behind each one, and for each of them channel, width, band, PHY generation with MIMO stream
 count, security, channel utilization, client count and manufacturer — all read out of the raw
-beacon, so nothing needs monitor mode and your connection stays up. Press `L` and it records while
-you walk a site, writing CSVs you can open in a spreadsheet.
+beacon, so scanning needs no monitor mode and your connection stays up. Press `L` and it records
+while you walk a site, writing CSVs you can open in a spreadsheet. On a Linux laptop whose card can
+listen, `M` goes further: it hears every channel at once and shows how busy the air really is.
 
 **Configure mode** uses the port to set a device up rather than to look at it. It is a small
 plugin system; the plugin it ships with adopts a factory-default UniFi switch or access point —
@@ -72,7 +73,7 @@ orchestrates the OS's own network commands — no custom drivers, no background 
 - **Active control** — roll a new (locally-administered) MAC, switch between DHCP and static profiles, create/edit profiles inline, and undo the last change.
 - **WLAN mode** — the same idea pointed at the air. Every network in earshot, the access points behind each one, and per access point: channel, band, width, PHY generation with MIMO stream count (`802.11be, MIMO 4×4`), security read from the actual AKM suites, channel utilization, client count, country, and the
   manufacturer looked up from the IEEE OUI registries — including for the randomised BSSIDs modern
-  access points use, where the maker is recovered from the beacon's own vendor elements instead. All of it is decoded from the raw beacon, so **no monitor mode and no disconnection** — your Wi-Fi keeps working while you scan. Press `L` to record: it keeps scanning while you walk a site and gives min/max/average for signal, clients and channel load, keeping access points you have moved away from. macOS and Windows hand out this detail only to an app allowed to use your location, which magiceth asks for once on macOS and points you to in Settings on Windows; Linux reads it straight from `iw`. Verified live on macOS and Windows 11; implemented but not yet run on Linux — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for exactly what is and is not obtainable on each.
+  access points use, where the maker is recovered from the beacon's own vendor elements instead. All of it is decoded from the raw beacon, so **scanning needs no monitor mode and never disconnects you** — your Wi-Fi keeps working while you scan; listening (`M`, Linux) is a separate key that does disconnect, and says so. Press `L` to record: it keeps scanning while you walk a site and gives min/max/average for signal, clients and channel load, keeping access points you have moved away from. macOS and Windows hand out this detail only to an app allowed to use your location, which magiceth asks for once on macOS and points you to in Settings on Windows; Linux reads it straight from `iw`. Verified live on macOS and Windows 11; implemented but not yet run on Linux — see [docs/WIFI-FINDINGS.md](docs/WIFI-FINDINGS.md) for exactly what is and is not obtainable on each.
 
 ### Cheap things happen by themselves; expensive things need intent
 
@@ -215,9 +216,25 @@ it; opening an access point shows everything known about it.
 | `Esc` / `←`   | Back up a level; from the top, back to the mode chooser                       |
 | `R` / space   | Scan again now                                                                |
 | `L`           | Start / stop recording — keeps scanning and tracks min/max/avg while you move |
+| `M`           | Linux, when the card can listen: start / stop listening (see below)           |
+| `K`           | While listening, on an access point: hold its channel / sweep again           |
 | `C`           | Channel view, then the same grouped into bands' blocks, then back             |
 | `S`           | Saved recordings — open one to view it; `F` reveals it in the file manager    |
 | `O`           | Windows only, after a refused scan: turn Location on (asks for admin)         |
+
+**Listening (`M`, Linux).** A scan asks the radio what it found; listening puts a monitor interface
+next to the Wi-Fi card, hears every Wi-Fi frame on every channel in turn, and adds what a scan
+cannot know: how many frames per second each channel really carries and how many of them are
+retries (next to the load each access point _claims_), channels that are quiet or that the card
+refused, hidden networks, each access point's own share of the air, and how many deauthentications
+and disassociations it has been seen sending or receiving. It asks first, because **Wi-Fi is off
+while it runs** — it is put back when you stop or the app quits (if the app is killed instead, at the script's own
+15-minute limit), and takes about ten seconds to reconnect — and because it needs admin (no prompt once the start screen's `A` has run).
+Nothing is ever sent. Only radio information and the 802.11 headers are read: the contents of other
+people's traffic and the addresses of the devices talking are not looked at, kept or shown. The
+capture goes to a temporary file that is deleted when you stop. It needs a card with monitor mode
+(the Intel AX201 of the Fortis laptop is the target), `iw` and `tcpdump`; where one is missing the
+key is simply not offered. It stops by itself after 15 minutes or 256 MB.
 
 **Recordings are saved to `Documents/magiceth`** as two CSVs you can open in any spreadsheet: a
 time log written as you walk (one row per access point per snapshot, at least two seconds apart)

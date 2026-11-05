@@ -22,6 +22,15 @@ initial commit already shipped 0.2.0. Tagging starts at 0.3.0.
   system's package manager; on Linux, `A` installs, after a confirming press and one prompt, a
   sudoers rule for a fixed helper so that no privileged action asks for a password again (see
   SECURITY.md — it is root for that account). Nothing is shown where nothing is missing.
+- **Listening to the air (Linux, `M` in Wi-Fi mode).** Where the card has monitor mode — the Intel
+  AX201 of the Fortis laptop is the target — one elevated script puts Wi-Fi aside, hears every
+  channel in turn and puts Wi-Fi back on every way out. The screens work on what it hears as they do
+  on a scan, and add what a scan cannot know: frames per second and retries per channel beside the
+  load each access point claims, quiet channels and channels the card refused, hidden networks,
+  each access point's share of the air and its deauthentications, and `K` to hold the radio on one
+  access point's channel. Nothing is sent; only radio and 802.11 headers are read, no station's
+  address is kept, and the capture is deleted when you stop. `MAGICETH_MONITOR_REPLAY=<file.pcap>`
+  plays a capture back for development. Not yet run on a card — LINUX-TEST.md section 7.
 - **Linux builds: a `.deb`** (x64, arm64) next to the AppImage, carrying electron-builder's AppArmor
   profile for Ubuntu 24.04's user-namespace restriction and `tcpdump`, `iw`, `curl` as Recommends.
 - **Profiles on Linux go through NetworkManager** where it manages the port: a connection of the

@@ -37,7 +37,7 @@ src/
       darwin.ts            # macOS implementation (+ pure parsers)
       linux.ts             # Linux implementation (+ pure parsers)
       win32.ts             # Windows implementation (+ pure parsers)
-      iw.ts                # pure: `iw scan dump` text → beacon facts (Linux), the elevated scan loop
+      iw.ts                # pure: `iw scan dump` text → beacon facts (Linux), the elevated scan loop, and the listening script
       nm.ts                # pure: NetworkManager's view of a port, and a profile applied through it (Linux)
       wifi-helper.ts       # pure: the JSON both Wi-Fi helpers (macOS, Windows) print
     capabilities/
@@ -65,6 +65,13 @@ src/
     util/app-paths.ts      # the Documents/magiceth folder, shared by recordings and user plugins
       wifiscan.ts          # WLAN mode: the active scan + recording loop; the OS half is in platform/
       wifi-model.ts        # pure: group APs by SSID, fold into tracks, channel load and blocks
+      monitor/             # listening to the air (Linux): everything between the capture file and the sightings
+        pcap.ts            # pure: an incrementally fed pcap byte stream → records
+        radiotap.ts        # pure: the radio's header on each frame: frequency, signal, check-sequence flags
+        dot11.ts           # pure: one frame → what is kept (beacons, deauths, a data frame's AP and retry flag)
+        plan.ts            # pure: which channels to visit, and where to hold the radio for one access point
+        model.ts           # pure: frames → sightings, air per channel and per AP; the hop journal's dwell counts
+        session.ts         # one session: the elevated script, the two files it writes, the stop file (no Electron)
       ie80211.ts           # pure: decode 802.11 beacon information elements
       oui.ts               # pure: who made this radio, from the IEEE registries
       recordings.ts        # fs/electron glue for saved recordings (+ reveal in the file manager)
@@ -104,18 +111,19 @@ Each capability is a platform-independent interface in `capabilities/` that dele
 (arguments as an array, **no shell**) — which makes quoting/injection a non-issue — with a
 timeout and `windowsHide`.
 
-| Module                       | Privileges  | What it does                                                                                                                   |
-| ---------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `adapters`                   | None        | Enumerates the ports worth showing, dongles first; looks up chipsets via `chipsets.json`.                                      |
-| `diagnostics` → `probe`      | None        | Reads netinfo and runs gateway/internet ping + DNS test in parallel.                                                           |
-| `survey`                     | Root/admin  | Port survey: runs `tcpdump` until stopped, tallying 802.1Q VLANs and LLDP/CDP. Optional; degrades gracefully.                  |
-| `speedtest`                  | None        | Throughput both ways, bound to the dongle. Manual only — it moves real traffic. Degrades gracefully.                           |
-| `reconfig`                   | Root/admin  | Rolls MAC, applies DHCP/static profile, undoes.                                                                                |
-| `profiles` / `profiles-core` | None        | Reads/writes profile JSON; pure CRUD operations.                                                                               |
-| `setup` / `setup-core`       | Root/admin‡ | The start screen's card: which tools are missing, the Linux admin rule; installs them on a keypress through the elevated path. |
-| `wifiscan` → `ie80211`       | Location\*  | WLAN mode. Asks the platform for a sweep, decodes beacons, accumulates a recording. All three OSes.                            |
-| `recordings` / `-core`       | None        | Writes a recording to CSV in Documents, reads it back, reveals it in the file manager.                                         |
-| `plugins` → `dhcp`           | Root/admin† | Configure mode. Loads one plugin at a time; the host's DHCP server needs an address held on the port.                          |
+| Module                       | Privileges  | What it does                                                                                                                        |
+| ---------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `adapters`                   | None        | Enumerates the ports worth showing, dongles first; looks up chipsets via `chipsets.json`.                                           |
+| `diagnostics` → `probe`      | None        | Reads netinfo and runs gateway/internet ping + DNS test in parallel.                                                                |
+| `survey`                     | Root/admin  | Port survey: runs `tcpdump` until stopped, tallying 802.1Q VLANs and LLDP/CDP. Optional; degrades gracefully.                       |
+| `speedtest`                  | None        | Throughput both ways, bound to the dongle. Manual only — it moves real traffic. Degrades gracefully.                                |
+| `reconfig`                   | Root/admin  | Rolls MAC, applies DHCP/static profile, undoes.                                                                                     |
+| `profiles` / `profiles-core` | None        | Reads/writes profile JSON; pure CRUD operations.                                                                                    |
+| `setup` / `setup-core`       | Root/admin‡ | The start screen's card: which tools are missing, the Linux admin rule; installs them on a keypress through the elevated path.      |
+| `wifiscan` → `ie80211`       | Location\*  | WLAN mode. Asks the platform for a sweep, decodes beacons, accumulates a recording. All three OSes.                                 |
+| `wifiscan` → `monitor`       | Root/admin§ | Listening (`M`, Linux): the same sightings from a monitor capture, plus measured air per channel. Replaces the sweep while it runs. |
+| `recordings` / `-core`       | None        | Writes a recording to CSV in Documents, reads it back, reveals it in the file manager.                                              |
+| `plugins` → `dhcp`           | Root/admin† | Configure mode. Loads one plugin at a time; the host's DHCP server needs an address held on the port.                               |
 
 \* Location consent on macOS and Windows; nothing on Linux with NetworkManager, one `pkexec`
 prompt without it. See [reading the air](#reading-the-air-on-each-os).
@@ -125,6 +133,9 @@ with the link; the DHCP server and discovery run unprivileged. See
 [Configure mode](#configure-mode-plugins).
 
 ‡ Only when `K` or `A` is pressed; the checks themselves are PATH lookups.
+
+§ One prompt per session (none with the admin rule); the script puts the Wi-Fi back on every way
+out. See [reading the air](#reading-the-air-on-each-os).
 
 ## Platform layer (`PlatformOps`)
 
@@ -143,6 +154,8 @@ interface PlatformOps {
   scanWifi(device): Promise<WifiScanOutcome> // one sweep of the air, decoded to beacon facts
   requestWifiAccess(): void // raise the OS's consent dialog/page; no-op on Linux
   endWifiSession(): void // stop anything long-lived (the Linux elevated loop)
+  monitorSupport?(device): Promise<MonitorSupport | undefined> // can this card listen, and on what (Linux only)
+  buildMonitorPlan?(spec): ElevatedPlan // the elevated listening session
 }
 ```
 
@@ -175,6 +188,7 @@ The preload exposes `window.api` per `MagicethApi` (`src/shared/types.ts`). Chan
 - **Long-running (privileged):** `survey:start`, `survey:stop`
 - **Long-running (unprivileged):** `speedtest:start`, `speedtest:stop`
 - **Long-running (unprivileged):** `wifi:start`, `wifi:stop`
+- **Long-running (privileged):** `wifi:monitor:start`, `wifi:monitor:stop`, `wifi:monitor:pin`
 - **Saved recordings:** `recordings:list`, `recordings:read`, `recordings:reveal`
 - **Windows Location fix (privileged, opt-in):** `wifi:enableAccess`
 - **Plugins:** `plugins:list` (manifests only), `plugins:activate`, `plugins:deactivate`, `plugins:key`, `plugins:submit`
@@ -217,6 +231,13 @@ open of someone else's file in sticky `/tmp`; and a refused prompt is recognised
 `elevationRefused()` — pkexec's exit 126/127, osascript's `-128`, UAC's "canceled", `sudo -n`'s "a
 password is required" — which is why every long-running elevated script ends in `true`: a script
 whose own last command is missing also exits 127.
+
+Listening is the one elevated script that changes what the machine is connected to, so it is the
+one with a `trap`: `restore` removes the monitor interface, brings the station up and hands it back
+to NetworkManager, and runs on every exit — a stop file, the time or size cap, `tcpdump` dying, a
+failed setup step, SIGINT/SIGTERM/SIGHUP. It is tested by running the generated script under `sh`
+and `dash` against stand-ins for `iw`, `ip`, `nmcli` and `tcpdump`; what a real card does is for
+`LINUX-TEST.md`.
 
 Wi-Fi scanning is the one read-only feature that can need elevation, and only on a Linux without
 NetworkManager: triggering a sweep needs `CAP_NET_ADMIN`, so one `pkexec` prompt starts a scan loop
@@ -386,6 +407,13 @@ its centre frequency plus or minus half its width, and a channel counts every sp
 own 20 MHz. That is why 1, 6 and 11 come out clear of each other while 1 and 3 do not. The centre
 is approximated from the _primary_ channel, which is all CoreWLAN reports — noted in the backlog.
 
+**Measured against advertised.** While listening, each channel row carries what was _heard_ —
+frames per second (≈, because a dwell's length is nominal) and the share that were retries — next to
+`maxUtilizationPct`, which is only what an access point claims. A channel with no access point still
+gets a row when it was listened to, which is the "where is it quiet" answer, and one the card
+refused to tune to says so rather than reading as quiet. `channelSummary(tracks, air)` folds the
+two together in main; the renderer only draws them.
+
 ## Reading the air on each OS
 
 Every OS answers "what is around me" differently, and only macOS and Windows will hand over the
@@ -416,6 +444,35 @@ the `iw` text parser both call them, so the two cannot disagree about the same a
 
 The evidence for the macOS claims, and what each other OS has been checked against, is in
 [WIFI-FINDINGS.md](WIFI-FINDINGS.md).
+
+### Listening instead of asking
+
+On Linux a card that supports monitor mode can be asked to hear instead of to scan, which is what
+`M` does. `monitorSupport()` reads `iw dev <if> info` and `iw phy phyN info` without privileges and
+returns the channel list; `session.ts` then starts one elevated script (`linuxMonitorScript`) and
+follows the two files it writes in the scratch directory. The script puts the NetworkManager
+connection aside, takes the station down, adds a second interface `magicmon0` in monitor mode,
+starts `tcpdump` with its output redirected by the root shell, and visits each channel for 400 ms,
+writing a line per dwell (`ok <pass> <freq>` or `fail <pass> <freq>`) to a journal. The journal is
+the one source of truth about what the radio did: the app cannot see the channel from outside, and
+without it a channel the card refused looks the same as a silent one. Every way out of the script
+runs `restore`, including SIGTERM; `tcpdump` is killed with `kill -9`, because SIGTERM does not stop
+it while its read is blocked. SIGKILL on the shell itself cannot be caught, and leaves the Wi-Fi
+down until the next session or a reboot.
+
+Parsing is pure and kept apart from the session: `pcap.ts` feeds bytes in any chunking and gets the
+same records, `radiotap.ts` reads only the first six fields (frequency, signal and flags are all
+the app uses), `dot11.ts` keeps beacons, probe responses, deauthentications and disassociations by
+BSSID and reduces a data frame to its retry flag and the access point's own address, found in the
+one field the DS bits name — the station's address and the payload are never read — and `model.ts`
+folds the result. A sweep of the channels is one window, and when the next begins the beacons heard
+in it become the same `WifiSighting`s a scan produces, so the networks, the access points, the
+channel view and the recordings work on them unchanged. The sightings carry the channel the access
+point names in its own elements, because a frame leaks onto neighbouring channels. Nothing in
+`model.ts` could hold a station's address, so nothing has to be remembered to be forgotten.
+`MAGICETH_MONITOR_REPLAY=<file.pcap>` plays a capture back at its own pace instead of elevating
+(its rates are not measurements), which is how the screens are driven on a computer that cannot
+listen, `npm run ui-check` included.
 
 ## Saved recordings
 

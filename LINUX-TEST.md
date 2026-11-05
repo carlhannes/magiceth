@@ -232,6 +232,26 @@ nmcli connection up "<the connection noted above>"
 
 How many seconds until a page loads again? That number sets what the app's notice promises.
 
+### 7.1 The same, from the app
+
+Only after the manual run above: it shows what the script will meet. Wi-Fi mode, with the A rule
+installed (no password prompt) or not (one prompt):
+
+- `M` is offered in the legend. Press it: a confirmation says Wi-Fi goes off. Press `M` again.
+  Expected: within a few seconds the status line reads `Listening · N channels · … frames`, and the
+  first sweep of the channels (about fifteen seconds) fills the network list.
+- The channel view (`C`) shows `heard ≈ N frames/s · R% retries` beside the advertised `load`, a row
+  for channels with no access point, and — if the 5 GHz regression bites — `could not tune` rows
+  and `N could not be tuned` in the status line. Record which channels failed.
+- On an access point, `K` holds its channel (the status line says `held on ch N`; `iw dev
+magicmon0 info` shows the channel and width), `K` again sweeps.
+- `M` stops. Time until a page loads again. Then check section 8, and that nothing is left in
+  `/tmp/magiceth-$(id -u)` named `monitor-*`.
+- Quit the app while listening: within a second the script should notice and restore (`pgrep -af
+tcpdump` empty, `ip -br link` without `magicmon0`). Kill the app instead (`pkill -9 electron`
+  or the window manager): Wi-Fi should come back by itself at the script's 15-minute limit.
+- Send SIGTERM to the root script mid-run (`sudo pkill -TERM -f magicmon0`): same restoration.
+
 ## 8. Leaving things clean
 
 After quitting the app, each of these should hold:
@@ -240,7 +260,8 @@ After quitting the app, each of these should hold:
 pgrep -af tcpdump            # nothing
 nmcli -t -f DEVICE,STATE device   # wlan connected, RJ-45 as before
 ip -br addr                  # no leftover pool address on the RJ-45
-ls -la /tmp/magiceth-$(id -u) # survey files you meant to keep, nothing else
+ls -la /tmp/magiceth-$(id -u) # survey files you meant to keep, nothing else; no monitor-* capture
+ip -br link                  # no magicmon0
 ```
 
 ## Log

@@ -150,6 +150,27 @@ that two rescans three seconds apart get the second rejected; a full real dump s
 scans continuously, exits on idle, and leaves no root `sh` behind after quitting the app; and that
 a recording's snapshot rows are not duplicated sweeps.
 
+## Linux — listening (monitor mode) on an Intel AX201, not yet run
+
+What the listening session (`M`) relies on. Nothing here has run on the card; the order to check it
+in is [LINUX-TEST.md](../LINUX-TEST.md) section 7, and the results belong in this table.
+
+| Claim                                                                                                                | Source                                                                                                        | Status                     |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| The AX201 receives in monitor mode on the stock `iwlwifi` driver (it cannot inject, which nothing here needs)        | the `ssubbotin/iwlwifi-ax201-injection` README describes the stock behaviour; Intel's own support article     | documentation              |
+| A second interface of type monitor can be added next to the station while the station is down                        | `iw dev <if> interface add … type monitor`; iwlwifi's interface combinations are not confirmed                | not verified               |
+| 5 GHz channels can be tuned in monitor mode                                                                          | a kernel regression, bugzilla 217051, reports 5/6 GHz monitor failing on this chip; no upstream fix was found | known risk — measure first |
+| A receiver tuned to 20 MHz still hears beacons from wider access points                                              | beacons go out on the primary 20 MHz channel                                                                  | documentation              |
+| The first `dBm antenna signal` in radiotap is the combined one; iwlwifi adds per-chain signals in a second namespace | radiotap.org, and the layout checked once against `tcpdump -r`; iwlwifi's real header not seen                | partly checked (synthetic) |
+| `tcpdump … -w - 'not type ctl' >> file` from root's shell works under Ubuntu's AppArmor profile                      | tcpdump's profile confines files it opens itself, not a descriptor it inherits                                | not verified               |
+| The script restores everything on stop, SIGTERM, a failed setup step and `tcpdump` dying                             | run under `sh` and `dash` against stand-ins, `test/monitor-script.test.ts`                                    | measured (stand-ins only)  |
+| After a stop, the connection is back in about ten seconds                                                            | the notice promises "about ten seconds"                                                                       | not verified — time it     |
+
+Consequences in the code: the radio is visited channel by channel for 400 ms at 20 MHz, a channel
+the card refuses is journalled as `fail` and skipped (so a missing 5 GHz shows as "N could not be
+tuned" in the status line rather than as silence), and `iw set freq` with a width falls back to the
+plain channel when the width is refused.
+
 ## Windows — verified on one machine
 
 Run on 2026-10-09 on a Windows 11 Pro desktop with a local account (build not recorded): the scan

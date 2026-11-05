@@ -18,8 +18,8 @@ Only the latest released version receives security updates (the project is in an
 - **Runs OS commands injection-safely.** Everything goes through `execFile` with arguments as an
   array (no shell), so input can't be interpreted as commands. See `src/main/util/run-command.ts`.
 - **Least privilege.** The app and all read-only diagnostics run unprivileged. Only packet capture
-  (LLDP/CDP), adapter changes (MAC/IP), the Linux Wi-Fi scan loop on a machine without
-  NetworkManager, and the opt-in Windows Location fix (`O`) are elevated, and then **per action**
+  (LLDP/CDP), adapter changes (MAC/IP), listening to the air on Linux, the Linux Wi-Fi scan loop on
+  a machine without NetworkManager, and the opt-in Windows Location fix (`O`) are elevated, and then **per action**
   via the OS's own prompt (macOS password / Linux `pkexec` / Windows UAC). The entire app never
   needs to run as admin.
 - **Linux can be told to stop asking — and that means root.** The start screen offers, on Linux
@@ -32,6 +32,18 @@ Only the latest released version receives security updates (the project is in an
   a dedicated field laptop and nothing else; `sudo` logs every call to the journal; and one command
   undoes it: `sudo rm /etc/sudoers.d/magiceth-<user> /usr/local/libexec/magiceth-elevate`. Without
   the rule nothing changes: every action asks, as before.
+- **Listening disconnects Wi-Fi, and what it reads is limited.** On Linux, `M` in Wi-Fi mode
+  (after a confirming press) runs one elevated script that puts the Wi-Fi card aside, adds a
+  monitor interface and captures frames until you stop; the same script puts everything back on
+  every way out (stop, quit, a signal, its own time and size caps), and a copy of what it ran
+  is in the sudo log. Nothing is transmitted. The app reads the radio header and the 802.11 header
+  of each frame, the elements of beacons and probe responses (access points announce those to
+  everyone), and the BSSID of deauthentications, disassociations and data frames, which is an access
+  point's own address; it does not read the payload of any frame or the address of any station, and
+  keeps no per-device record. The capture is a temporary file in `/tmp/magiceth-<uid>` (mode 0700)
+  that holds whatever the radio heard, other people's frames included; it is deleted the moment you
+  stop, and anything left by a crash is deleted at the next start. Listening where you are not
+  allowed to is your responsibility, not the app's.
 - **The start screen can install tools.** Where `tcpdump`, `iw` or `curl` are missing it says so and
   offers (`K`) to run the system's package manager for them — one elevated command, only on that
   keypress, only for those packages.
