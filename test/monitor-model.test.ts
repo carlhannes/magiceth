@@ -28,6 +28,8 @@ import {
 const A = '74:ac:b9:00:00:01' // 2.4 GHz, channel 1
 const B = '1c:0b:8b:f0:2d:39' // 5 GHz, channel 48
 const CLIENT = '3c:22:fb:12:34:56'
+/** An RSN element: CCMP, PSK. */
+const RSN = '30140100000fac040100000fac040100000fac020000'
 
 function rec(freq: number, signal: number, mac: Buffer): PcapRecordSpec {
   return { atMs: 0, data: Buffer.concat([radiotap({ flags: 0, freq, signal }), mac]) }
@@ -53,21 +55,21 @@ describe('access points', () => {
       // Heard while the radio sat on 5240, though the AP says it is on 128: its own word wins.
       beacon(B, AP_5G_4X4, 5240, -80)
     ])
-    const sightings = closeWindow(state)
+    const { sightings } = closeWindow(state)
     expect(sightings).toHaveLength(2)
     const a = sightings.find((s) => s.bssid === A)
     expect(a).toMatchObject({ ssid: 'tdc_nomap', rssi: -65, channel: 1, band: '2.4' })
     expect(a?.beacon).toEqual(readBeacon(AP_24_BUSY))
     expect(sightings.find((s) => s.bssid === B)).toMatchObject({ channel: 128, band: '5' })
     // The next sweep starts empty.
-    expect(closeWindow(state)).toEqual([])
+    expect(closeWindow(state).sightings).toEqual([])
   })
 
   it('gives a sighting no signal when the capture had none, so it makes none', () => {
     const noSignal = mgmtFrame({ subtype: 8, bssid: A, body: beaconBody(AP_24_BUSY) })
     const state = createMonitorState()
     foldFrame(state, decodeFrame({ atMs: 0, origLen: noSignal.length, data: noSignal }, 105)!)
-    expect(closeWindow(state)).toEqual([])
+    expect(closeWindow(state).sightings).toEqual([])
   })
 
   it('learns a hidden network name from a probe response and keeps it past a nameless beacon', () => {
@@ -78,7 +80,7 @@ describe('access points', () => {
       rec(2412, -62, mgmtFrame({ subtype: 5, bssid: A, body: beaconBody(named) })),
       beacon(A, hidden, 2412, -61)
     ])
-    expect(closeWindow(state)[0].ssid).toBe('hidd')
+    expect(closeWindow(state).sightings[0].ssid).toBe('hidd')
   })
 
   it('lets a probe response fill gaps in a beacon without overriding it', () => {
@@ -86,7 +88,46 @@ describe('access points', () => {
       beacon(A, '0003' + '616161' + '030101', 2412, -60),
       rec(2412, -60, mgmtFrame({ subtype: 5, bssid: A, body: beaconBody('0003' + '626262') }))
     ])
-    expect(closeWindow(state)[0].ssid).toBe('aaa')
+    expect(closeWindow(state).sightings[0].ssid).toBe('aaa')
+  })
+
+  it('names a hidden network from a probe response heard after its beacon', () => {
+    // The usual order: the beacon, its SSID four NUL bytes, then the answer to someone's probe.
+    const hidden = beaconBody('000400000000' + '030101' + RSN, { privacy: true })
+    const named = beaconBody('0003666f6f' + '030101' + RSN, { privacy: true }) // "foo"
+    const state = fold([
+      rec(2412, -60, mgmtFrame({ subtype: 8, bssid: A, body: hidden })),
+      rec(2412, -60, mgmtFrame({ subtype: 5, bssid: A, body: named }))
+    ])
+    const [sighting] = closeWindow(state).sightings
+    expect(sighting.ssid).toBe('foo')
+    expect(sighting.beacon.security).toBe('WPA2-Personal')
+  })
+
+  it('keeps the vendors a probe response named when a beacon names none', () => {
+    const wps = 'dd050050f20410' // Microsoft OUI, WPS
+    const state = fold([
+      rec(
+        2412,
+        -60,
+        mgmtFrame({ subtype: 5, bssid: A, body: beaconBody('0003616161' + '030101' + wps) })
+      ),
+      beacon(A, '0003616161' + '030101', 2412, -60)
+    ])
+    expect(closeWindow(state).sightings[0].beacon.vendorOuis).toEqual(['0050f2'])
+  })
+
+  it('takes the signal from the access point own channel, not the copies leaking next to it', () => {
+    const own = '0003616161' + '030106' // channel 6
+    const state = fold([
+      beacon(A, own, 2437, -50),
+      beacon(A, own, 2427, -72), // heard from channel 4
+      beacon(A, own, 2447, -74) // and from 8
+    ])
+    expect(closeWindow(state).sightings[0].rssi).toBe(-50)
+    // Heard only from a neighbour, the neighbour's reading is all there is.
+    const leakedOnly = fold([beacon(A, own, 2427, -72), beacon(A, own, 2447, -74)])
+    expect(closeWindow(leakedOnly).sightings[0].rssi).toBe(-73)
   })
 
   it('stops adding access points at the cap rather than growing without limit', () => {
@@ -97,6 +138,57 @@ describe('access points', () => {
     }
     expect(state.window.size).toBe(MAX_APS)
     expect(state.aps.size).toBe(MAX_APS)
+  })
+})
+
+describe('beacons the capture cut short', () => {
+  /** AP_5G_4X4 as a frame, and the same frame with its last 166 bytes cut — where its EHT elements are. */
+  function cutFrames(): { full: PcapRecordSpec; cut: PcapRecordSpec } {
+    const mac = (subtype: number): Buffer =>
+      mgmtFrame({ subtype, bssid: B, body: beaconBody(AP_5G_4X4, { privacy: true }) })
+    const full = {
+      atMs: 0,
+      data: Buffer.concat([radiotap({ flags: 0, freq: 5640, signal: -60 }), mac(5)])
+    }
+    const whole = Buffer.concat([radiotap({ flags: 0, freq: 5640, signal: -60 }), mac(8)])
+    const cut = { atMs: 0, data: whole.subarray(0, whole.length - 166), origLen: whole.length }
+    return { full, cut }
+  }
+
+  it('lets a complete frame outrank a cut one, whichever came first', () => {
+    const { full, cut } = cutFrames()
+    // The precondition: the cut beacon alone reads a generation lower.
+    expect(closeWindow(fold([cut])).sightings[0].beacon.phy).toBe('802.11ax')
+    for (const order of [
+      [full, cut],
+      [cut, full]
+    ]) {
+      const facts = closeWindow(fold(order)).sightings[0].beacon
+      expect(facts.phy).toBe('802.11be')
+      expect(facts.vendorOuis).toEqual(readBeacon(AP_5G_4X4).vendorOuis)
+    }
+  })
+
+  it('never calls a cut beacon WEP: its RSN element may be what was cut', () => {
+    const mac = mgmtFrame({
+      subtype: 8,
+      bssid: A,
+      body: beaconBody('0003616161' + '030101' + RSN, { privacy: true })
+    })
+    const whole = Buffer.concat([radiotap({ flags: 0, freq: 2412, signal: -60 }), mac])
+    const cut = whole.subarray(0, whole.length - 20)
+    const frame = decodeFrame({ atMs: 0, data: cut, origLen: whole.length }, 127)
+    expect(frame?.body).toMatchObject({ kind: 'beacon', truncated: true })
+    expect(frame?.body.kind === 'beacon' && frame.body.facts.security).toBeUndefined()
+    // Complete, the same bit with no RSN element is WEP.
+    const wep = mgmtFrame({
+      subtype: 8,
+      bssid: A,
+      body: beaconBody('0003616161', { privacy: true })
+    })
+    const whole2 = Buffer.concat([radiotap({ flags: 0, freq: 2412, signal: -60 }), wep])
+    const frame2 = decodeFrame({ atMs: 0, data: whole2, origLen: whole2.length }, 127)
+    expect(frame2?.body.kind === 'beacon' && frame2.body.facts.security).toBe('WEP')
   })
 })
 
@@ -211,18 +303,31 @@ describe('air and association churn', () => {
 })
 
 describe('the hop journal', () => {
-  it('reports a new sweep only when the pass number rises', () => {
+  it('closes a sweep only when the pass number rises', () => {
     const state = createMonitorState()
-    expect(foldHop(state, 'ok 1 2412')).toBe(false) // the first sweep begins; nothing to close
-    expect(foldHop(state, 'ok 1 2417')).toBe(false)
-    expect(foldHop(state, 'fail 1 5500')).toBe(false)
-    expect(foldHop(state, 'ok 2 2412')).toBe(true)
+    expect(foldHop(state, 'ok 1 2412')).toBeUndefined() // the first sweep begins; nothing to close
+    expect(foldHop(state, 'ok 1 2417')).toBeUndefined()
+    expect(foldHop(state, 'fail 1 5500')).toBeUndefined()
+    expect(foldHop(state, 'ok 2 2412')).toEqual({ sightings: [], held: false })
+  })
+
+  it('calls a sweep held when it sat on one channel, from the journal alone', () => {
+    const state = createMonitorState()
+    for (const line of ['ok 1 2412', 'ok 1 2437']) foldHop(state, line)
+    expect(foldHop(state, 'ok 2 5180')?.held).toBe(false) // closes the full sweep
+    for (let i = 0; i < 4; i++) foldHop(state, 'ok 2 5180')
+    // The pin may be gone by now; the sweep it shaped is still the one that closes.
+    expect(foldHop(state, 'ok 3 2412')?.held).toBe(true)
+    // A plan of one channel visits it once a sweep, which is not a hold.
+    const one = createMonitorState()
+    foldHop(one, 'ok 1 2412')
+    expect(foldHop(one, 'ok 2 2412')?.held).toBe(false)
   })
 
   it('ignores a line that is not a journal line', () => {
     const state = createMonitorState()
     for (const line of ['', 'ok', 'ok 1', 'ok x 2412', 'bogus 1 2412', 'ok 1 2412 extra']) {
-      expect(foldHop(state, line)).toBe(false)
+      expect(foldHop(state, line)).toBeUndefined()
     }
     expect(state.channels.size).toBe(0)
   })

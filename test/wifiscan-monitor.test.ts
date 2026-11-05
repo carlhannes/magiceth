@@ -55,7 +55,6 @@ vi.mock('../src/main/capabilities/monitor/session', async () => {
         cb,
         running: true,
         scriptDone: false,
-        pinned: undefined as number | undefined,
         stops: 0
       }
       ctl.runs.push(run)
@@ -67,7 +66,6 @@ vi.mock('../src/main/capabilities/monitor/session', async () => {
           pcapBytes: 0,
           channelsVisited: 0,
           channelsFailed: 0,
-          pinnedChannel: run.pinned,
           device
         }),
         pin: () => {},
@@ -157,21 +155,20 @@ describe('wifiscan while listening', () => {
     expect(ctl.scans - from).toBeLessThanOrEqual(oneLoop + 1)
   })
 
-  it('keeps the whole list while the radio is held, and lets it shrink again once it is not', async () => {
+  it('keeps the whole list after a sweep held on one channel, and lets it shrink after full ones', async () => {
     await w.startMonitor('wlan0', onUpdate)
     const run = ctl.runs[0]
     const names = (): string[] =>
       ((updates.at(-1) as { networks: { ssid: string }[] }).networks ?? [])
         .map((n) => n.ssid)
         .sort()
-    run.cb.onWindow([sighting('02:00:00:00:00:01', 'a'), sighting('02:00:00:00:00:02', 'b')])
-    run.pinned = 1
-    run.cb.onWindow([sighting('02:00:00:00:00:01', 'a')])
-    run.cb.onWindow([sighting('02:00:00:00:00:01', 'a')])
+    const a = sighting('02:00:00:00:00:01', 'a')
+    run.cb.onWindow({ sightings: [a, sighting('02:00:00:00:00:02', 'b')], held: false })
+    run.cb.onWindow({ sightings: [a], held: true })
+    run.cb.onWindow({ sightings: [a], held: true })
     expect(names()).toEqual(['a', 'b'])
-    run.pinned = undefined
-    run.cb.onWindow([sighting('02:00:00:00:00:01', 'a')])
-    run.cb.onWindow([sighting('02:00:00:00:00:01', 'a')])
+    run.cb.onWindow({ sightings: [a], held: false })
+    run.cb.onWindow({ sightings: [a], held: false })
     expect(names()).toEqual(['a'])
   })
 })

@@ -30,7 +30,7 @@ const FIELDS: [number, number][] = [
   [1, 1], // 1 flags
   [1, 1], // 2 rate
   [2, 4], // 3 channel: frequency, flags
-  [1, 2], // 4 FHSS
+  [2, 2], // 4 FHSS: hop set and pattern, aligned as a pair (the kernel's radiotap.c)
   [1, 1] // 5 antenna signal, dBm
 ]
 const EXT_BIT = 0x80000000

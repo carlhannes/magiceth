@@ -174,7 +174,7 @@ function listeningLine(m: MonitorStatus): string {
     megabytes(m.pcapBytes)
   ]
   if (m.channelsFailed > 0) parts.push(`${m.channelsFailed} could not be tuned`)
-  if (m.pinnedChannel !== undefined) parts.push(`held on ch ${m.pinnedChannel}`)
+  if (m.pinned) parts.push(`held on ch ${m.pinned.channel}`)
   parts.push('Wi-Fi off until you stop')
   return parts.join(' · ')
 }
@@ -491,9 +491,8 @@ function footerHints(): Hint[] {
     case 'aps':
       return [select, open, back, channel, ...scanKey, record, ...listen]
     case 'detail': {
-      const held = live && currentAp()?.channel === result?.monitor?.pinnedChannel
       const pin: Hint[] = live
-        ? [{ keys: ['k'], label: held ? 'sweep again' : 'hold channel' }]
+        ? [{ keys: ['k'], label: heldOn(currentAp()) ? 'sweep again' : 'hold channel' }]
         : []
       return [back, channel, ...scanKey, record, ...listen, ...pin]
     }
@@ -603,19 +602,27 @@ async function stopListening(): Promise<void> {
   requestRender()
 }
 
+/** Whether the radio is held on this access point's channel; a channel number alone recurs per band. */
+function heldOn(ap: WifiBss | undefined): boolean {
+  const pinned = result?.monitor?.pinned
+  return ap !== undefined && pinned?.channel === ap.channel && pinned.band === ap.band
+}
+
 /** K on an access point: hold the radio on its channel and width, or sweep again. */
 async function togglePin(): Promise<void> {
   const ap = currentAp()
   if (!ap || !listening()) return
-  const held = ap.channel === result?.monitor?.pinnedChannel
-  setNotice(
-    held
-      ? null
-      : `Holding the radio on channel ${ap.channel}, so every frame on it is heard. K again to sweep all channels.`
-  )
+  const release = heldOn(ap)
   try {
-    const next = await window.api.pinMonitor(held ? null : ap.bssid)
+    const next = await window.api.pinMonitor(release ? null : ap.bssid)
     if (next) result = next
+    // Said once main has answered: a channel the card cannot be held on comes back unpinned.
+    if (release) setNotice(null)
+    else if (heldOn(ap)) {
+      setNotice(
+        `Holding the radio on channel ${ap.channel}, so every frame on it is heard. K again to sweep all channels.`
+      )
+    } else setNotice("This access point's channel cannot be held; still sweeping all channels.")
   } catch (err) {
     console.error('pinning the channel failed', err)
   }
@@ -733,7 +740,9 @@ function ascend(): void {
     void openSavedList()
     return
   } else {
-    if (recording) void stopRecording()
+    // The way out by keyboard stops what the mode had running, as leaving by Tab does.
+    leaveWlan()
+    setNotice(null)
     setMode('chooser')
   }
   requestRender()
@@ -787,8 +796,17 @@ export function handleWlanKey(e: KeyboardEvent): void {
 
 /** Leaving the mode stops the radio work; a recording must not outlive the screen it belongs to. */
 export function leaveWlan(): void {
-  // Listening first: it has Wi-Fi switched off, and the stop is what switches it back on.
-  if (listening()) void window.api.stopMonitor().catch(() => undefined)
+  // Listening first: it has Wi-Fi switched off, and the stop is what switches it back on. Main
+  // sends no update for a stop it was asked for, so the answer is what says it has ended.
+  if (listening()) {
+    void window.api
+      .stopMonitor()
+      .then((final) => {
+        if (final) result = final
+        requestRender()
+      })
+      .catch(() => undefined)
+  }
   if (!recording) return
   recording = false
   void window.api

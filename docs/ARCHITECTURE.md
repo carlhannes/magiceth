@@ -470,8 +470,14 @@ one field the DS bits name — the station's address and the payload are never r
 folds the result. A sweep of the channels is one window, and when the next begins the beacons heard
 in it become the same `WifiSighting`s a scan produces, so the networks, the access points, the
 channel view and the recordings work on them unchanged. The sightings carry the channel the access
-point names in its own elements, because a frame leaks onto neighbouring channels. Nothing in
-`model.ts` could hold a station's address, so nothing has to be remembered to be forgotten.
+point names in its own elements, because a frame leaks onto neighbouring channels, and the signal
+heard on that channel, because a leaked copy arrives weaker. When a sweep hears the same access
+point in several frames, a complete one outranks one the 1024-byte capture length cut short, and a
+beacon outranks a probe response, whose values only fill gaps — which is how a hidden network gets
+its name. A cut beacon's Privacy bit is not taken to mean WEP: the RSN element may be what was cut.
+A sweep whose journal sat on one channel was held there (`K`), so the list keeps what it had rather
+than shrinking to that channel. Nothing in `model.ts` could hold a station's address, so nothing
+has to be remembered to be forgotten.
 `MAGICETH_MONITOR_REPLAY=<file.pcap>` plays a capture back at its own pace instead of elevating
 (its rates are not measurements), which is how the screens are driven on a computer that cannot
 listen, `npm run ui-check` included.

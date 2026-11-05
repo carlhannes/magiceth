@@ -23,11 +23,22 @@ import { DWELL_MS } from './plan'
 /** Upper bound on access points tracked; a long session in a dense city must not grow without limit. */
 export const MAX_APS = 512
 
-interface WindowAp {
-  rssiSum: number
+interface Signal {
+  sum: number
   count: number
+}
+
+interface WindowAp {
+  /**
+   * Signal heard while the radio sat on the access point's own channel, and elsewhere. A copy that
+   * leaked onto a neighbouring channel arrives much weaker, so it is only used when it is all there is.
+   */
+  home: Signal
+  leaked: Signal
   freqMhz?: number
   facts: BeaconFacts
+  /** How far `facts` can be trusted to be whole; see `factsRank`. */
+  rank: number
 }
 
 interface ApCounts {
@@ -54,6 +65,9 @@ interface ChannelCounts {
 export interface MonitorState {
   /** Access points heard since the current sweep began. */
   window: Map<string, WindowAp>
+  /** The current sweep's journal: dwells begun or refused, and the channels they were on. */
+  sweepDwells: number
+  sweepFreqs: Set<number>
   aps: Map<string, ApCounts>
   channels: Map<number, ChannelCounts>
   /** The sweep the journal is on; a higher number in a new line means the last one is complete. */
@@ -62,8 +76,23 @@ export interface MonitorState {
   bytes: number
 }
 
+/** One sweep of the channels, closed: what it heard, and whether the radio was held on one channel. */
+export interface Sweep {
+  sightings: WifiSighting[]
+  held: boolean
+}
+
 export function createMonitorState(): MonitorState {
-  return { window: new Map(), aps: new Map(), channels: new Map(), pass: 0, frames: 0, bytes: 0 }
+  return {
+    window: new Map(),
+    sweepDwells: 0,
+    sweepFreqs: new Set(),
+    aps: new Map(),
+    channels: new Map(),
+    pass: 0,
+    frames: 0,
+    bytes: 0
+  }
 }
 
 function channelCounts(state: MonitorState, freqMhz: number): ChannelCounts {
@@ -93,27 +122,49 @@ function defined(facts: BeaconFacts): Partial<BeaconFacts> {
   return Object.fromEntries(Object.entries(facts).filter(([, v]) => v !== undefined && v !== ''))
 }
 
+/**
+ * How far a frame's facts can be trusted to be whole. A frame the capture cut short has lost its
+ * last elements, so a complete one outranks it; between two of the same kind, a beacon is the
+ * fuller description, and a probe response fills what the beacons left out.
+ */
+function factsRank(isBeacon: boolean, truncated: boolean): number {
+  return (truncated ? 0 : 2) + (isBeacon ? 1 : 0)
+}
+
+/** Two descriptions of one access point as one: the trusted side's values win, the other fills gaps. */
+function mergeFacts(trusted: BeaconFacts, other: BeaconFacts): BeaconFacts {
+  return {
+    ...defined(other),
+    ...defined(trusted),
+    vendorOuis: [...new Set([...trusted.vendorOuis, ...other.vendorOuis])]
+  }
+}
+
 function foldAccessPoint(
   state: MonitorState,
   frame: DecodedFrame,
   bssid: string,
-  facts: BeaconFacts,
-  isBeacon: boolean
+  body: { facts: BeaconFacts; truncated: boolean; isBeacon: boolean },
+  onHome: boolean
 ): void {
   if (frame.rssi === undefined) return // a sighting without a signal says nothing about distance
-  const existing = state.window.get(bssid)
-  if (!existing) {
+  const rank = factsRank(body.isBeacon, body.truncated)
+  let ap = state.window.get(bssid)
+  if (!ap) {
     if (state.window.size >= MAX_APS) return
-    state.window.set(bssid, { rssiSum: frame.rssi, count: 1, freqMhz: frame.freqMhz, facts })
-    return
+    ap = { home: { sum: 0, count: 0 }, leaked: { sum: 0, count: 0 }, facts: body.facts, rank }
+    state.window.set(bssid, ap)
+  } else if (rank >= ap.rank) {
+    // As trusted as what is there, and newer: its values win.
+    ap.facts = mergeFacts(body.facts, ap.facts)
+    ap.rank = rank
+  } else {
+    ap.facts = mergeFacts(ap.facts, body.facts)
   }
-  existing.rssiSum += frame.rssi
-  existing.count++
-  existing.freqMhz = frame.freqMhz ?? existing.freqMhz
-  // A beacon is the fuller description; a probe response only fills what the beacons left out.
-  existing.facts = (
-    isBeacon ? { ...existing.facts, ...defined(facts) } : { ...defined(facts), ...existing.facts }
-  ) as BeaconFacts
+  const signal = onHome ? ap.home : ap.leaked
+  signal.sum += frame.rssi
+  signal.count++
+  ap.freqMhz = frame.freqMhz ?? ap.freqMhz
 }
 
 /**
@@ -141,11 +192,11 @@ export function foldFrame(state: MonitorState, frame: DecodedFrame): void {
   const { body } = frame
   const bssid = body.kind === 'other' ? undefined : body.bssid
   if (bssid === undefined) return
+  const describes = body.kind === 'beacon' || body.kind === 'probe-response'
+  const home = describes ? homeFreqOf(body.facts.primaryChannel, frame.freqMhz) : undefined
   const ap = apCounts(state, bssid)
   if (ap) {
-    if (body.kind === 'beacon' || body.kind === 'probe-response') {
-      ap.homeFreq = homeFreqOf(body.facts.primaryChannel, frame.freqMhz) ?? ap.homeFreq
-    }
+    ap.homeFreq = home ?? ap.homeFreq
     // An access point on channel 1 is also heard while the radio sits on 2 and 3. Counting those
     // frames against the time spent on channel 1 alone would multiply its share of the air, so only
     // frames heard on its own channel count. A deauthentication counts wherever it is heard.
@@ -155,50 +206,65 @@ export function foldFrame(state: MonitorState, frame: DecodedFrame): void {
     }
     if (body.kind === 'deauth' || body.kind === 'disassoc') ap.deauths++
   }
-  if (body.kind === 'beacon' || body.kind === 'probe-response') {
-    foldAccessPoint(state, frame, bssid, body.facts, body.kind === 'beacon')
+  if (describes) {
+    const onHome = frame.freqMhz !== undefined && frame.freqMhz === home
+    foldAccessPoint(
+      state,
+      frame,
+      bssid,
+      { facts: body.facts, truncated: body.truncated, isBeacon: body.kind === 'beacon' },
+      onHome
+    )
   }
 }
 
 /**
  * Add one line of the session's hop journal: `ok <pass> <freq>` for a dwell that began,
- * `fail <pass> <freq>` for a channel the card would not tune to. Returns true when the line
- * starts a sweep after the first, which is the moment the previous one can be closed. Anything that is not a
- * journal line is ignored.
+ * `fail <pass> <freq>` for a channel the card would not tune to. A line that starts a sweep after
+ * the first closes the one before and returns it. Anything that is not a journal line is ignored.
  */
-export function foldHop(state: MonitorState, line: string): boolean {
+export function foldHop(state: MonitorState, line: string): Sweep | undefined {
   const m = /^(ok|fail) (\d+) (\d+)$/.exec(line.trim())
-  if (!m) return false
+  if (!m) return undefined
   const pass = Number(m[2])
-  const c = channelCounts(state, Number(m[3]))
+  const freqMhz = Number(m[3])
+  // The first sweep beginning closes nothing: what was heard so far belongs to it.
+  const ended = state.pass > 0 && pass > state.pass ? closeWindow(state) : undefined
+  if (pass > state.pass) state.pass = pass
+  const c = channelCounts(state, freqMhz)
   if (m[1] === 'ok') c.visits++
   else c.failed++
-  // The first sweep beginning closes nothing: what was heard so far belongs to it.
-  const started = state.pass > 0 && pass > state.pass
-  if (pass > state.pass) state.pass = pass
-  return started
+  state.sweepDwells++
+  state.sweepFreqs.add(freqMhz)
+  return ended
 }
 
 /**
- * The sweep that just ended, as the sightings a scan would have produced, and start the next one.
+ * The sweep under way, closed: the sightings a scan would have produced, and the next one begins.
  * The channel is the one the access point names in its own elements; the radio's channel is only
- * where it happened to be listening, and a frame leaks onto neighbouring channels.
+ * where it happened to be listening, and a frame leaks onto neighbouring channels. The sweep was
+ * held when its journal sat on one channel dwell after dwell, which is what a pin does — a full
+ * sweep visits each channel once.
  */
-export function closeWindow(state: MonitorState): WifiSighting[] {
-  const out: WifiSighting[] = []
+export function closeWindow(state: MonitorState): Sweep {
+  const sightings: WifiSighting[] = []
   for (const [bssid, ap] of state.window) {
     const radio = ap.freqMhz === undefined ? undefined : channelFromMhz(ap.freqMhz)
-    out.push({
+    const signal = ap.home.count > 0 ? ap.home : ap.leaked
+    sightings.push({
       bssid,
       ssid: ap.facts.ssid ?? '',
-      rssi: Math.round(ap.rssiSum / ap.count),
+      rssi: Math.round(signal.sum / signal.count),
       channel: ap.facts.primaryChannel ?? radio?.channel ?? 0,
       band: radio?.band ?? '?',
       beacon: ap.facts
     })
   }
+  const held = state.sweepFreqs.size === 1 && state.sweepDwells > 1
   state.window.clear()
-  return out
+  state.sweepDwells = 0
+  state.sweepFreqs.clear()
+  return { sightings, held }
 }
 
 /** Frames per second is ≈: the dwell is nominal, and the sweep's first partial dwell counts whole. */

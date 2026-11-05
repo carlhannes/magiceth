@@ -11,14 +11,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { elevationRefused, runElevatedPlan } from '../../privilege'
-import { MONITOR_MAX_BYTES, MONITOR_MAX_SECONDS } from '../../platform/iw'
-import type { MonitorSpec, MonitorSupport, PlatformOps, WifiSighting } from '../../platform'
+import { MONITOR_INTERFACE, MONITOR_MAX_BYTES, MONITOR_MAX_SECONDS } from '../../platform/iw'
+import type { MonitorSpec, MonitorSupport, PlatformOps } from '../../platform'
 import { scratchFile } from '../../util/scratch'
 import { channelFromMhz } from '../wifi-model'
 import type { MonitorStatus } from '../../../shared/types'
 import { decodeFrame } from './dot11'
 import { closeWindow, createMonitorState, foldFrame, foldHop, monitorCounts } from './model'
-import type { MonitorState } from './model'
+import type { MonitorState, Sweep } from './model'
 import { createPcapReader, feedPcap } from './pcap'
 import type { PcapRecord } from './pcap'
 import { DWELL_MS, FALLBACK_CHANNELS, planHops } from './plan'
@@ -36,8 +36,8 @@ const SLACK_MS = 10 * 60_000
 const REPLAY_SWEEP_MS = 8000
 
 export interface MonitorCallbacks {
-  /** A sweep of the channels completed; these are the access points it heard, as a scan would give. */
-  onWindow(sightings: WifiSighting[]): void
+  /** A sweep of the channels completed; its sightings are the access points heard, as a scan gives. */
+  onWindow(sweep: Sweep): void
   /** Once a second while running: the counters moved. */
   onTick(): void
   /** The session ended without being asked to. Not called after stop(). */
@@ -72,13 +72,35 @@ export function replayFile(): string | undefined {
   return process.env.MAGICETH_MONITOR_REPLAY || undefined
 }
 
+/** Whether a process is running. Signal 0 only asks; EPERM means it exists but is not ours. */
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * Which of a scratch directory's files a session left behind when its app went away. Every name
+ * carries the pid of the app that wrote it, so the files of a session still running in another
+ * instance are left alone; only those whose app has gone are leftovers.
+ */
+export function leftoverFiles(names: string[], alive: (pid: number) => boolean): string[] {
+  return names.filter((name) => {
+    const m = /^monitor-(\d+)-\d+\./.exec(name)
+    return m !== null && !alive(Number(m[1]))
+  })
+}
+
 /** Capture files a crashed session left behind; the next session's first act is to remove them. */
 function removeLeftovers(keep?: string): void {
   const dir = path.dirname(scratchFile('monitor'))
   try {
-    for (const name of fs.readdirSync(dir)) {
+    for (const name of leftoverFiles(fs.readdirSync(dir), processAlive)) {
       const file = path.join(dir, name)
-      if (name.startsWith('monitor-') && file !== keep) fs.rmSync(file, { force: true })
+      if (file !== keep) fs.rmSync(file, { force: true })
     }
   } catch {
     // Nothing to remove, or no right to remove it.
@@ -156,6 +178,18 @@ export function startMonitor(
 
   const freqs = planHops(support.channels.length > 0 ? support.channels : FALLBACK_CHANNELS)
 
+  function emit(sweep: Sweep): void {
+    if (sweep.sightings.length > 0) cb.onWindow(sweep)
+  }
+
+  /** Journal lines in order; each that begins a sweep hands on the one it closed. */
+  function foldJournal(): void {
+    for (const line of hopsToFold.splice(0)) {
+      const ended = foldHop(state, line)
+      if (ended) emit(ended)
+    }
+  }
+
   /** Replay: release the records whose time has come, and write the journal a script would have. */
   function replayStep(file: string): void {
     if (!replayRecords) {
@@ -189,13 +223,8 @@ export function startMonitor(
       }
     }
     if (hopsToFold.length === 0 && state.pass !== pass) hopsToFold.push(`ok ${pass} 0`)
-    // Journal first, as with a live capture; then the frames those dwells heard.
-    for (const line of hopsToFold.splice(0)) {
-      if (foldHop(state, line)) {
-        const heard = closeWindow(state)
-        if (heard.length > 0) cb.onWindow(heard)
-      }
-    }
+    // Here the journal is made from the frames, so it can go first and every frame lands in its sweep.
+    foldJournal()
     for (const frame of frames) if (frame) foldFrame(state, frame)
     if (replayNext >= replayRecords.length) {
       finish({ status: 'ok', message: 'The replayed capture has ended.' })
@@ -205,8 +234,9 @@ export function startMonitor(
   /** Take in whatever the script has appended since the last call. */
   function drain(): void {
     if (replay) return replayStep(replay)
-    // The journal first: a dwell's line is written before any frame of it, so frames read after
-    // it always belong to dwells the journal already knows about.
+    // A tick brings about a second of both files, and the journal has no clock, so at a sweep's
+    // boundary up to a second of frames lands in the neighbouring sweep whichever is folded first.
+    // The capture is folded first, into the sweep the journal last knew of.
     const hops = readNew(files.hopsFile, hopsOffset)
     if (hops) {
       hopsOffset = hops.next
@@ -226,22 +256,17 @@ export function startMonitor(
       }
       if (reader.error && !message) message = `Cannot read the capture: ${reader.error}.`
     }
-    for (const line of hopsToFold.splice(0)) {
-      if (foldHop(state, line)) {
-        const heard = closeWindow(state)
-        if (heard.length > 0) cb.onWindow(heard)
-      }
-    }
+    foldJournal()
   }
 
   const status = (): MonitorStatus => ({
     running: !ended,
     device,
-    monitorInterface: 'magicmon0',
+    monitorInterface: MONITOR_INTERFACE,
     ...monitorCounts(state),
     pcapBytes: pcapOffset,
     dwellMs: DWELL_MS,
-    pinnedChannel: pinned === undefined ? undefined : channelFromMhz(pinned)?.channel,
+    pinned: pinned === undefined ? undefined : channelFromMhz(pinned),
     elapsedSec: pcapOffset === 0 ? 0 : Math.round(((endedAt ?? Date.now()) - startedAt) / 1000),
     message
   })
@@ -258,8 +283,7 @@ export function startMonitor(
     endedAt = Date.now()
     clearInterval(timer)
     drain()
-    const heard = closeWindow(state)
-    if (heard.length > 0) cb.onWindow(heard)
+    emit(closeWindow(state))
     // The capture holds other people's frames; it goes the moment it has been read.
     if (!replay) removeAll([files.pcapFile])
     if (outcome) cb.onEnd(outcome)
@@ -303,7 +327,7 @@ export function startMonitor(
             } else {
               finish({
                 status: 'error',
-                message: `Listening ended${log ? `: ${log}` : r.code === null ? ' without an exit code' : ` (exit ${r.code})`}. Wi-Fi was put back.`
+                message: `Listening ended${log ? `: ${log}` : ` (exit ${r.code})`}. Wi-Fi was put back.`
               })
             }
           }

@@ -178,10 +178,10 @@ async function scanOnce(p: PlatformOps, device: string): Promise<WifiScanOutcome
   }
 }
 
-function ingest(s: ActiveScan, sightings: WifiSighting[]): void {
+/** `held`: a listening sweep that sat on one channel, so it heard only part of the list. */
+function ingest(s: ActiveScan, sightings: WifiSighting[], held = false): void {
   const seen = sightings.map(toBss)
   if (s.source === 'monitor') {
-    const held = s.monitor?.status().pinnedChannel !== undefined
     s.latest = listAfterSweep(s.latest, s.previousWindow, seen, held)
     s.previousWindow = seen
   } else {
@@ -376,9 +376,9 @@ export async function startMonitor(
   let session: MonitorRun
   try {
     session = startMonitorSession(p, device, support, {
-      onWindow: (sightings) => {
+      onWindow: (sweep) => {
         if (active !== run) return
-        ingest(run, sightings)
+        ingest(run, sweep.sightings, sweep.held)
         run.onUpdate(snapshot(run, run.recording))
       },
       onTick: () => {

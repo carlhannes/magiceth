@@ -22,6 +22,12 @@ describe('parseRadiotap', () => {
     expect(parseRadiotap(buf)?.freqMhz).toBe(2437)
   })
 
+  it('aligns the FHSS pair to two bytes, as the kernel does, so the signal after it is found', () => {
+    // flags (bit 1) at 8, a pad byte, FHSS (bit 4) at 10–11, signal (bit 5) at 12.
+    const header = Buffer.from([0, 0, 13, 0, 0x32, 0, 0, 0, 0x00, 0xff, 1, 2, 0xd6])
+    expect(parseRadiotap(header)).toMatchObject({ length: 13, rssi: -42 })
+  })
+
   it('aligns the timestamp to eight bytes', () => {
     const rt = parseRadiotap(radiotap({ tsft: 123456789, flags: 0x10, freq: 2412, signal: -70 }))
     // 8 header + 8 timestamp + 1 flags + 1 pad + 4 channel + 1 signal

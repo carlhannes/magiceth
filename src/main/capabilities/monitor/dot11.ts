@@ -35,7 +35,13 @@ const FC_RETRY = 0x08
 const FCS_LENGTH = 4
 
 export type FrameBody =
-  | { kind: 'beacon' | 'probe-response'; bssid: string; facts: BeaconFacts }
+  | {
+      kind: 'beacon' | 'probe-response'
+      bssid: string
+      facts: BeaconFacts
+      /** The capture cut the frame short, so its last elements are missing from `facts`. */
+      truncated: boolean
+    }
   | { kind: 'deauth' | 'disassoc'; bssid: string }
   /** `bssid` is absent for a four-address (WDS) frame, where the access point is not named. */
   | { kind: 'data'; bssid?: string }
@@ -78,7 +84,8 @@ function dataBssid(mac: Buffer, flags: number): string | undefined {
 /** The 802.11 frame itself, with the check sequence cut off when there is one to cut. */
 function decodeMac(
   mac: Buffer,
-  meta: { freqMhz?: number; rssi?: number; bytes: number }
+  meta: { freqMhz?: number; rssi?: number; bytes: number },
+  truncated: boolean
 ): DecodedFrame | undefined {
   if (mac.length < 2 || (mac[0] & 0x03) !== 0) return undefined // not protocol version 0
   const type = (mac[0] >> 2) & 0x03
@@ -105,9 +112,12 @@ function decodeMac(
   if (mac.length < header + BEACON_FIXED) return out({ kind: 'other' })
 
   const privacy = (mac.readUInt16LE(header + 10) & CAPABILITY_PRIVACY) !== 0
-  // A capture cut at the snaplen ends mid-element; readBeacon keeps everything before the cut.
-  const facts = withPrivacyBit(readBeacon(mac.subarray(header + BEACON_FIXED)), privacy)
-  return out({ kind: subtype === SUBTYPE_BEACON ? 'beacon' : 'probe-response', bssid, facts })
+  // A capture cut at the snaplen ends mid-element; readBeacon keeps everything before the cut. The
+  // Privacy bit means WEP only when no RSN element follows, and a cut frame cannot say that.
+  const read = readBeacon(mac.subarray(header + BEACON_FIXED))
+  const facts = truncated ? read : withPrivacyBit(read, privacy)
+  const kind = subtype === SUBTYPE_BEACON ? 'beacon' : 'probe-response'
+  return out({ kind, bssid, facts, truncated })
 }
 
 /**
@@ -115,12 +125,12 @@ function decodeMac(
  * SSID or a channel number would otherwise become an access point that does not exist.
  */
 export function decodeFrame(record: PcapRecord, linkType: number): DecodedFrame | undefined {
+  const truncated = record.data.length < record.origLen
   if (linkType === LINKTYPE_IEEE802_11) {
-    return decodeMac(record.data, { bytes: record.origLen })
+    return decodeMac(record.data, { bytes: record.origLen }, truncated)
   }
   if (linkType !== LINKTYPE_IEEE802_11_RADIOTAP) return undefined
 
-  const truncated = record.data.length < record.origLen
   const rt = parseRadiotap(record.data)
   if (!rt || rt.flags & FLAG_BAD_FCS) return undefined
   let mac = record.data.subarray(rt.length)
@@ -128,5 +138,6 @@ export function decodeFrame(record: PcapRecord, linkType: number): DecodedFrame 
   if (rt.flags & FLAG_FCS_AT_END && !truncated && mac.length >= FCS_LENGTH) {
     mac = mac.subarray(0, mac.length - FCS_LENGTH)
   }
-  return decodeMac(mac, { freqMhz: rt.freqMhz, rssi: rt.rssi, bytes: record.origLen - rt.length })
+  const meta = { freqMhz: rt.freqMhz, rssi: rt.rssi, bytes: record.origLen - rt.length }
+  return decodeMac(mac, meta, truncated)
 }

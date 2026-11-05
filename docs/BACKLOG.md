@@ -133,6 +133,14 @@ is still open:
   station itself to monitor (`iw dev <if> set type monitor`) if the AX201 will not take a second
   interface next to it. `shared/mac.ts` and `wifi-model.ts` each have an `isLocallyAdministered` — one
   should go before a second caller appears.
+- **Listening after the app crashes.** A quit writes the stop file and the script restores within a
+  dwell, but an app that dies without quitting leaves its script running until the 15-minute cap,
+  with Wi-Fi down. The next session removes that session's files (its pid is gone) and starts a
+  second script beside it, and the two fight over `magicmon0`. Writing the dead session's stop file
+  and waiting for its journal to go quiet before starting would end it cleanly.
+- **A beacon longer than the capture length reads low.** With `-s 1024` a beacon is cut only past
+  about a kilobyte; when it is, the elements after the cut are missing, so its Wi-Fi generation and
+  width can read lower than they are until a complete frame of the same access point is heard.
 - **Only Linux can tell WEP from open.** The elements alone cannot; `iw` prints the Privacy
   capability bit, the other two helpers do not pass it on.
 - **Two Ethernet screenshots are from v0.2.0.** `docs/shots/screenshot.png` and

@@ -6,6 +6,9 @@
 // association go out on the primary channel in 20 MHz anyway, so this misses nothing that is
 // read — wide data frames are seen by pinning the radio to one access point's channel.
 
+import { channelCentreMhz } from '../wifi-model'
+import type { WifiBand } from '../../../shared/types'
+
 /** One channel as the card reports it (`iw list`), with the flags that decide whether to visit. */
 export interface PhyChannel {
   freqMhz: number
@@ -45,15 +48,14 @@ export function planHops(channels: PhyChannel[]): number[] {
  */
 export function pinTarget(
   channel: number,
-  band: string,
+  band: WifiBand,
   widthMhz: number | undefined
 ): { freqMhz: number; widthMhz: number; centreMhz: number } | undefined {
-  if (band === '2.4') {
-    const freqMhz = channel === 14 ? 2484 : 2407 + 5 * channel
-    return channel >= 1 && channel <= 14 ? { freqMhz, widthMhz: 20, centreMhz: freqMhz } : undefined
-  }
+  const freqMhz = channelCentreMhz(channel, band)
+  if (freqMhz === undefined) return undefined
+  if (band === '2.4')
+    return channel <= 14 ? { freqMhz, widthMhz: 20, centreMhz: freqMhz } : undefined
   if (band !== '5' || channel < 36 || channel > 177) return undefined
-  const freqMhz = 5000 + 5 * channel
   const width = widthMhz === 40 || widthMhz === 80 || widthMhz === 160 ? widthMhz : 20
   if (width === 20) return { freqMhz, widthMhz: 20, centreMhz: freqMhz }
   // The aligned blocks run from channel 36, from 100 and from 149; each starts a new alignment.
@@ -61,5 +63,6 @@ export function pinTarget(
   const channelsIn = width / 20
   const first = base + Math.floor((channel - base) / 4 / channelsIn) * channelsIn * 4
   const centreChannel = first + (channelsIn - 1) * 2
-  return { freqMhz, widthMhz: width, centreMhz: 5000 + 5 * centreChannel }
+  // Channel numbers are 5 MHz apart, so the centre is that many steps from the primary.
+  return { freqMhz, widthMhz: width, centreMhz: freqMhz + 5 * (centreChannel - channel) }
 }

@@ -26,7 +26,12 @@ describe('decodeFrame: beacons', () => {
     ['5 GHz, 2x2', AP_6E_2X2]
   ])('reads the same facts as the OS path does from the real beacon (%s)', (_name, elements) => {
     const frame = decodeFrame(record(beacon(elements)), 127)
-    expect(frame?.body).toEqual({ kind: 'beacon', bssid: AP, facts: readBeacon(elements) })
+    expect(frame?.body).toEqual({
+      kind: 'beacon',
+      bssid: AP,
+      facts: readBeacon(elements),
+      truncated: false
+    })
     expect(frame).toMatchObject({ freqMhz: 5240, rssi: -52, retry: false })
   })
 

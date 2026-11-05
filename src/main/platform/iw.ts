@@ -296,6 +296,10 @@ export function parseIwPhy(text: string): { monitor: boolean; channels: PhyChann
  *  - The hop journal says what the radio really did. The app cannot see the channel from the
  *    outside, and without it a channel the card refused looks the same as a silent one.
  *  - A pin file holds the radio on one channel (and width) in place of the sweep.
+ *  - `-s 1024` keeps the first kilobyte of each frame. The real Wi-Fi 6E and 7 beacons in the
+ *    test fixtures are 392 and 484 bytes before the radio header, so a beacon fits easily, while
+ *    a longer capture would only put more of other people's data frames on disk, where nothing
+ *    reads them. A beacon that does not fit is read up to the cut, and the decoder says it was cut.
  *  - Errors from every command land in the log file, which the app shows when a session ends early.
  *  - Exit codes are 0 (asked to stop, or capped), 1 (could not start) and 128+signal; never 126
  *    or 127, which the app reads as "the admin prompt was refused".

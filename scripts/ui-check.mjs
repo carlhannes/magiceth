@@ -506,6 +506,21 @@ async function run() {
     await tap('footer [data-press="m"]')
     await expectText('Stopped listening')
     await shot('wlan-listening-stopped')
+
+    // Leaving the mode by Esc while listening stops the session, as leaving by Tab does: back in
+    // the mode, nothing says it is still listening, and no tick from main brings it back.
+    await tap('footer [data-press="m"]')
+    await expectText('Monitor mode')
+    await tap('footer [data-press="m"]')
+    await expectText('Wi-Fi off until you stop')
+    const atChooser = () => evalIn(page, () => Boolean(document.querySelector('.chooser')))
+    for (let i = 0; i < 5 && !(await atChooser()); i++) await tap('footer [data-press="Escape"]')
+    await expectSelector('.chooser')
+    await tap('.mode-card[data-press="2"]')
+    await until(async () => (await view()).startsWith('wlan:'), 'wlan mode', 5000)
+    await new Promise((r) => setTimeout(r, 2500))
+    await expectNoText('Wi-Fi off until you stop')
+    await shot('wlan-listening-left-by-escape')
   }
 
   await tap('footer [data-press="Escape"]')

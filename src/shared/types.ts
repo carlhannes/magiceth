@@ -335,7 +335,7 @@ export interface MonitorStatus {
   channelsFailed: number
   dwellMs: number
   /** Set while the radio is held on one access point's channel. */
-  pinnedChannel?: number
+  pinned?: { channel: number; band: WifiBand }
   elapsedSec: number
   message?: string
 }

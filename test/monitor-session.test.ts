@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileS
 import { dirname } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { runElevatedPlan } from '../src/main/privilege'
-import { startMonitor } from '../src/main/capabilities/monitor/session'
+import { leftoverFiles, startMonitor } from '../src/main/capabilities/monitor/session'
 import type { MonitorOutcome, MonitorRun } from '../src/main/capabilities/monitor/session'
 import type { MonitorSpec, PlatformOps, WifiSighting } from '../src/main/platform'
 import { scratchFile } from '../src/main/util/scratch'
@@ -58,7 +58,7 @@ function start(): Rig {
   const ends: MonitorOutcome[] = []
   let ticks = 0
   const run = startMonitor(platform, 'wlan0', SUPPORT, {
-    onWindow: (w) => windows.push(w),
+    onWindow: (w) => windows.push(w.sightings),
     onTick: () => ticks++,
     onEnd: (o) => ends.push(o)
   })
@@ -205,22 +205,26 @@ describe('startMonitor', () => {
     const { run, spec } = start()
     run.pin({ freqMhz: 5180, widthMhz: 80, centreMhz: 5210 })
     expect(readFileSync(spec.pinFile, 'utf8')).toBe('5180 80 5210\n')
-    expect(run.status().pinnedChannel).toBe(36)
+    expect(run.status().pinned).toEqual({ channel: 36, band: '5' })
     run.pin({ freqMhz: 2412 })
     expect(readFileSync(spec.pinFile, 'utf8')).toBe('2412 20 2412\n')
     run.pin(null)
     expect(existsSync(spec.pinFile)).toBe(false)
-    expect(run.status().pinnedChannel).toBeUndefined()
+    expect(run.status().pinned).toBeUndefined()
     run.stop()
   })
 
-  it('removes what a crashed session left behind before it starts', () => {
-    const old = scratchFile('monitor-1-1.pcap')
-    mkdirSync(dirname(old), { recursive: true })
-    writeFileSync(old, 'other people frames')
-    leftovers.push(old)
+  it('removes what a crashed session left behind before it starts, and leaves a live one alone', () => {
+    // No process has a pid this high on Linux or macOS; the parent of this test is alive and not us.
+    const crashed = scratchFile('monitor-999999999-1.pcap')
+    const live = scratchFile(`monitor-${process.ppid}-1.pcap`)
+    mkdirSync(dirname(crashed), { recursive: true })
+    writeFileSync(crashed, 'other people frames')
+    writeFileSync(live, 'another instance is still listening')
+    leftovers.push(crashed, live)
     const { run } = start()
-    expect(existsSync(old)).toBe(false)
+    expect(existsSync(crashed)).toBe(false)
+    expect(existsSync(live)).toBe(true)
     run.stop()
   })
 
@@ -251,7 +255,7 @@ describe('replay', () => {
     const windows: WifiSighting[][] = []
     const ends: MonitorOutcome[] = []
     const run = startMonitor({} as PlatformOps, 'wlan0', SUPPORT, {
-      onWindow: (w) => windows.push(w),
+      onWindow: (w) => windows.push(w.sightings),
       onTick: () => {},
       onEnd: (o) => ends.push(o)
     })
@@ -263,5 +267,24 @@ describe('replay', () => {
     expect(ends[0].message).toMatch(/replayed capture/)
     expect(runElevatedPlan).not.toHaveBeenCalled()
     expect(existsSync(file)).toBe(true)
+  })
+})
+
+describe('leftoverFiles', () => {
+  it('names only the files of sessions whose app has gone', () => {
+    const alive = (pid: number): boolean => pid === 4242
+    const names = [
+      'monitor-4242-1730800000000.pcap',
+      'monitor-4242-1730800000000.stop',
+      'monitor-17-1730800000000.pcap',
+      'monitor-17-1730800000000.hops',
+      'monitor-replay-test.pcap',
+      'survey-17-1.pcap',
+      'monitor-17'
+    ]
+    expect(leftoverFiles(names, alive)).toEqual([
+      'monitor-17-1730800000000.pcap',
+      'monitor-17-1730800000000.hops'
+    ])
   })
 })
