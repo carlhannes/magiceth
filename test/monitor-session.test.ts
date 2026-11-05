@@ -17,7 +17,11 @@ vi.mock('../src/main/privilege', async (original) => ({
 }))
 
 const AP = '74:ac:b9:00:00:01'
-const SUPPORT = { channels: [{ freqMhz: 2412, disabled: false }], networkManager: false }
+const SUPPORT = {
+  device: 'wlan0',
+  channels: [{ freqMhz: 2412, disabled: false }],
+  networkManager: false
+}
 
 function beaconRecord(signal: number): { atMs: number; data: Buffer } {
   const mac = mgmtFrame({ subtype: 8, bssid: AP, body: beaconBody(AP_24_BUSY) })
@@ -149,6 +153,25 @@ describe('startMonitor', () => {
     expect(ends).toEqual([]) // a stop that was asked for is not an ending to report
   })
 
+  it('says the script is not done until it has exited, which is after the Wi-Fi is back', async () => {
+    const { run, exit } = start()
+    expect(run.scriptDone).toBe(false)
+    run.stop()
+    expect(run.scriptDone).toBe(false) // stopped, but the script is still restoring
+    await exit(0)
+    expect(run.scriptDone).toBe(true)
+  })
+
+  it('stops counting elapsed time when it stops', async () => {
+    const { run, spec } = start()
+    writeFileSync(spec.pcapFile, pcapFile([beaconRecord(-60)]))
+    await vi.advanceTimersByTimeAsync(5000)
+    run.stop()
+    const at = run.status().elapsedSec
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(run.status().elapsedSec).toBe(at)
+  })
+
   it('keeps the last partial sweep when it is stopped', async () => {
     const { run, spec, windows } = start()
     writeFileSync(spec.hopsFile, 'ok 1 2412\n')
@@ -163,7 +186,8 @@ describe('startMonitor', () => {
     [126, '', /cancelled/, 'needs-privilege'],
     [1, 'RTNETLINK answers: Operation not supported\n', /Operation not supported/, 'error'],
     [0, '', /limit/, 'ok'],
-    [2, '', /exit 2/, 'error']
+    [2, '', /exit 2/, 'error'],
+    [1, 'iw: command failed: Device or resource busy (-16)\n', /busy/, 'error']
   ] as const)(
     'reports a script that ends by itself with %i',
     async (code, log, message, status) => {

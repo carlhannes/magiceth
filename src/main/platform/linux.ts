@@ -583,7 +583,7 @@ async function monitorSupport(device: string): Promise<MonitorSupport | undefine
   const { monitor, channels } = parseIwPhy(phy.stdout)
   if (!monitor) return undefined
   const nm = await nmDevice(iface)
-  return { channels, networkManager: nm?.managed === true }
+  return { device: iface, channels, networkManager: nm?.managed === true }
 }
 
 function buildMonitorPlan(spec: MonitorSpec): ElevatedPlan {

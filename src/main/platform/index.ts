@@ -81,6 +81,8 @@ export type WifiScanOutcome =
 
 /** What a card can be asked to listen on, and what else has to be put aside while it does. */
 export interface MonitorSupport {
+  /** The interface to put aside: the one asked for, or the first wireless one when none was named. */
+  device: string
   /** Every channel the card reports, flagged where the regulatory domain forbids it. */
   channels: PhyChannel[]
   /** True when NetworkManager runs the interface and must be told to let go of it, and to take it back. */

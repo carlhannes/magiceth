@@ -68,7 +68,7 @@ function rig(over: Partial<MonitorSpec> = {}, networkManager = true): Rig {
   }
   const spec: MonitorSpec = {
     device: 'wlan0',
-    support: { channels: [], networkManager },
+    support: { device: 'wlan0', channels: [], networkManager },
     freqs: [2412, 5500, 5180],
     dwellMs: 30,
     pcapFile: join(dir, 'monitor.pcap'),

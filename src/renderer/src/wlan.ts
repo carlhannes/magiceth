@@ -503,7 +503,20 @@ function footerHints(): Hint[] {
   }
 }
 
+/**
+ * A list can shrink under the selection — a sweep that hears fewer networks than the last — and a
+ * selection past the end highlights nothing, which also makes a tap on a row do nothing, so it is
+ * pulled back inside before drawing.
+ */
+function clampSelection(): void {
+  const n = networks().length
+  if (netSel >= n) netSel = Math.max(0, n - 1)
+  const aps = currentNetwork()?.bssids.length ?? 0
+  if (apSel >= aps) apSel = Math.max(0, aps - 1)
+}
+
 export function renderWlan(): string {
+  clampSelection()
   const status = statusLine()
   return renderShell({
     // Which list you are on, and which row you opened — so moving the selection keeps your place

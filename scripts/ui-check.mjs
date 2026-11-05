@@ -451,7 +451,8 @@ async function run() {
 
   // Listening, when a capture is named to play back (MAGICETH_MONITOR_REPLAY=<file.pcap>): a
   // computer that cannot listen can still be driven through the screens. The key asks first, then
-  // the list fills as sweeps complete, and stopping hands the Wi-Fi back.
+  // the list fills as sweeps complete, and stopping hands the Wi-Fi back. The capture has to be
+  // longer than the walk (a minute is plenty): when it ends the session ends with it.
   if (process.env.MAGICETH_MONITOR_REPLAY) {
     await until(
       () => evalIn(page, () => Boolean(document.querySelector('footer [data-press="m"]'))),
@@ -468,28 +469,30 @@ async function run() {
       'access points heard while listening',
       30000
     )
-    // The replayed access points arrive when the first sweep closes, among whatever the real scan
-    // found: wait for the network they belong to to list more than one.
-    await until(
-      () =>
-        evalIn(page, () =>
-          [...document.querySelectorAll('li.profile')].some(
-            (li) =>
-              li.textContent.includes('tdc_nomap') &&
-              Number(/(\d+) APs/.exec(li.textContent)?.[1]) >= 2
-          )
-        ),
-      'the replayed access points',
-      40000
-    )
     await shot('wlan-listening-networks')
-    // The replayed access points sit among whatever the real scan found, so rows are taken by
-    // name. A tap on a row that is not selected selects it, and on one that is, opens it.
+    // The replayed access points sit among whatever the real scan found, and arrive when the first
+    // sweep closes. Rows are taken by name; a tap on a row that is not selected selects it, and on
+    // one that is, opens it. Open the network until the replayed access point is in its list.
     const open = async (title, view_) => {
       for (let i = 0; i < 3 && !(await view()).startsWith(view_); i++) await tapRow(title)
       if (!(await view()).startsWith(view_)) throw new Error(`could not open ${title}`)
     }
-    await open('tdc_nomap', 'wlan:aps')
+    await until(
+      async () => {
+        try {
+          await open('tdc_nomap', 'wlan:aps')
+        } catch {
+          await new Promise((r) => setTimeout(r, 1000))
+          return false
+        }
+        if ((await text()).includes('74:ac:b9:00:00:01')) return true
+        await tap('footer [data-press="Escape"]')
+        await new Promise((r) => setTimeout(r, 2000))
+        return false
+      },
+      'the replayed access points',
+      60000
+    )
     await shot('wlan-listening-aps')
     await open('74:ac:b9:00:00:01', 'wlan:detail')
     await expectText('Deauths heard')

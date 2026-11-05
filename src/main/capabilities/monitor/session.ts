@@ -26,8 +26,12 @@ import { DWELL_MS, FALLBACK_CHANNELS, planHops } from './plan'
 const TICK_MS = 1000
 /** A tick reads at most this much of the capture, so one long stall cannot freeze the window. */
 const MAX_READ = 16 * 1024 * 1024
-/** Extra time on top of the session's own cap before the elevated call is given up on. */
-const SLACK_MS = 60_000
+/**
+ * Extra time on top of the session's own cap before the elevated call is given up on. It has to
+ * cover however long the admin prompt sits unanswered, because the call's clock starts at the
+ * prompt and the script's own cap only starts after it; the script's cap is the real backstop.
+ */
+const SLACK_MS = 10 * 60_000
 /** A replayed capture has no hop journal, so it is given one: a new sweep this often. */
 const REPLAY_SWEEP_MS = 8000
 
@@ -52,6 +56,11 @@ export interface MonitorRun {
   pin(target: { freqMhz: number; widthMhz?: number; centreMhz?: number } | null): void
   /** Synchronous, safe to call twice and from `before-quit`. */
   stop(): void
+  /**
+   * False until the elevated script has exited — which, after a stop, is when it has finished
+   * putting the Wi-Fi back. A new session must wait for it: two scripts at once would undo each other.
+   */
+  readonly scriptDone: boolean
 }
 
 /**
@@ -141,6 +150,8 @@ export function startMonitor(
   let startedAt = Date.now()
   let pinned: number | undefined
   let ended = false
+  let endedAt: number | undefined
+  let scriptDone = false
   let message: string | undefined
 
   const freqs = planHops(support.channels.length > 0 ? support.channels : FALLBACK_CHANNELS)
@@ -231,7 +242,7 @@ export function startMonitor(
     pcapBytes: pcapOffset,
     dwellMs: DWELL_MS,
     pinnedChannel: pinned === undefined ? undefined : channelFromMhz(pinned)?.channel,
-    elapsedSec: pcapOffset === 0 ? 0 : Math.round((Date.now() - startedAt) / 1000),
+    elapsedSec: pcapOffset === 0 ? 0 : Math.round(((endedAt ?? Date.now()) - startedAt) / 1000),
     message
   })
 
@@ -244,6 +255,7 @@ export function startMonitor(
   function finish(outcome?: MonitorOutcome): void {
     if (ended) return
     ended = true
+    endedAt = Date.now()
     clearInterval(timer)
     drain()
     const heard = closeWindow(state)
@@ -255,7 +267,7 @@ export function startMonitor(
 
   if (!replay) {
     const spec: MonitorSpec = {
-      device,
+      device: support.device,
       support,
       freqs,
       dwellMs: DWELL_MS,
@@ -265,6 +277,7 @@ export function startMonitor(
     }
     const plan = p.buildMonitorPlan?.(spec)
     if (!plan) {
+      scriptDone = true
       // After the caller has the run in hand, not before.
       queueMicrotask(() =>
         finish({ status: 'error', message: 'This computer cannot listen to the air.' })
@@ -273,6 +286,7 @@ export function startMonitor(
       // Fire and forget: this returns when the session is over, and the prompt is inside it.
       runElevatedPlan(plan, (MONITOR_MAX_SECONDS + 30) * 1000 + SLACK_MS)
         .then((r) => {
+          scriptDone = true
           const wasStopped = ended
           const log = lastLine(files.logFile)
           if (!wasStopped) {
@@ -289,22 +303,29 @@ export function startMonitor(
             } else {
               finish({
                 status: 'error',
-                message: `Could not start listening${log ? `: ${log}` : ` (exit ${r.code})`}. Wi-Fi was put back.`
+                message: `Listening ended${log ? `: ${log}` : r.code === null ? ' without an exit code' : ` (exit ${r.code})`}. Wi-Fi was put back.`
               })
             }
           }
           removeAll(mine)
         })
         .catch((err) => {
+          scriptDone = true
           finish({ status: 'error', message: `Could not start listening: ${String(err)}` })
           removeAll(mine)
         })
     }
   }
 
+  // A replayed capture has no script to wait for.
+  if (replay) scriptDone = true
+
   return {
     state,
     status,
+    get scriptDone() {
+      return scriptDone
+    },
     pin(target) {
       if (ended || replay) return
       try {

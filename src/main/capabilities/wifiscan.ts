@@ -284,7 +284,7 @@ export async function startWifiScan(
 
 /** What this computer can listen on, if anything; a replayed capture counts anywhere. */
 async function listenSupport(p: PlatformOps, device: string): Promise<MonitorSupport | undefined> {
-  if (replayFile()) return { channels: [], networkManager: false }
+  if (replayFile()) return { device, channels: [], networkManager: false }
   try {
     return await p.monitorSupport?.(device)
   } catch {
@@ -337,6 +337,14 @@ export async function startMonitor(
   ++generation
   let s = active
   if (s?.monitor?.status().running) return snapshot(s, s.recording)
+  // The last session's script is still putting the Wi-Fi back; a second one now would undo it.
+  if (s?.monitor && !s.monitor.scriptDone) {
+    return fail(
+      device,
+      'error',
+      'The Wi-Fi is still being put back from the last session — try again in a few seconds.'
+    )
+  }
   if (!s || s.device !== device) {
     s = {
       platform: p,
