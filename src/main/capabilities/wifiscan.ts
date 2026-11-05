@@ -20,7 +20,7 @@ import {
 import type { TrackStore } from './wifi-model'
 import { appendSnapshot, beginRecording, finishRecording } from './recordings'
 import type { RecordingPaths } from './recordings'
-import { apAir, channelAir } from './monitor/model'
+import { apAir, channelAir, listAfterSweep } from './monitor/model'
 import { pinTarget } from './monitor/plan'
 import { replayFile, startMonitor as startMonitorSession } from './monitor/session'
 import type { MonitorRun } from './monitor/session'
@@ -84,6 +84,13 @@ interface ActiveScan {
 }
 
 let active: ActiveScan | null = null
+
+/**
+ * The most recent listening session, whichever scan it belonged to. A scan can replace `active`
+ * while the last session's script is still putting the Wi-Fi back, and a new session must wait for
+ * that script either way.
+ */
+let lastRun: MonitorRun | undefined
 
 /**
  * Bumped by every start. A start has to await the first scan before it can install itself, and a
@@ -174,8 +181,8 @@ async function scanOnce(p: PlatformOps, device: string): Promise<WifiScanOutcome
 function ingest(s: ActiveScan, sightings: WifiSighting[]): void {
   const seen = sightings.map(toBss)
   if (s.source === 'monitor') {
-    const current = new Set(seen.map((b) => b.bssid))
-    s.latest = [...seen, ...s.previousWindow.filter((b) => !current.has(b.bssid))]
+    const held = s.monitor?.status().pinnedChannel !== undefined
+    s.latest = listAfterSweep(s.latest, s.previousWindow, seen, held)
     s.previousWindow = seen
   } else {
     s.latest = seen
@@ -335,37 +342,60 @@ export async function startMonitor(
   }
   // A scan that was in the air when this was pressed must not install itself over the session.
   ++generation
-  let s = active
-  if (s?.monitor?.status().running) return snapshot(s, s.recording)
+  if (active?.monitor?.status().running) return snapshot(active, active.recording)
   // The last session's script is still putting the Wi-Fi back; a second one now would undo it.
-  if (s?.monitor && !s.monitor.scriptDone) {
+  if (lastRun && !lastRun.scriptDone) {
     return fail(
       device,
       'error',
       'The Wi-Fi is still being put back from the last session — try again in a few seconds.'
     )
   }
-  if (!s || s.device !== device) {
-    s = {
-      platform: p,
-      device,
-      startedAt: Date.now(),
-      scans: 0,
-      latest: [],
-      seen: new Map(),
-      store: new Map(),
-      recording: false,
-      hasRecorded: false,
-      snapshots: 0,
-      lastSnapshotAt: 0,
-      source: 'scan',
-      canMonitor: true,
-      previousWindow: [],
-      onUpdate
-    }
-    active = s
+  const run: ActiveScan =
+    active && active.device === device
+      ? active
+      : {
+          platform: p,
+          device,
+          startedAt: Date.now(),
+          scans: 0,
+          latest: [],
+          seen: new Map(),
+          store: new Map(),
+          recording: false,
+          hasRecorded: false,
+          snapshots: 0,
+          lastSnapshotAt: 0,
+          source: 'scan',
+          canMonitor: true,
+          previousWindow: [],
+          onUpdate
+        }
+  // The session first: if it cannot even start (the scratch directory refused, say), nothing
+  // about the scan or a recording in progress has been changed yet.
+  let session: MonitorRun
+  try {
+    session = startMonitorSession(p, device, support, {
+      onWindow: (sightings) => {
+        if (active !== run) return
+        ingest(run, sightings)
+        run.onUpdate(snapshot(run, run.recording))
+      },
+      onTick: () => {
+        if (active === run) run.onUpdate(snapshot(run, run.recording))
+      },
+      onEnd: (outcome) => {
+        if (active !== run) return
+        run.monitorNote = outcome.message
+        backToScanning(run)
+        run.onUpdate(snapshot(run, run.recording))
+      }
+    })
+  } catch (err) {
+    return fail(device, 'error', `Could not start listening: ${String(err)}`)
   }
-  const run = s
+  active = run
+  lastRun = session
   run.onUpdate = onUpdate
   // The elevated scan loop would fight the monitor for the card.
   endWifiSession()
@@ -375,22 +405,7 @@ export async function startMonitor(
   run.canMonitor = true
   run.monitorNote = undefined
   run.previousWindow = []
-  run.monitor = startMonitorSession(p, device, support, {
-    onWindow: (sightings) => {
-      if (active !== run) return
-      ingest(run, sightings)
-      run.onUpdate(snapshot(run, run.recording))
-    },
-    onTick: () => {
-      if (active === run) run.onUpdate(snapshot(run, run.recording))
-    },
-    onEnd: (outcome) => {
-      if (active !== run) return
-      run.monitorNote = outcome.message
-      backToScanning(run)
-      run.onUpdate(snapshot(run, run.recording))
-    }
-  })
+  run.monitor = session
   return snapshot(run, run.recording)
 }
 
@@ -404,6 +419,9 @@ function backToScanning(s: ActiveScan): void {
 export function stopMonitor(): WifiScanResult | null {
   const s = active
   if (!s?.monitor) return null
+  // A session that ended by itself has already handed back to scanning; doing it twice would start
+  // a second scan loop beside the first.
+  if (!s.monitor.status().running) return snapshot(s, s.recording)
   s.monitor.stop()
   backToScanning(s)
   return snapshot(s, s.recording)

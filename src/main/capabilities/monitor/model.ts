@@ -13,7 +13,7 @@
 // There is no store of stations. The decoder never hands over a client's address, so there is
 // nothing here that could remember one.
 
-import { channelFromMhz } from '../wifi-model'
+import { channelCentreMhz, channelFromMhz } from '../wifi-model'
 import type { BeaconFacts } from '../ie80211'
 import type { WifiSighting } from '../../platform'
 import type { ChannelAir, MonitorStatus } from '../../../shared/types'
@@ -31,11 +31,16 @@ interface WindowAp {
 }
 
 interface ApCounts {
+  /** Frames naming it, and retries among them — counted only while the radio is on its own channel. */
   frames: number
   retries: number
+  /** Deauthentications and disassociations naming it, heard on any channel. */
   deauths: number
-  /** Where it was last heard, which decides how long the radio was listening for it. */
-  freqMhz?: number
+  /**
+   * Its own channel, from the channel its beacons name. Unknown until a beacon or probe response
+   * has been heard, and until then nothing is counted against it.
+   */
+  homeFreq?: number
 }
 
 interface ChannelCounts {
@@ -111,6 +116,18 @@ function foldAccessPoint(
   ) as BeaconFacts
 }
 
+/**
+ * The frequency of the channel an access point names, on the band the radio heard it on. Without
+ * a named channel (an old 5 GHz AP with neither element), the radio's own: 5 GHz channels do not
+ * overlap, so there is nothing to leak from.
+ */
+function homeFreqOf(primary: number | undefined, heardMhz: number | undefined): number | undefined {
+  if (heardMhz === undefined) return undefined
+  const band = channelFromMhz(heardMhz)?.band
+  if (primary === undefined || band === undefined) return heardMhz
+  return channelCentreMhz(primary, band) ?? heardMhz
+}
+
 /** Add one decoded frame. */
 export function foldFrame(state: MonitorState, frame: DecodedFrame): void {
   state.frames++
@@ -126,9 +143,16 @@ export function foldFrame(state: MonitorState, frame: DecodedFrame): void {
   if (bssid === undefined) return
   const ap = apCounts(state, bssid)
   if (ap) {
-    ap.frames++
-    if (frame.retry) ap.retries++
-    if (frame.freqMhz !== undefined) ap.freqMhz = frame.freqMhz
+    if (body.kind === 'beacon' || body.kind === 'probe-response') {
+      ap.homeFreq = homeFreqOf(body.facts.primaryChannel, frame.freqMhz) ?? ap.homeFreq
+    }
+    // An access point on channel 1 is also heard while the radio sits on 2 and 3. Counting those
+    // frames against the time spent on channel 1 alone would multiply its share of the air, so only
+    // frames heard on its own channel count. A deauthentication counts wherever it is heard.
+    if (frame.freqMhz !== undefined && frame.freqMhz === ap.homeFreq) {
+      ap.frames++
+      if (frame.retry) ap.retries++
+    }
     if (body.kind === 'deauth' || body.kind === 'disassoc') ap.deauths++
   }
   if (body.kind === 'beacon' || body.kind === 'probe-response') {
@@ -216,7 +240,7 @@ export interface ApAir {
 export function apAir(state: MonitorState, dwellMs = DWELL_MS): Map<string, ApAir> {
   const out = new Map<string, ApAir>()
   for (const [bssid, ap] of state.aps) {
-    const visits = ap.freqMhz === undefined ? 0 : (state.channels.get(ap.freqMhz)?.visits ?? 0)
+    const visits = ap.homeFreq === undefined ? 0 : (state.channels.get(ap.homeFreq)?.visits ?? 0)
     out.set(bssid, {
       deauths: ap.deauths,
       framesPerSec: framesPerSec(ap.frames, visits, dwellMs),
@@ -224,6 +248,24 @@ export function apAir(state: MonitorState, dwellMs = DWELL_MS): Map<string, ApAi
     })
   }
   return out
+}
+
+/**
+ * The list to show after a sweep: what this sweep heard, plus what the one before heard and this
+ * one missed, so a weak access point does not flicker in and out. While the radio is held on one
+ * channel a sweep hears only that channel, so the list keeps everything it had instead — otherwise
+ * it would shrink to one channel under the user, and a selection by position would land on a
+ * different access point.
+ */
+export function listAfterSweep<T extends { bssid: string }>(
+  shown: T[],
+  previousSweep: T[],
+  sweep: T[],
+  held: boolean
+): T[] {
+  const heard = new Set(sweep.map((b) => b.bssid))
+  const kept = held ? shown : previousSweep
+  return [...sweep, ...kept.filter((b) => !heard.has(b.bssid))]
 }
 
 /** The counts the status line shows; the session adds what only it knows (file size, clock). */

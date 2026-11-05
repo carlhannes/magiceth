@@ -9,6 +9,7 @@ import {
   createMonitorState,
   foldFrame,
   foldHop,
+  listAfterSweep,
   monitorCounts
 } from '../src/main/capabilities/monitor/model'
 import type { MonitorState } from '../src/main/capabilities/monitor/model'
@@ -122,7 +123,9 @@ describe('air and association churn', () => {
     )
     fold(
       [
-        ...Array.from({ length: 14 }, () => data(false)),
+        // Its beacon names channel 1, which is what lets its frames be counted.
+        beacon(A, AP_24_BUSY, 2412, -50),
+        ...Array.from({ length: 13 }, () => data(false)),
         ...Array.from({ length: 4 }, () => data(true)),
         deauth,
         deauth,
@@ -136,7 +139,7 @@ describe('air and association churn', () => {
 
   it('counts frames and retries per channel against the dwells spent there', () => {
     const air = channelAir(session())
-    // 20 frames on 2412 (14 + 4 data + 2 deauth), 2 dwells of 400 ms: 20 / 0.8 s.
+    // 20 frames on 2412 (a beacon, 13 + 4 data, 2 deauths), 2 dwells of 400 ms: 20 / 0.8 s.
     expect(air.find((c) => c.channel === 1)).toEqual({
       channel: 1,
       band: '2.4',
@@ -164,6 +167,32 @@ describe('air and association churn', () => {
     const air = apAir(session())
     expect(air.get(A)).toEqual({ deauths: 2, framesPerSec: 25, retryPct: 20 })
     expect(air.get(B)?.deauths).toBe(0)
+  })
+
+  it('counts an access point only on its own channel, though it is heard on the ones next to it', () => {
+    const state = createMonitorState()
+    for (const f of [2412, 2417, 2422]) foldHop(state, `ok 1 ${f}`)
+    // Four beacons a dwell (one per 100 ms), heard on channel 1 and leaking onto 2 and 3.
+    fold(
+      [2412, 2417, 2422].flatMap((f) =>
+        Array.from({ length: 4 }, () => beacon(A, AP_24_BUSY, f, -50))
+      ),
+      state
+    )
+    expect(apAir(state).get(A)?.framesPerSec).toBe(10)
+    // The channels themselves did hear all of it: that is what the receiver had to contend with.
+    expect(channelAir(state).map((c) => c.framesPerSec)).toEqual([10, 10, 10])
+  })
+
+  it('counts nothing for an access point until a beacon has said where it lives', () => {
+    const state = createMonitorState()
+    foldHop(state, 'ok 1 2412')
+    const data = rec(2412, -50, dataFrame({ toDs: true, a1: A, a2: CLIENT, a3: A }))
+    fold([data, data], state)
+    expect(apAir(state).get(A)?.framesPerSec).toBeUndefined()
+    fold([beacon(A, AP_24_BUSY, 2412, -50), data], state)
+    // The beacon and the data frame after it: two frames in one 400 ms dwell.
+    expect(apAir(state).get(A)?.framesPerSec).toBe(5)
   })
 
   it('has no rate for an access point on a channel the journal has not covered', () => {
@@ -254,5 +283,24 @@ describe('pinTarget', () => {
     expect(pinTarget(1, '6', 80)).toBeUndefined()
     expect(pinTarget(0, '2.4', 20)).toBeUndefined()
     expect(pinTarget(20, '5', 20)).toBeUndefined()
+  })
+})
+
+describe('listAfterSweep', () => {
+  const ap = (bssid: string, rssi = -60) => ({ bssid, rssi })
+
+  it('shows this sweep and what the last one heard that this one missed, newest values first', () => {
+    const shown = listAfterSweep(
+      [ap('a'), ap('b'), ap('c')],
+      [ap('a', -70), ap('b')],
+      [ap('a', -50)],
+      false
+    )
+    expect(shown).toEqual([ap('a', -50), ap('b')])
+  })
+
+  it('keeps the whole list while the radio is held on one channel', () => {
+    const shown = listAfterSweep([ap('a'), ap('b'), ap('c')], [ap('a')], [ap('a', -40)], true)
+    expect(shown).toEqual([ap('a', -40), ap('b'), ap('c')])
   })
 })

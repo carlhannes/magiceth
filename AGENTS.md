@@ -15,7 +15,10 @@ checks — so a test may only import modules whose import chain never reaches `e
 `recordings.ts`, `profiles.ts`, `index.ts` and anything importing them are out. `require('electron')`
 without the binary starts a download, so the symptom is a suite that prints "Downloading Electron
 binary..." in CI and then stalls or fails, while everything passes locally. Check a new suite's
-import chain rather than waiting for CI to show it.
+import chain rather than waiting for CI to show it. The one way round it is to replace the module
+that reaches Electron with `vi.mock(path, factory)`, whose factory stands in without loading the
+original — `test/wifiscan-monitor.test.ts` does that for `recordings.ts`, and mocks `electron`
+itself with a factory that throws, so a new import of it fails the suite instead of CI.
 
 The load-bearing test surface is the pure parsers in `test/`. If you change a parser, feed it
 **real captured output** rather than output you invented — the two multi-dongle bugs found on

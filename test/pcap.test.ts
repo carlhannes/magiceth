@@ -77,12 +77,13 @@ describe('feedPcap', () => {
     expect(reader.format?.linkType).toBe(105)
   })
 
-  it('stops for good at a record longer than the snaplen, keeping nothing from after it', () => {
+  it('stops for good at a record longer than the snaplen, keeping what came before it', () => {
     const good = pcapFile([FRAMES[0]], { snaplen: 64 })
     const bad = Buffer.alloc(16)
     bad.writeUInt32LE(5000, 8) // inclLen far past the snaplen
     const reader = createPcapReader()
-    expect(feedPcap(reader, Buffer.concat([good, bad, Buffer.alloc(5000)]))).toEqual([])
+    const records = feedPcap(reader, Buffer.concat([good, bad, Buffer.alloc(5000)]))
+    expect(records.map((r) => r.data.toString())).toEqual(['first frame bytes'])
     expect(reader.error).toMatch(/snaplen/)
     expect(feedPcap(reader, good)).toEqual([])
   })

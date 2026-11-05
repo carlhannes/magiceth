@@ -97,8 +97,9 @@ export function feedPcap(reader: PcapReader, chunk: Buffer): PcapRecord[] {
     // A record longer than the snaplen the file promised means the stream has lost its place.
     // Reading on would turn every later byte into a bogus length, so stop for good.
     if (inclLen > snaplen) {
-      records.length = 0
-      return fail(reader, `record of ${inclLen} bytes exceeds the snaplen of ${snaplen}`)
+      // What came before it in this chunk was read in full and is kept.
+      fail(reader, `record of ${inclLen} bytes exceeds the snaplen of ${snaplen}`)
+      return records
     }
     if (buf.length - at - RECORD_HEADER < inclLen) break
     const seconds = u32(at)
